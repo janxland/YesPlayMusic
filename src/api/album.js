@@ -21,8 +21,6 @@ export function getAlbum(id) {
       return data;
     });
   };
-  fetchLatest();
-
   return getAlbumFromCache(id).then(result => {
     return result ?? fetchLatest();
   });

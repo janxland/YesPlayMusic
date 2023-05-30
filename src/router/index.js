@@ -8,6 +8,7 @@ const routes = [
     path: '/',
     name: 'home',
     component: () => import('@/views/home.vue'),
+    children: [],
     meta: {
       keepAlive: true,
       savePosition: true,
@@ -81,6 +82,11 @@ const routes = [
     path: '/search/:keywords/:type',
     name: 'searchType',
     component: () => import('@/views/searchType.vue'),
+  },
+  {
+    path: '/coSearch',
+    name: 'coSearch',
+    component: () => import('@/views/coSearch.vue'),
   },
   {
     path: '/new-album',

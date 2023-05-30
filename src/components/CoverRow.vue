@@ -1,5 +1,5 @@
 <template>
-  <div class="cover-row" :style="rowStyles">
+  <div class="cover-row no-scrollbar" :style="rowStyles">
     <div
       v-for="item in items"
       :key="item.id"
@@ -7,9 +7,11 @@
       :class="{ artist: type === 'artist' }"
     >
       <Cover
-        :id="item.id"
+        :id="parseInt(item.id)"
         :image-url="getImageUrl(item)"
         :type="type"
+        :click-cover-to-play="clickCoverToPlay"
+        :click-cover-to-play-fun="clickCoverToPlayFun"
         :play-button-size="type === 'artist' ? 26 : playButtonSize"
       />
       <div class="text">
@@ -54,8 +56,10 @@ export default {
     subTextFontSize: { type: String, default: '16px' },
     showPlayCount: { type: Boolean, default: false },
     columnNumber: { type: Number, default: 5 },
-    gap: { type: String, default: '44px 24px' },
+    gap: { type: String, default: '44px 16px' },
     playButtonSize: { type: Number, default: 22 },
+    clickCoverToPlay: { type: Boolean, default: false },
+    clickCoverToPlayFun: { type: Function, default: undefined },
   },
   computed: {
     rowStyles() {
@@ -99,7 +103,8 @@ export default {
       return this.type === 'album' && item.mark === 1056768;
     },
     getTitleLink(item) {
-      return `/${this.type}/${item.id}`;
+      let server = this.$route.query.server;
+      return `/${this.type}/${item.id}?${server ? 'server=' + server : ''}`;
     },
     getImageUrl(item) {
       if (item.img1v1Url) {
@@ -124,6 +129,7 @@ export default {
 
 .item {
   color: var(--color-text);
+  min-width: 100px;
   .text {
     margin-top: 8px;
     .title {
@@ -161,7 +167,11 @@ export default {
   }
 }
 
-@media (max-width: 834px) {
+@media (max-width: 576px) {
+  .cover-row {
+    display: grid;
+    overflow-x: auto;
+  }
   .item .text .title {
     font-size: 14px;
   }

@@ -1,5 +1,5 @@
 <template>
-  <div>
+  <div class="navView">
     <nav :class="{ 'has-custom-titlebar': hasCustomTitlebar }">
       <Win32Titlebar v-if="enableWin32Titlebar" />
       <LinuxTitlebar v-if="enableLinuxTitlebar" />
@@ -29,7 +29,7 @@
       <div class="right-part">
         <div class="search-box">
           <div class="container" :class="{ active: inputFocus }">
-            <svg-icon icon-class="search" />
+            <a><svg-icon icon-class="search" /></a>
             <div class="input">
               <input
                 ref="searchInput"
@@ -41,17 +41,25 @@
                 @blur="inputFocus = false"
               />
             </div>
+            <a @click="showSearchList">
+              <svg-icon icon-class="arrow-down" />
+            </a>
           </div>
         </div>
         <img
           class="avatar"
           :src="avatarUrl"
-          @click="showUserProfileMenu"
           loading="lazy"
+          @click="showUserProfileMenu"
         />
       </div>
     </nav>
-
+    <ContextMenu ref="showSearchList">
+      <div class="item" @click="toCoSearch('tencent')">
+        <svg-icon icon-class="settings" />
+        其他搜索
+      </div>
+    </ContextMenu>
     <ContextMenu ref="userProfileMenu">
       <div class="item" @click="toSettings">
         <svg-icon icon-class="settings" />
@@ -64,6 +72,12 @@
       <div v-if="isLooseLoggedIn" class="item" @click="logout">
         <svg-icon icon-class="logout" />
         {{ $t('library.userProfileMenu.logout') }}
+      </div>
+      <div class="item" @click="toTheme">
+        <svg-icon
+          :icon-class="settings.appearance == 'dark' ? 'moon' : 'sun'"
+        />
+        {{ $t('nav.theme') }}
       </div>
       <hr />
       <div class="item" @click="toGitHub">
@@ -86,7 +100,7 @@ import Win32Titlebar from '@/components/Win32Titlebar.vue';
 import LinuxTitlebar from '@/components/LinuxTitlebar.vue';
 import ContextMenu from '@/components/ContextMenu.vue';
 import ButtonIcon from '@/components/ButtonIcon.vue';
-
+import { changeAppearance } from '@/utils/common';
 export default {
   name: 'Navbar',
   components: {
@@ -149,6 +163,15 @@ export default {
     showUserProfileMenu(e) {
       this.$refs.userProfileMenu.openMenu(e);
     },
+    showSearchList(e) {
+      this.$refs.showSearchList.openMenu(e);
+    },
+    toCoSearch(item) {
+      this.$router.push({
+        name: 'coSearch',
+        query: { server: item, keywords: this.keywords },
+      });
+    },
     logout() {
       if (!confirm('确定要退出登录吗？')) return;
       doLogout();
@@ -156,6 +179,15 @@ export default {
     },
     toSettings() {
       this.$router.push({ name: 'settings' });
+    },
+    toTheme() {
+      if (this.settings.appearance != 'dark') {
+        this.settings.appearance = 'dark';
+        changeAppearance('dark');
+      } else {
+        this.settings.appearance = 'light';
+        changeAppearance('light');
+      }
     },
     toGitHub() {
       window.open('https://github.com/qier222/YesPlayMusic');
@@ -172,8 +204,12 @@ export default {
 </script>
 
 <style lang="scss" scoped>
+.navView {
+  position: absolute;
+  z-index: 100;
+  width: 100%;
+}
 nav {
-  position: fixed;
   top: 0;
   right: 0;
   left: 0;
@@ -188,14 +224,7 @@ nav {
   backdrop-filter: saturate(180%) blur(20px);
 
   background-color: var(--color-navbar-bg);
-  z-index: 100;
   -webkit-app-region: drag;
-}
-
-@media (max-width: 1336px) {
-  nav {
-    padding: 0 5vw;
-  }
 }
 
 @supports (-moz-appearance: none) {
@@ -221,7 +250,31 @@ nav.has-custom-titlebar {
     -webkit-app-region: no-drag;
   }
 }
-@media (max-width: 970px) {
+@media (max-width: 1000px) {
+  .navigation-buttons {
+    flex: unset;
+  }
+}
+@media (max-width: 576px) {
+  .search-box .container {
+    width: 140px !important;
+  }
+  nav {
+    padding: {
+      right: 10px;
+      left: 10px;
+    }
+  }
+  .navigation-links {
+    a {
+      padding: 0 !important;
+      margin: 0 auto !important;
+      font-size: 14px !important;
+    }
+  }
+  .navigation-buttons {
+    display: none;
+  }
   .navigation-buttons {
     flex: unset;
   }

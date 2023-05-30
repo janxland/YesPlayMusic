@@ -31,7 +31,7 @@
           </button>
         </div>
       </div>
-      <div class="songs">
+      <div class="songs no-scrollbar">
         <TrackList
           :id="liked.playlists.length > 0 ? liked.playlists[0].id : 0"
           :tracks="liked.songsWithDetails"
@@ -619,6 +619,18 @@ button.playHistory-button--selected {
   font-weight: 700;
   &:active {
     transform: none;
+  }
+}
+@media (max-width: 576px) {
+  .section-one {
+    flex-direction: column;
+  }
+  .section-one .songs {
+    margin: 20px 0;
+    overflow: auto;
+  }
+  .section-two {
+    margin: 0;
   }
 }
 </style>

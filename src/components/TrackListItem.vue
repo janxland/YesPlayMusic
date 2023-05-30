@@ -4,6 +4,7 @@
     :class="trackClass"
     :style="trackStyle"
     :title="showUnavailableSongInGreyStyle ? track.reason : ''"
+    @click="playTrack"
     @mouseover="hover = true"
     @mouseleave="hover = false"
   >
@@ -12,7 +13,8 @@
       :src="imgUrl"
       loading="lazy"
       :class="{ hover: focus }"
-      @click="goToAlbum"
+      onerror="this.src = 'https://p2.music.126.net/UeTuwE7pvjBpypWLudqukA==/3132508627578625.jpg'; this.onerror=null;"
+      @click.stop="goToAlbum"
     />
     <div v-if="showOrderNumber" class="no">
       <button v-show="focus && playable && !isPlaying" @click="playTrack">
@@ -21,7 +23,7 @@
           style="height: 14px; width: 14px"
         ></svg-icon>
       </button>
-      <span v-show="(!focus || !playable) && !isPlaying">{{ trackNo }}</span>
+      <span v-show="(!focus || !playable) && !isPlaying">{{ track.no }}</span>
       <button v-show="isPlaying">
         <svg-icon
           icon-class="volume"
@@ -52,16 +54,23 @@
             class="explicit-symbol before-artist"
             ><ExplicitSymbol :size="15"
           /></span>
-          <ArtistsInLine :artists="artists" />
+          <ArtistsInLine
+            :artists="artists"
+            :other-server-access="otherServerAccess"
+          />
         </div>
       </div>
       <div></div>
     </div>
 
     <div v-if="showAlbumName" class="album">
-      <router-link v-if="album && album.id" :to="`/album/${album.id}`">{{
-        album.name
-      }}</router-link>
+      <router-link
+        v-if="album && album.id"
+        :to="
+          otherServerAccess ? `/album/${album.id}` : { path: $route.fullPath }
+        "
+        >{{ album.name }}</router-link
+      >
       <div></div>
     </div>
 
@@ -96,8 +105,11 @@ export default {
 
   props: {
     trackProp: Object,
-    trackNo: Number,
     highlightPlayingTrack: {
+      type: Boolean,
+      default: true,
+    },
+    otherServerAccess: {
       type: Boolean,
       default: true,
     },
@@ -119,6 +131,7 @@ export default {
     },
     imgUrl() {
       let image =
+        this.track?.picUrl ??
         this.track?.al?.picUrl ??
         this.track?.album?.picUrl ??
         'https://p2.music.126.net/UeTuwE7pvjBpypWLudqukA==/3132508627578625.jpg';
@@ -211,10 +224,15 @@ export default {
   methods: {
     goToAlbum() {
       if (this.track.al.id === 0) return;
+      if (this.track.sourceUrl) {
+        window.open(this.track.sourceUrl);
+        return;
+      }
       this.$router.push({ path: '/album/' + this.track.al.id });
     },
     playTrack() {
-      this.$parent.playThisList(this.track.id);
+      if (this.track.source) this.$parent.playThisList(this.track);
+      else this.$parent.playThisList(this.track.id);
     },
     likeThisSong() {
       this.$parent.likeATrack(this.track.id);
@@ -284,7 +302,7 @@ button {
     border-radius: 8px;
     height: 46px;
     width: 46px;
-    margin-right: 20px;
+    margin-right: 14px;
     border: 1px solid rgba(0, 0, 0, 0.04);
     cursor: pointer;
   }
@@ -294,6 +312,7 @@ button {
   }
 
   .title-and-artist {
+    min-width: 120px;
     flex: 1;
     display: flex;
     .container {
@@ -301,11 +320,11 @@ button {
       flex-direction: column;
     }
     .title {
-      font-size: 18px;
+      font-size: 16px;
       font-weight: 600;
       color: var(--color-text);
       cursor: default;
-      padding-right: 16px;
+      padding-right: 12px;
       display: -webkit-box;
       -webkit-box-orient: vertical;
       -webkit-line-clamp: 1;
@@ -348,6 +367,7 @@ button {
     flex: 1;
     display: flex;
     font-size: 16px;
+    min-width: 80px;
     opacity: 0.88;
     color: var(--color-text);
     display: -webkit-box;

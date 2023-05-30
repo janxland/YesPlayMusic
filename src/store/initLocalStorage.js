@@ -20,7 +20,7 @@ let localStorage = {
     automaticallyCacheSongs: true,
     cacheLimit: 8192,
     enableReversedMode: false,
-    nyancatStyle: false,
+    nyancatStyle: true,
     showLyricsTranslation: true,
     lyricsBackground: true,
     closeAppOption: 'ask',

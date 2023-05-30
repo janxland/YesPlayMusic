@@ -20,19 +20,23 @@ export function isTrackPlayable(track) {
     if (isAccountLoggedIn() && store.state.data.user.vipType === 11) {
       result.playable = true;
     } else {
+      console.log('VIP Only');
       result.playable = false;
       result.reason = 'VIP Only';
     }
   } else if (track.fee === 4 || track.privilege?.fee === 4) {
+    console.log('付费专辑');
     result.playable = false;
     result.reason = '付费专辑';
   } else if (
     track.noCopyrightRcmd !== null &&
     track.noCopyrightRcmd !== undefined
   ) {
+    console.log('无版权');
     result.playable = false;
     result.reason = '无版权';
   } else if (track.privilege?.st < 0 && isAccountLoggedIn()) {
+    console.log('VIP Only');
     result.playable = false;
     result.reason = '已下架';
   }
@@ -221,7 +225,7 @@ export function bytesToSize(bytes) {
 
 export function formatTrackTime(value) {
   if (!value) return '';
-  let min = ~~(value / 60);
+  let min = ~~((value / 60) % 60);
   let sec = (~~(value % 60)).toString().padStart(2, '0');
   return `${min}:${sec}`;
 }

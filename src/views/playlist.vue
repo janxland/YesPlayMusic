@@ -5,12 +5,11 @@
       class="playlist-info"
     >
       <Cover
-        :id="playlist.id"
-        :image-url="playlist.coverImgUrl | resizeImage(1024)"
+        :id="parseInt(playlist.id)"
+        :image-url="playlist.picUrl || playlist.coverImgUrl | resizeImage(1024)"
         :show-play-button="true"
         :always-show-shadow="true"
         :click-cover-to-play="true"
-        :fixed-size="288"
         type="playlist"
         :cover-hover="false"
         :play-button-size="18"
@@ -45,8 +44,11 @@
           {{ playlist.updateTime | formatDate }} · {{ playlist.trackCount }}
           {{ $t('common.songs') }}
         </div>
-        <div class="description" @click="toggleFullDescription">
-          {{ playlist.description }}
+        <div
+          class="description"
+          @click="toggleFullDescription"
+          v-html="playlist.description"
+        >
         </div>
         <div class="buttons">
           <ButtonTwoTone icon-class="play" @click.native="playPlaylistByID()">
@@ -66,6 +68,7 @@
           >
           </ButtonTwoTone>
           <ButtonTwoTone
+            v-if="!$route.query.server"
             icon-class="more"
             :icon-button="true"
             :horizontal-padding="0"
@@ -165,9 +168,10 @@
     </div>
 
     <TrackList
-      :id="playlist.id"
       :tracks="filteredTracks"
+      max-size="20"
       type="playlist"
+      dbclick-track-func="none"
       :extra-context-menu-item="
         isUserOwnPlaylist ? ['removeTrackFromPlaylist'] : []
       "
@@ -417,6 +421,10 @@ export default {
     ...mapMutations(['appendTrackToPlayerList']),
     ...mapActions(['playFirstTrackOnList', 'playTrackOnListByID', 'showToast']),
     playPlaylistByID(trackID = 'first') {
+      if (this.$route.query.server) {
+        this.playThisListByTrack(this.playlist.id);
+        return;
+      }
       let trackIDs = this.playlist.trackIds.map(t => t.id);
       this.$store.state.player.replacePlaylist(
         trackIDs,
@@ -424,6 +432,22 @@ export default {
         'playlist',
         trackID
       );
+    },
+    playThisListByTrack(id) {
+      this.showToast('Playlist:正在进行其他平台播放');
+      getPlaylistDetail(id, true, this.$route.query.server).then(data => {
+        console.log(data);
+        let playlist = data.playlist;
+        let tracks = playlist.tracks.filter(_track => {
+          return _track.playable == 1;
+        });
+        this.$store.state.player.replacePlaylist(
+          tracks,
+          tracks[0],
+          'artist',
+          tracks[0]
+        );
+      });
     },
     likePlaylist(toast = false) {
       if (!isAccountLoggedIn()) {
@@ -448,7 +472,7 @@ export default {
     },
     loadData(id, next = undefined) {
       this.id = id;
-      getPlaylistDetail(this.id, true)
+      getPlaylistDetail(this.id, true, this.$route.query.server || undefined)
         .then(data => {
           this.playlist = data.playlist;
           this.tracks = data.playlist.tracks;
@@ -933,8 +957,26 @@ export default {
     }
   }
 }
-
-@media (max-width: 1336px) {
+.cover {
+  height: 288px;
+  width: 288px;
+}
+@media (max-width: 576px) {
+  .playlist {
+    margin-top: 14px;
+  }
+  .cover {
+    width: auto !important;
+    height: auto !important;
+  }
+  .playlist-info {
+    margin: 0;
+    flex-direction: column;
+  }
+  .playlist-info .info {
+    padding: 14px;
+    margin: 0;
+  }
   .search-box-likepage {
     right: 8vw;
   }

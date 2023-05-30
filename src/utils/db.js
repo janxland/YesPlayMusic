@@ -133,7 +133,8 @@ export function cacheLyric(id, lyrics) {
 }
 
 export function getLyricFromCache(id) {
-  return db.lyric.get(Number(id)).then(result => {
+  return db.lyric.get(id).then(result => {
+    console.log(result);
     if (!result) return undefined;
     return result.lyrics;
   });

@@ -1,4 +1,8 @@
 export default {
+  server: {
+    tencent: 'QQ音乐',
+    kugou: '酷狗音乐',
+  },
   common: {
     play: '播放',
     songs: '首歌',
@@ -8,6 +12,7 @@ export default {
     explore: '发现',
     library: '音乐库',
     search: '搜索',
+    theme: '主题',
     github: 'GitHub 仓库',
   },
   home: {

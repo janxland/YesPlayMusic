@@ -1,5 +1,14 @@
 <template>
   <div v-show="show" class="search-page">
+    <div v-show="tracks.length > 0" class="tracks">
+      <div class="section-title"
+        >{{ $t('search.song')
+        }}<router-link :to="`/search/${keywords}/tracks`">{{
+          $t('home.seeMore')
+        }}</router-link></div
+      >
+      <TrackList :tracks="tracks" type="tracklist" />
+    </div>
     <div v-show="artists.length > 0 || albums.length > 0" class="row">
       <div v-show="artists.length > 0" class="artists">
         <div v-show="artists.length > 0" class="section-title"
@@ -34,27 +43,6 @@
         />
       </div>
     </div>
-
-    <div v-show="tracks.length > 0" class="tracks">
-      <div class="section-title"
-        >{{ $t('search.song')
-        }}<router-link :to="`/search/${keywords}/tracks`">{{
-          $t('home.seeMore')
-        }}</router-link></div
-      >
-      <TrackList :tracks="tracks" type="tracklist" />
-    </div>
-
-    <div v-show="musicVideos.length > 0" class="music-videos">
-      <div class="section-title"
-        >{{ $t('search.mv')
-        }}<router-link :to="`/search/${keywords}/music-videos`">{{
-          $t('home.seeMore')
-        }}</router-link></div
-      >
-      <MvRow :mvs="musicVideos.slice(0, 5)" />
-    </div>
-
     <div v-show="playlists.length > 0" class="playlists">
       <div class="section-title"
         >{{ $t('search.playlist')
@@ -72,7 +60,15 @@
         :play-button-size="26"
       />
     </div>
-
+    <div v-show="musicVideos.length > 0" class="music-videos">
+      <div class="section-title"
+        >{{ $t('search.mv')
+        }}<router-link :to="`/search/${keywords}/music-videos`">{{
+          $t('home.seeMore')
+        }}</router-link></div
+      >
+      <MvRow :mvs="musicVideos.slice(0, 5)" />
+    </div>
     <div v-show="!haveResult" class="no-results">
       <div
         ><svg-icon icon-class="search" />
@@ -89,7 +85,7 @@ import { mapActions } from 'vuex';
 import { getTrackDetail } from '@/api/track';
 import { search } from '@/api/others';
 import NProgress from 'nprogress';
-
+// import { get } from '@/utils/metingAPI';
 import TrackList from '@/components/TrackList.vue';
 import MvRow from '@/components/MvRow.vue';
 import CoverRow from '@/components/CoverRow.vue';
@@ -134,6 +130,11 @@ export default {
   },
   created() {
     this.getData();
+    // get({ server: 'tencent', type: 'search',  }).then(data => {
+    //   // if (data.result?.song !== undefined)
+    //   // data.result.song.songs = mapTrackPlayableStatus(data.result.song.songs);
+    //   return data;
+    // });
   },
   methods: {
     ...mapActions(['showToast']),

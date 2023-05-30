@@ -109,13 +109,13 @@ export default {
 
 @media (max-width: 700px) {
   .mv-row {
-    --col-num: 2;
+    --col-num: 3;
   }
 }
 
 @media (max-width: 550px) {
   .mv-row {
-    --col-num: 1;
+    --col-num: 3;
   }
 }
 

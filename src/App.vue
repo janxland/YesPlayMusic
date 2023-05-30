@@ -1,6 +1,13 @@
 <template>
-  <div id="app" :class="{ 'user-select-none': userSelectNone }">
+  <div
+    id="app"
+    class="no-scrollbar"
+    :class="{ 'user-select-none': userSelectNone }"
+  >
     <Scrollbar v-show="!showLyrics" ref="scrollbar" />
+    <transition name="slide-up">
+      <Player v-if="enablePlayer" v-show="showPlayer" ref="player" />
+    </transition>
     <Navbar v-show="showNavbar" ref="navbar" />
     <main
       ref="main"
@@ -12,9 +19,7 @@
       </keep-alive>
       <router-view v-if="!$route.meta.keepAlive"></router-view>
     </main>
-    <transition name="slide-up">
-      <Player v-if="enablePlayer" v-show="showPlayer" ref="player" />
-    </transition>
+
     <Toast />
     <ModalAddTrackToPlaylist v-if="isAccountLoggedIn" />
     <ModalNewPlaylist v-if="isAccountLoggedIn" />
@@ -110,24 +115,39 @@ export default {
 </script>
 
 <style lang="scss">
+html,
+body,
 #app {
+  position: fixed;
   width: 100%;
+  height: 100%;
+}
+* {
+  padding: 0;
+  margin: 0;
+}
+#app {
+  position: relative;
   transition: all 0.4s;
 }
 
 main {
-  position: fixed;
+  position: absolute;
   top: 0;
   bottom: 0;
   right: 0;
   left: 0;
-  overflow: auto;
   padding: 64px 10vw 96px 10vw;
   box-sizing: border-box;
   scrollbar-width: none; // firefox
 }
-
-@media (max-width: 1336px) {
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  overflow: scroll;
+}
+@media (max-width: 576px) {
   main {
     padding: 64px 5vw 96px 5vw;
   }

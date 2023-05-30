@@ -22,12 +22,13 @@
         :silent="true"
       ></vue-slider>
     </div>
-    <div class="controls">
+    <div class="controls no-scrollbar">
       <div class="playing">
         <div class="container" @click.stop>
           <img
             :src="currentTrack.al && currentTrack.al.picUrl | resizeImage(224)"
             loading="lazy"
+            onerror="this.src = 'https://p2.music.126.net/UeTuwE7pvjBpypWLudqukA==/3132508627578625.jpg'; this.onerror=null;"
             @click="goToAlbum"
           />
           <div class="track-info" :title="audioSource">
@@ -67,6 +68,11 @@
               ></svg-icon>
             </button-icon>
           </div>
+          <button-icon
+            style="display: inline-block; vertical-align: middle"
+            @click.native="Download"
+            ><svg-icon icon-class="download"
+          /></button-icon>
         </div>
         <div class="blank"></div>
       </div>
@@ -170,7 +176,6 @@
           <button-icon
             class="lyrics-button"
             title="歌词"
-            style="margin-left: 12px"
             @click.native="toggleLyrics"
             ><svg-icon icon-class="arrow-up"
           /></button-icon>
@@ -187,7 +192,6 @@ import '@/assets/css/slider.css';
 import ButtonIcon from '@/components/ButtonIcon.vue';
 import VueSlider from 'vue-slider-component';
 import { goToListSource, hasListSource } from '@/utils/playList';
-import { formatTrackTime } from '@/utils/common';
 
 export default {
   name: 'Player',
@@ -240,10 +244,39 @@ export default {
         : this.$router.push({ name: 'next' });
     },
     formatTrackTime(value) {
-      return formatTrackTime(value);
+      if (!value) return '';
+      let min = ~~((value / 60) % 60);
+      let sec = (~~(value % 60)).toString().padStart(2, '0');
+      return `${min}:${sec}`;
     },
     hasList() {
       return hasListSource();
+    },
+    Download() {
+      let that = this;
+      let xhr = new XMLHttpRequest();
+      xhr.open('GET', this.player.nowMp3Url, true);
+      xhr.responseType = 'blob';
+      xhr.onload = function () {
+        if (xhr.status === 200) {
+          if (window.navigator.msSaveOrOpenBlob) {
+            navigator.msSaveBlob(xhr.response, that.currentTrack.name);
+          } else {
+            let link = document.createElement('a');
+            let body = document.querySelector('body');
+            link.href = window.URL.createObjectURL(xhr.response);
+            link.download =
+              that.currentTrack.name + '-' + that.currentTrack.ar[0].name;
+            // fix Firefox
+            link.style.display = 'none';
+            body.appendChild(link);
+            link.click();
+            body.removeChild(link);
+            window.URL.revokeObjectURL(link.href);
+          }
+        }
+      };
+      xhr.send();
     },
     goToList() {
       goToListSource();
@@ -276,16 +309,15 @@ export default {
 
 <style lang="scss" scoped>
 .player {
-  position: fixed;
+  position: absolute;
   bottom: 0;
-  right: 0;
   left: 0;
   display: flex;
   flex-direction: column;
   justify-content: space-around;
   height: 64px;
+  width: 100%;
   backdrop-filter: saturate(180%) blur(30px);
-  // background-color: rgba(255, 255, 255, 0.86);
   background-color: var(--color-navbar-bg);
   z-index: 100;
 }
@@ -305,6 +337,7 @@ export default {
 .controls {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
+  overflow-x: scroll;
   height: 100%;
   padding: {
     right: 10vw;
@@ -312,9 +345,13 @@ export default {
   }
 }
 
-@media (max-width: 1336px) {
+@media (max-width: 576px) {
+  .controls .button-icon {
+    padding: 0 5px !important;
+    margin: 0 5px !important;
+  }
   .controls {
-    padding: 0 5vw;
+    padding: 0 5px;
   }
 }
 
@@ -339,6 +376,7 @@ export default {
   .track-info {
     height: 46px;
     margin-left: 12px;
+    min-width: 100px;
     display: flex;
     flex-direction: column;
     justify-content: center;
@@ -428,10 +466,6 @@ export default {
       width: 84px;
     }
   }
-}
-
-.like-button {
-  margin-left: 16px;
 }
 
 .button-icon.disabled {

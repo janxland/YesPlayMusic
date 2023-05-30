@@ -20,7 +20,9 @@ export function search(params) {
   return request({
     url: '/search',
     method: 'get',
-    params,
+    params: {
+      ...params,
+    },
   }).then(data => {
     if (data.result?.song !== undefined)
       data.result.song.songs = mapTrackPlayableStatus(data.result.song.songs);

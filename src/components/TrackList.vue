@@ -1,5 +1,5 @@
 <template>
-  <div class="track-list">
+  <div class="track-list no-scrollbar">
     <ContextMenu ref="menu">
       <div v-show="type !== 'cloudDisk'" class="item-info">
         <img
@@ -65,9 +65,9 @@
         v-for="(track, index) in tracks"
         :key="itemKey === 'id' ? track.id : `${track.id}${index}`"
         :track-prop="track"
-        :track-no="index + 1"
         :highlight-playing-track="highlightPlayingTrack"
-        @dblclick.native="playThisList(track.id || track.songId)"
+        :other-server-access="otherServerAccess"
+        @dblclick.native="playThisList(track)"
         @click.right.native="openMenu($event, track, index)"
       />
     </div>
@@ -102,8 +102,12 @@ export default {
       default: 'tracklist',
     }, // tracklist | album | playlist | cloudDisk
     id: {
-      type: Number,
-      default: 0,
+      type: String,
+      default: '0',
+    },
+    maxSize: {
+      type: String,
+      default: '20',
     },
     dbclickTrackFunc: {
       type: String,
@@ -140,6 +144,10 @@ export default {
     itemKey: {
       type: String,
       default: 'id',
+    },
+    otherServerAccess: {
+      type: Boolean,
+      default: true,
     },
   },
   data() {
@@ -196,11 +204,23 @@ export default {
       };
       this.rightClickedTrackIndex = -1;
     },
+    playThisListByTrack(track) {
+      this.showToast('TrackList 正在进行其他平台播放');
+      let tracks = this.tracks.filter(_track => {
+        return _track.playable == 1;
+      });
+      this.player.replacePlaylist(tracks, track, 'artist', track);
+    },
     playThisList(trackID) {
+      if (trackID.source) {
+        this.playThisListByTrack(trackID);
+        return;
+      }
+      trackID = trackID.id || trackID.songId;
       if (this.dbclickTrackFunc === 'default') {
         this.playThisListDefault(trackID);
       } else if (this.dbclickTrackFunc === 'none') {
-        // do nothing
+        // this.player.addTrackToPlayNext(trackID, true);
       } else if (this.dbclickTrackFunc === 'playTrackOnListByID') {
         this.player.playTrackOnListByID(trackID);
       } else if (this.dbclickTrackFunc === 'playPlaylistByID') {

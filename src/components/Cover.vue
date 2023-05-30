@@ -12,11 +12,16 @@
           v-show="focus"
           class="play-button"
           :style="playButtonStyles"
-          @click.stop="play()"
+          @click.stop="clickCoverToPlayFun ? clickCoverToPlayFun(id) : play()"
           ><svg-icon icon-class="play" />
         </button>
       </div>
-      <img :src="imageUrl" :style="imageStyles" loading="lazy" />
+      <img
+        :src="imageUrl"
+        onerror="this.src = 'https://p2.music.126.net/UeTuwE7pvjBpypWLudqukA==/3132508627578625.jpg'; this.onerror=null;"
+        :style="imageStyles"
+        loading="lazy"
+      />
       <transition v-if="coverHover || alwaysShowShadow" name="fade">
         <div
           v-show="focus || alwaysShowShadow"
@@ -40,6 +45,7 @@ export default {
     alwaysShowPlayButton: { type: Boolean, default: true },
     alwaysShowShadow: { type: Boolean, default: false },
     clickCoverToPlay: { type: Boolean, default: false },
+    clickCoverToPlayFun: { type: Function, default: undefined },
     shadowMargin: { type: Number, default: 12 },
     radius: { type: Number, default: 12 },
   },
@@ -82,7 +88,11 @@ export default {
       playActions[this.type].bind(player)(this.id);
     },
     goTo() {
-      this.$router.push({ name: this.type, params: { id: this.id } });
+      this.$router.push({
+        name: this.type,
+        params: { id: this.id },
+        query: { server: this.$route.query.server },
+      });
     },
   },
 };

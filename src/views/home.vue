@@ -27,7 +27,7 @@
     </div>
     <div class="index-row">
       <div class="title"> For You </div>
-      <div class="for-you-row">
+      <div class="for-you-row no-scrollbar">
         <DailyTracksCard ref="DailyTracksCard" />
         <FMCard />
       </div>
@@ -201,5 +201,12 @@ footer {
   grid-template-columns: repeat(2, 1fr);
   gap: 24px;
   margin-bottom: 78px;
+}
+@media (max-width: 576px) {
+  .for-you-row {
+    overflow: auto;
+    grid-template-columns: 100%;
+    margin-bottom: 0;
+  }
 }
 </style>

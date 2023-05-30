@@ -53,8 +53,6 @@ export function getTrackDetail(ids) {
       return data;
     });
   };
-  fetchLatest();
-
   let idsInArray = [String(ids)];
   if (typeof ids === 'string') {
     idsInArray = ids.split(',');
@@ -71,25 +69,23 @@ export function getTrackDetail(ids) {
 /**
  * 获取歌词
  * 说明 : 调用此接口 , 传入音乐 id 可获得对应音乐的歌词 ( 不需要登录 )
- * @param {number} id - 音乐 id
+ * @param id - 音乐 id
  */
-export function getLyric(id) {
+export function getLyric(id, server) {
   const fetchLatest = () => {
     return request({
       url: '/lyric',
       method: 'get',
       params: {
         id,
+        server: server ? server : undefined,
       },
     }).then(result => {
-      cacheLyric(id, result);
+      cacheLyric(`${server ? server : ''}${id}`, result);
       return result;
     });
   };
-
-  fetchLatest();
-
-  return getLyricFromCache(id).then(result => {
+  return getLyricFromCache(`${server ? server : ''}${id}`).then(result => {
     return result ?? fetchLatest();
   });
 }

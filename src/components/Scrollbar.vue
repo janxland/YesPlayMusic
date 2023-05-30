@@ -152,7 +152,7 @@ export default {
 
 <style lang="scss" scoped>
 #scrollbar {
-  position: fixed;
+  position: absolute;
   right: 0;
   top: 0;
   bottom: 0;

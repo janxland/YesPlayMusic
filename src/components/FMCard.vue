@@ -190,4 +190,9 @@ export default {
     }
   }
 }
+@media (max-width: 576px) {
+  .fm .card-name {
+    display: none !important;
+  }
+}
 </style>

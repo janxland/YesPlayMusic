@@ -241,9 +241,7 @@ export default {
   computed: {
     ...mapState(['player']),
     albums() {
-      return this.albumsData.filter(
-        a => a.type === '专辑' || a.type === '精选集'
-      );
+      return this.albumsData.filter(a => a.type === '专辑');
     },
     eps() {
       return this.albumsData.filter(a =>
@@ -543,5 +541,32 @@ export default {
   -webkit-box-orient: vertical;
   overflow: hidden;
   white-space: pre-line;
+}
+
+@media (max-width: 576px) {
+  .artist {
+    margin-top: 14px;
+  }
+  .head {
+    width: auto !important;
+    height: auto !important;
+  }
+  .artist-info img {
+    margin-right: 0;
+  }
+  .artist-info {
+    margin: 0;
+    flex-direction: column;
+    .name {
+      margin-top: 20px;
+    }
+  }
+  .artist-info .info {
+    padding: 14px;
+    margin: 0;
+  }
+  .search-box-likepage {
+    right: 8vw;
+  }
 }
 </style>

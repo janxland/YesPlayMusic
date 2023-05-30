@@ -7,7 +7,6 @@
         :show-play-button="true"
         :always-show-shadow="true"
         :click-cover-to-play="true"
-        :fixed-size="288"
         type="album"
         :cover-hover="false"
         :play-button-size="18"
@@ -61,6 +60,7 @@
           >
           </ButtonTwoTone>
           <ButtonTwoTone
+            v-if="!$route.query.server"
             icon-class="more"
             :icon-button="true"
             :horizontal-padding="0"
@@ -96,7 +96,9 @@
         {{ $t('album.released') }}
         {{ album.publishTime | formatDate('MMMM D, YYYY') }}
       </div>
-      <div v-if="album.company" class="copyright"> © {{ album.company }} </div>
+      <div v-if="album.company !== null" class="copyright">
+        © {{ album.company }}
+      </div>
     </div>
     <div v-if="filteredMoreAlbums.length !== 0" class="more-by">
       <div class="section-title">
@@ -147,6 +149,7 @@ import { mapMutations, mapActions, mapState } from 'vuex';
 import { getArtistAlbum } from '@/api/artist';
 import { getTrackDetail } from '@/api/track';
 import { getAlbum, albumDynamicDetail, likeAAlbum } from '@/api/album';
+import { getPlaylistDetail } from '@/api/playlist';
 import locale from '@/locale';
 import { splitSoundtrackAlbumTitle, splitAlbumTitle } from '@/utils/common';
 import NProgress from 'nprogress';
@@ -235,7 +238,27 @@ export default {
     ...mapMutations(['appendTrackToPlayerList']),
     ...mapActions(['playFirstTrackOnList', 'playTrackOnListByID', 'showToast']),
     playAlbumByID(id, trackID = 'first') {
+      if (this.$route.query.server) {
+        this.playThisListByTrack(id);
+        return;
+      }
       this.$store.state.player.playAlbumByID(id, trackID);
+    },
+    playThisListByTrack(id) {
+      // this.showToast('正在进行其他平台播放');
+      getPlaylistDetail(id, true, this.$route.query.server).then(data => {
+        console.log(data);
+        let playlist = data.playlist;
+        let tracks = playlist.tracks.filter(_track => {
+          return _track.playable == 1;
+        });
+        this.$store.state.player.replacePlaylist(
+          tracks,
+          tracks[0],
+          'artist',
+          tracks[0]
+        );
+      });
     },
     likeAlbum(toast = false) {
       if (!isAccountLoggedIn()) {
@@ -434,5 +457,34 @@ export default {
   -webkit-box-orient: vertical;
   overflow: hidden;
   white-space: pre-line;
+}
+.cover {
+  height: 288px;
+  width: 288px;
+}
+@media (max-width: 576px) {
+  .playlist {
+    margin-top: 14px;
+  }
+  .cover {
+    width: auto !important;
+    height: auto !important;
+  }
+  .playlist-info {
+    width: auto;
+    margin: 0;
+    flex-direction: column;
+  }
+  .playlist-info .info .title {
+    font-size: 24px;
+    font-weight: 700;
+  }
+  .playlist-info .info {
+    padding: 14px;
+    margin: 0;
+  }
+  .search-box-likepage {
+    right: 8vw;
+  }
 }
 </style>

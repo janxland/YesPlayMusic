@@ -258,19 +258,15 @@ export default class {
       let trackID = this._playNextList.shift();
       return [trackID, this.current];
     }
-
     // 循环模式开启，则重新播放当前模式下的相对的下一首
     if (this.repeatMode === 'on') {
       if (this._reversed && this.current === 0) {
         // 倒序模式，当前歌曲是第一首，则重新播放列表最后一首
         return [this.list[this.list.length - 1], this.list.length - 1];
       } else if (this.list.length === this.current + 1) {
-        // 正序模式，当前歌曲是最后一首，则重新播放第一首
         return [this.list[0], 0];
       }
     }
-
-    // 返回 [trackID, index]
     return [this.list[next], next];
   }
   _getPrevTrack() {
@@ -333,14 +329,11 @@ export default class {
         this._nextTrackCallback();
       },
     });
+
     this._howler.on('loaderror', (_, errCode) => {
       // https://developer.mozilla.org/en-US/docs/Web/API/MediaError/code
       // code 3: MEDIA_ERR_DECODE
       if (errCode === 3) {
-        this._playNextTrack(this._isPersonalFM);
-      } else if (errCode === 4) {
-        // code 4: MEDIA_ERR_SRC_NOT_SUPPORTED
-        store.dispatch('showToast', `无法播放: 不支持的音频格式`);
         this._playNextTrack(this._isPersonalFM);
       } else {
         const t = this.progress;
@@ -491,6 +484,8 @@ export default class {
     if (autoplay && this._currentTrack.name) {
       this._scrobble(this.currentTrack, this._howler?.seek());
     }
+    if (id.constructor === Object)
+      return this._replaceCurrentTrackByTrack(id, (autoplay = true));
     return getTrackDetail(id).then(data => {
       const track = data.songs[0];
       this._currentTrack = track;
@@ -503,6 +498,20 @@ export default class {
       );
     });
   }
+  _replaceCurrentTrackByTrack(track, autoplay = true) {
+    if (autoplay && this._currentTrack.name) {
+      this._scrobble(this.currentTrack, this._howler?.seek());
+    }
+    this._currentTrack = track;
+    if (track.url) {
+      let replaced = false;
+      if (track.id === this.currentTrackID) {
+        this._playAudioSource(track.url, autoplay);
+        replaced = true;
+      }
+      return replaced;
+    }
+  }
   /**
    * @returns 是否成功加载音频，并使用加载完成的音频替换了howler实例
    */
@@ -513,6 +522,7 @@ export default class {
     ifUnplayableThen = UNPLAYABLE_CONDITION.PLAY_NEXT_TRACK
   ) {
     return this._getAudioSource(track).then(source => {
+      // 获取mp3url 代理
       if (source) {
         let replaced = false;
         if (track.id === this.currentTrackID) {
@@ -555,7 +565,7 @@ export default class {
     });
   }
   _loadSelfFromLocalStorage() {
-    const player = JSON.parse(localStorage.getItem('player'));
+    let player = JSON.parse(localStorage.getItem('player'));
     if (!player) return;
     for (const [key, value] of Object.entries(player)) {
       this[key] = value;
@@ -735,7 +745,6 @@ export default class {
       if (retryCount < 0) {
         let content = '获取私人FM数据时重试次数过多，请手动切换下一首';
         store.dispatch('showToast', content);
-        console.log(content);
         return false;
       }
       // 这里只能拿到一条数据
@@ -769,7 +778,6 @@ export default class {
       if (excludeSaveKeys.includes(key)) continue;
       player[key] = value;
     }
-
     localStorage.setItem('player', JSON.stringify(player));
   }
 
@@ -790,7 +798,7 @@ export default class {
 
     this._howler?.once('play', () => {
       this._howler?.fade(0, this.volume, PLAY_PAUSE_FADE_DURATION);
-
+      this.nowMp3Url = this._howler._src;
       this._setPlaying(true);
       if (this._currentTrack.name) {
         setTitle(this._currentTrack);
@@ -836,7 +844,6 @@ export default class {
     }
     this._howler?._sounds[0]._node.setSinkId(store.state.settings.outputDevice);
   }
-
   replacePlaylist(
     trackIDs,
     playlistSourceID,
@@ -845,6 +852,7 @@ export default class {
   ) {
     this._isPersonalFM = false;
     if (!this._enabled) this._enabled = true;
+    console.log(trackIDs);
     this.list = trackIDs;
     this.current = 0;
     this._playlistSource = {
@@ -862,6 +870,7 @@ export default class {
   playAlbumByID(id, trackID = 'first') {
     getAlbum(id).then(data => {
       let trackIDs = data.songs.map(t => t.id);
+      console.log('playAlbumByID');
       this.replacePlaylist(trackIDs, id, 'album', trackID);
     });
   }
@@ -871,12 +880,14 @@ export default class {
     );
     getPlaylistDetail(id, noCache).then(data => {
       let trackIDs = data.playlist.trackIds.map(t => t.id);
+      console.log('getPlaylistDetail');
       this.replacePlaylist(trackIDs, id, 'playlist', trackID);
     });
   }
   playArtistByID(id, trackID = 'first') {
     getArtist(id).then(data => {
       let trackIDs = data.hotSongs.map(t => t.id);
+      console.log('playArtistByID');
       this.replacePlaylist(trackIDs, id, 'artist', trackID);
     });
   }
@@ -894,6 +905,7 @@ export default class {
       const songId = data.playlist.trackIds[randomId].id;
       intelligencePlaylist({ id: songId, pid: id }).then(result => {
         let trackIDs = result.data.map(t => t.id);
+        console.log('playIntelligenceListById');
         this.replacePlaylist(trackIDs, id, 'playlist', trackID);
       });
     });

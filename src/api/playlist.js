@@ -41,16 +41,23 @@ export function dailyRecommendPlaylist(params) {
  * - s : 歌单最近的 s 个收藏者, 默认为8
  * @param {number} id
  * @param {boolean=} noCache
+ * @param {server} server
  */
-export function getPlaylistDetail(id, noCache = false) {
+export function getPlaylistDetail(id, noCache = false, server = undefined) {
   let params = { id };
   if (noCache) params.timestamp = new Date().getTime();
   return request({
     url: '/playlist/detail',
     method: 'get',
-    params,
+    params: {
+      ...params,
+      server,
+    },
   }).then(data => {
     if (data.playlist) {
+      if (data.playlist.source) {
+        return data;
+      }
       data.playlist.tracks = mapTrackPlayableStatus(
         data.playlist.tracks,
         data.privileges || []
