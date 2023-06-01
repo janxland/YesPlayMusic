@@ -12,8 +12,8 @@ module.exports = {
     port: process.env.DEV_SERVER_PORT || 8080,
     proxy: {
       '^/api': {
-        target: 'https://service-osrz4um8-1257251314.gz.apigw.tencentcs.com/release/',
-        // target:'http://127.0.0.1:3000/',
+        // target: 'https://service-osrz4um8-1257251314.gz.apigw.tencentcs.com/',
+        target:'http://127.0.0.1:3000/',
         changeOrigin: true,
         pathRewrite: {
           '^/api': '/',

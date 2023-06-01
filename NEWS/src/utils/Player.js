@@ -1,10 +1,9 @@
-/* eslint-disable */
 import { getAlbum } from '@/api/album';
 import { getArtist } from '@/api/artist';
 import { trackScrobble, trackUpdateNowPlaying } from '@/api/lastfm';
 import { fmTrash, personalFM } from '@/api/others';
 import { getPlaylistDetail, intelligencePlaylist } from '@/api/playlist';
-import { unblock, getMP3, getTrackDetail, scrobble } from '@/api/track';
+import { getMP3, getTrackDetail, scrobble } from '@/api/track';
 import store from '@/store';
 import { isAccountLoggedIn } from '@/utils/auth';
 import { cacheTrackSource, getTrackSource } from '@/utils/db';
@@ -402,14 +401,12 @@ export default class {
   }
   async _getAudioSourceFromUnblockMusic(track) {
     console.debug(`[debug][Player.js] _getAudioSourceFromUnblockMusic`);
+
     if (
       process.env.IS_ELECTRON !== true ||
       store.state.settings.enableUnblockNeteaseMusic === false
     ) {
-      return unblock(track.id).then(result => {
-        console.log(result); 
-        return result.url;
-      });
+      return null;
     }
 
     /**
@@ -471,9 +468,6 @@ export default class {
     return this._getAudioSourceBlobURL(buffer);
   }
   _getAudioSource(track) {
-    if (!track.playable) {
-      return this._getAudioSourceFromUnblockMusic(track);
-    }
     return this._getAudioSourceFromCache(String(track.id))
       .then(source => {
         return source ?? this._getAudioSourceFromNetease(track);
