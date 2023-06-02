@@ -19,6 +19,7 @@ export function unblock(id) {
     method: 'get',
     params: {
       id,
+      https: location.protocol === 'https:',
     },
   });
 }

@@ -407,7 +407,6 @@ export default class {
       store.state.settings.enableUnblockNeteaseMusic === false
     ) {
       return unblock(track.id).then(result => {
-        console.log(result); 
         return result.url;
       });
     }
@@ -472,7 +471,7 @@ export default class {
   }
   _getAudioSource(track) {
     if (!track.playable) {
-      return this._getAudioSourceFromUnblockMusic(track);
+      return this._getAudioSourceFromUnblockMusic(track) ?? null;
     }
     return this._getAudioSourceFromCache(String(track.id))
       .then(source => {

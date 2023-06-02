@@ -203,7 +203,10 @@ export default {
       );
     },
     showUnavailableSongInGreyStyle() {
-      return true;
+      // return false;
+      return process.env.IS_ELECTRON
+        ? !this.$store.state.settings.enableUnblockNeteaseMusic
+        : true;
     },
     showLikeButton() {
       return this.type !== 'tracklist' && this.type !== 'cloudDisk';

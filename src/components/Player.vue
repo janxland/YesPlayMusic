@@ -253,9 +253,11 @@ export default {
       return hasListSource();
     },
     Download() {
+      /* eslint-disable */
       let that = this;
       let xhr = new XMLHttpRequest();
-      xhr.open('GET', this.player.nowMp3Url, true);
+      let newMp3Url = this.player.nowMp3Url.split(':')[1];
+      xhr.open('GET', newMp3Url, true);
       xhr.responseType = 'blob';
       xhr.onload = function () {
         if (xhr.status === 200) {
