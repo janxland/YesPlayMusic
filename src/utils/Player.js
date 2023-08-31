@@ -470,14 +470,14 @@ export default class {
     return this._getAudioSourceBlobURL(buffer);
   }
   _getAudioSource(track) {
-    if (!track.playable) {
-      return this._getAudioSourceFromUnblockMusic(track) ?? null;
-    }
     return this._getAudioSourceFromCache(String(track.id))
       .then(source => {
         return source ?? this._getAudioSourceFromNetease(track);
       })
       .then(source => {
+        if (!track.playable) {
+          return this._getAudioSourceFromUnblockMusic(track) ?? source;
+        }
         return source ?? this._getAudioSourceFromUnblockMusic(track);
       });
   }
