@@ -13,8 +13,8 @@ module.exports = {
     proxy: {
       '^/api': {
         // target:'http://47.113.184.243:3000/',
-        target: 'https://service-2yza8qsi-1257251314.gz.apigw.tencentcs.com/',
-        // target:'http://127.0.0.1:3000/',
+        // target: 'https://service-2yza8qsi-1257251314.gz.apigw.tencentcs.com/',
+        target:'http://127.0.0.1:3000/',
         changeOrigin: true,
         pathRewrite: {
           '^/api': '/',
