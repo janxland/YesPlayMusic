@@ -50,5 +50,7 @@ export default {
   lastfm: JSON.parse(localStorage.getItem('lastfm')) || {},
   player: JSON.parse(localStorage.getItem('player')),
   settings: JSON.parse(localStorage.getItem('settings')),
+  fontFamilyName: localStorage.getItem('fontFamilyName'),
+  fonts: JSON.parse(localStorage.getItem('fonts')) || [],
   data: JSON.parse(localStorage.getItem('data')),
 };

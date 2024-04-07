@@ -11,6 +11,20 @@ export default {
   changeLang(state, lang) {
     state.settings.lang = lang;
   },
+  changefontFamilyName(state, value) {
+    state.settings.fontFamilyName = value;
+    console.log(state);
+    let fontFamily = state.fonts.find(font => font.name === value);
+    const fontUrl = fontFamily?.href;
+    const fontLink = document.createElement('link');
+    fontLink.setAttribute('rel', 'stylesheet');
+    fontLink.setAttribute('href', fontUrl);
+    document.head.appendChild(fontLink);
+    document.documentElement.style.setProperty(
+      '--globalFont',
+      fontFamily?.import
+    );
+  },
   changeMusicQuality(state, value) {
     state.settings.musicQuality = value;
   },

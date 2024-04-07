@@ -24,6 +24,12 @@
           :style="{ backgroundImage: `url(${bgImageUrl})` }"
         />
       </div>
+      <img
+        v-if="settings.lyricsBackground === true"
+        class="gradient-background slight-move"
+        :style="{ background }"
+        :src="imageUrl"
+      />
       <div
         v-if="settings.lyricsBackground === true"
         class="gradient-background"
@@ -39,13 +45,11 @@
               <div class="cover-container">
                 <img
                   :src="imageUrl"
+                  @contextmenu="changeCover"
                   loading="lazy"
                   onerror="this.src='https://p2.music.126.net/UeTuwE7pvjBpypWLudqukA==/3132508627578625.jpg'; this.onerror=null;"
                 />
-                <div
-                  class="shadow"
-                  :style="{ backgroundImage: `url(${imageUrl})` }"
-                ></div>
+                <img class="shadow" :src="imageUrl" />
               </div>
             </div>
             <div class="controls">
@@ -215,6 +219,38 @@
             </div>
           </div>
         </div>
+        <div class="highlight-lyric">
+          <div
+            class="highlight-lyric-line"
+            v-if="lyricWithTranslation[highlightLyricIndex]"
+            :key="lyricWithTranslation[highlightLyricIndex].contents[0]"
+          >
+            <span
+              class="highlight-lyric-line-char"
+              v-for="(a, index) in lyricWithTranslation[highlightLyricIndex]
+                .contents[0]"
+              :key="index"
+              :char-index="index"
+              :style="{ 'animation-delay': index * 0.02 + 's' }"
+              >{{ a }}</span
+            >
+          </div>
+          <div
+            class="highlight-lyric-line"
+            v-if="lyricWithTranslation[highlightLyricIndex]"
+            :key="lyricWithTranslation[highlightLyricIndex].contents[1]"
+          >
+            <span
+              class="highlight-lyric-line-char"
+              v-for="(a, index) in lyricWithTranslation[highlightLyricIndex]
+                .contents[1]"
+              :style="{ 'animation-delay': index * 0.02 + 's' }"
+              :key="index"
+              :char-index="index"
+              >{{ a }}</span
+            >
+          </div>
+        </div>
         <div class="right-side">
           <transition name="slide-fade">
             <div
@@ -290,6 +326,7 @@ export default {
       tlyric: [],
       highlightLyricIndex: -1,
       minimize: true,
+      resetImageUrl: false,
       background: '',
       date: this.formatTime(new Date()),
     };
@@ -308,6 +345,9 @@ export default {
       },
     },
     imageUrl() {
+      if (this.resetImageUrl) {
+        return this.resetImageUrl;
+      }
       return this.player.currentTrack?.al?.picUrl + '?param=1024y1024';
     },
     bgImageUrl() {
@@ -399,6 +439,11 @@ export default {
   methods: {
     ...mapMutations(['toggleLyrics', 'updateModal']),
     ...mapActions(['likeATrack']),
+    async changeCover() {
+      const pastedText = await navigator.clipboard.readText();
+      this.resetImageUrl = pastedText;
+      this.getCoverColor();
+    },
     initDate() {
       var _this = this;
       clearInterval(this.timer);
@@ -442,6 +487,7 @@ export default {
       this.player.playOrPause();
     },
     playNextTrack() {
+      this.resetImageUrl = false;
       if (this.player.isPersonalFM) {
         this.player.playNextFMTrack();
       } else {
@@ -533,13 +579,18 @@ export default {
     },
     getCoverColor() {
       if (this.settings.lyricsBackground !== true) return;
-      const cover = this.currentTrack.al?.picUrl + '?param=256y256';
+      const cover = this.imageUrl + '?param=256y256';
       Vibrant.from(cover, { colorCount: 1 })
         .getPalette()
         .then(palette => {
           const originColor = Color.rgb(palette.DarkMuted._rgb);
-          const color = originColor.darken(0.1).rgb().string();
-          const color2 = originColor.lighten(0.28).rotate(-30).rgb().string();
+          const color = originColor.darken(0.1).rgb().fade(0.2).string();
+          const color2 = originColor
+            .lighten(0.28)
+            .rotate(-30)
+            .rgb()
+            .fade(0.2)
+            .string();
           this.background = `linear-gradient(to top left, ${color}, ${color2})`;
         });
     },
@@ -557,6 +608,49 @@ export default {
 </script>
 
 <style lang="scss" scoped>
+.highlight-lyric-line-char {
+  opacity: 0;
+  animation-name: bounce-in;
+  animation-duration: 0.5s;
+  animation-fill-mode: forwards;
+}
+
+@keyframes bounce-in {
+  0% {
+    font-weight: 100;
+    opacity: 0;
+    transform: translateX(100%) scale(0.2);
+  }
+  80% {
+    opacity: 0.8;
+    font-weight: 500;
+    transform: translateY(0) scale(1.5);
+  }
+  100% {
+    font-weight: normal;
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+.highlight-lyric {
+  display: flex;
+  flex-direction: column;
+  position: fixed;
+  color: #fff;
+  font-size: 20px;
+  bottom: 20px;
+  user-select: none;
+  white-space: pre;
+  left: 0;
+  width: 100vw;
+}
+.highlight-lyric .highlight-lyric-line {
+  justify-content: center;
+  width: 100%;
+  line-height: 36px height：36px;
+  display: flex;
+  flex-direction: row;
+}
 .lyrics-page {
   position: fixed;
   top: 0;
@@ -625,19 +719,47 @@ export default {
     transform: rotate(360deg);
   }
 }
-
+@keyframes slight-move {
+  0% {
+    transform: scale(1);
+    transform-origin: center;
+  }
+  25% {
+    transform: scale(1.2) translate(-8%, -8%);
+    transform-origin: center;
+  }
+  50% {
+    transform: scale(1.3) translate(0, 0);
+    transform-origin: center;
+  }
+  75% {
+    transform: scale(1.4) translate(8%, 8%);
+    transform-origin: center;
+  }
+  100% {
+    transform: scale(1);
+    transform-origin: center;
+  }
+}
+.slight-move {
+  animation: slight-move 25s infinite;
+}
 .gradient-background {
   position: absolute;
   height: 100vh;
-  width: 100%;
+  width: 100vw;
+  object-fit: cover;
+  background-size: cover !important;
+  background-position: center !important;
+  filter: blur(6px);
+  margin: 0;
 }
 
 .left-side {
   flex: 1;
   display: flex;
   justify-content: flex-end;
-  margin-right: 40px;
-  margin-top: 24px;
+  margin: 80px 0;
   align-items: center;
   transition: all 0.5s;
 
@@ -797,10 +919,11 @@ export default {
 
   .shadow {
     position: absolute;
-    top: 12px;
-    height: 54vh;
-    width: 54vh;
-    filter: blur(16px) opacity(0.6);
+    top: 0;
+    height: 105%;
+    left: 0;
+    width: 105%;
+    filter: blur(14px) opacity(0.8);
     transform: scale(0.92, 0.96);
     z-index: -1;
     background-size: cover;
@@ -809,6 +932,7 @@ export default {
 }
 
 .right-side {
+  margin: 80px 0;
   flex: 1;
   font-weight: 600;
   color: var(--color-text);
@@ -830,7 +954,7 @@ export default {
       padding: 12px 18px;
       transition: 0.5s;
       border-radius: 12px;
-
+      text-align: center;
       &:hover {
         background: var(--color-secondary-bg-for-transparent);
       }
@@ -929,12 +1053,25 @@ export default {
   }
 }
 @media screen and (max-width: 576px) {
+  .gradient-background {
+    filter: blur(5px);
+  }
+  .main-container {
+    display: flex;
+    margin: 30px auto;
+    flex-direction: column;
+    align-items: center;
+  }
+  .highlight-lyric {
+    display: none;
+  }
   .lyrics-container .line .content {
     transform-origin: center !important;
     font-size: 0.8em;
   }
   .left-side {
-    display: none;
+    flex: 4;
+    margin: 0;
   }
   .right-side .lyrics-container {
     text-align: center;
@@ -943,8 +1080,23 @@ export default {
     font-size: 0.8;
     width: 100%;
   }
+  .cover {
+    img {
+      width: 80vw;
+      height: 80vw;
+    }
+  }
+  .left-side .controls {
+    width: 80vw;
+  }
   .right-side {
+    height: 120px;
     margin: 0;
+    .lyrics-container {
+      .line {
+        padding: 5px 18px;
+      }
+    }
   }
 }
 .slide-up-enter-active,

@@ -318,7 +318,8 @@ a.plyr__control::before {
 
 .plyr__menu__container > div {
   overflow: hidden;
-  transition: height 0.35s cubic-bezier(0.4, 0, 0.2, 1),
+  transition:
+    height 0.35s cubic-bezier(0.4, 0, 0.2, 1),
     width 0.35s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
@@ -487,7 +488,9 @@ a.plyr__control::before {
   opacity: 0;
   top: 50%;
   transform: translateY(-50%) scale(0);
-  transition: transform 0.3s ease, opacity 0.3s ease;
+  transition:
+    transform 0.3s ease,
+    opacity 0.3s ease;
   width: 6px;
 }
 
@@ -571,7 +574,9 @@ a.plyr__control::before {
   background: var(--plyr-range-thumb-background, #fff);
   border: 0;
   border-radius: 50%;
-  box-shadow: 0 1px 1px rgba(35, 40, 47, 0.15), 0 0 0 1px rgba(35, 40, 47, 0.2);
+  box-shadow:
+    0 1px 1px rgba(35, 40, 47, 0.15),
+    0 0 0 1px rgba(35, 40, 47, 0.2);
   box-shadow: var(
     --plyr-range-thumb-shadow,
     0 1px 1px rgba(35, 40, 47, 0.15),
@@ -613,7 +618,9 @@ a.plyr__control::before {
   background: var(--plyr-range-thumb-background, #fff);
   border: 0;
   border-radius: 50%;
-  box-shadow: 0 1px 1px rgba(35, 40, 47, 0.15), 0 0 0 1px rgba(35, 40, 47, 0.2);
+  box-shadow:
+    0 1px 1px rgba(35, 40, 47, 0.15),
+    0 0 0 1px rgba(35, 40, 47, 0.2);
   box-shadow: var(
     --plyr-range-thumb-shadow,
     0 1px 1px rgba(35, 40, 47, 0.15),
@@ -682,7 +689,9 @@ a.plyr__control::before {
   background: var(--plyr-range-thumb-background, #fff);
   border: 0;
   border-radius: 50%;
-  box-shadow: 0 1px 1px rgba(35, 40, 47, 0.15), 0 0 0 1px rgba(35, 40, 47, 0.2);
+  box-shadow:
+    0 1px 1px rgba(35, 40, 47, 0.15),
+    0 0 0 1px rgba(35, 40, 47, 0.2);
   box-shadow: var(
     --plyr-range-thumb-shadow,
     0 1px 1px rgba(35, 40, 47, 0.15),
@@ -806,7 +815,9 @@ a.plyr__control::before {
   position: absolute;
   transform: translate(-50%, 10px) scale(0.8);
   transform-origin: 50% 100%;
-  transition: transform 0.2s 0.1s ease, opacity 0.2s 0.1s ease;
+  transition:
+    transform 0.2s 0.1s ease,
+    opacity 0.2s 0.1s ease;
   white-space: nowrap;
   z-index: 2;
 }
@@ -1089,9 +1100,12 @@ a.plyr__control::before {
 }
 
 .plyr--full-ui.plyr--audio input[type='range']:active::-webkit-slider-thumb {
-  box-shadow: 0 1px 1px rgba(35, 40, 47, 0.15), 0 0 0 1px rgba(35, 40, 47, 0.2),
+  box-shadow:
+    0 1px 1px rgba(35, 40, 47, 0.15),
+    0 0 0 1px rgba(35, 40, 47, 0.2),
     0 0 0 3px rgba(35, 40, 47, 0.1);
-  box-shadow: var(
+  box-shadow:
+    var(
       --plyr-range-thumb-shadow,
       0 1px 1px rgba(35, 40, 47, 0.15),
       0 0 0 1px rgba(35, 40, 47, 0.2)
@@ -1101,9 +1115,12 @@ a.plyr__control::before {
 }
 
 .plyr--full-ui.plyr--audio input[type='range']:active::-moz-range-thumb {
-  box-shadow: 0 1px 1px rgba(35, 40, 47, 0.15), 0 0 0 1px rgba(35, 40, 47, 0.2),
+  box-shadow:
+    0 1px 1px rgba(35, 40, 47, 0.15),
+    0 0 0 1px rgba(35, 40, 47, 0.2),
     0 0 0 3px rgba(35, 40, 47, 0.1);
-  box-shadow: var(
+  box-shadow:
+    var(
       --plyr-range-thumb-shadow,
       0 1px 1px rgba(35, 40, 47, 0.15),
       0 0 0 1px rgba(35, 40, 47, 0.2)
@@ -1113,9 +1130,12 @@ a.plyr__control::before {
 }
 
 .plyr--full-ui.plyr--audio input[type='range']:active::-ms-thumb {
-  box-shadow: 0 1px 1px rgba(35, 40, 47, 0.15), 0 0 0 1px rgba(35, 40, 47, 0.2),
+  box-shadow:
+    0 1px 1px rgba(35, 40, 47, 0.15),
+    0 0 0 1px rgba(35, 40, 47, 0.2),
     0 0 0 3px rgba(35, 40, 47, 0.1);
-  box-shadow: var(
+  box-shadow:
+    var(
       --plyr-range-thumb-shadow,
       0 1px 1px rgba(35, 40, 47, 0.15),
       0 0 0 1px rgba(35, 40, 47, 0.2)
@@ -1186,7 +1206,9 @@ a.plyr__control::before {
   padding-top: calc(var(--plyr-control-spacing, 10px) * 2);
   position: absolute;
   right: 0;
-  transition: opacity 0.4s ease-in-out, transform 0.4s ease-in-out;
+  transition:
+    opacity 0.4s ease-in-out,
+    transform 0.4s ease-in-out;
   z-index: 3;
 }
 
@@ -1283,9 +1305,12 @@ a.plyr__control::before {
 }
 
 .plyr--full-ui.plyr--video input[type='range']:active::-webkit-slider-thumb {
-  box-shadow: 0 1px 1px rgba(35, 40, 47, 0.15), 0 0 0 1px rgba(35, 40, 47, 0.2),
+  box-shadow:
+    0 1px 1px rgba(35, 40, 47, 0.15),
+    0 0 0 1px rgba(35, 40, 47, 0.2),
     0 0 0 3px rgba(255, 255, 255, 0.5);
-  box-shadow: var(
+  box-shadow:
+    var(
       --plyr-range-thumb-shadow,
       0 1px 1px rgba(35, 40, 47, 0.15),
       0 0 0 1px rgba(35, 40, 47, 0.2)
@@ -1298,9 +1323,12 @@ a.plyr__control::before {
 }
 
 .plyr--full-ui.plyr--video input[type='range']:active::-moz-range-thumb {
-  box-shadow: 0 1px 1px rgba(35, 40, 47, 0.15), 0 0 0 1px rgba(35, 40, 47, 0.2),
+  box-shadow:
+    0 1px 1px rgba(35, 40, 47, 0.15),
+    0 0 0 1px rgba(35, 40, 47, 0.2),
     0 0 0 3px rgba(255, 255, 255, 0.5);
-  box-shadow: var(
+  box-shadow:
+    var(
       --plyr-range-thumb-shadow,
       0 1px 1px rgba(35, 40, 47, 0.15),
       0 0 0 1px rgba(35, 40, 47, 0.2)
@@ -1313,9 +1341,12 @@ a.plyr__control::before {
 }
 
 .plyr--full-ui.plyr--video input[type='range']:active::-ms-thumb {
-  box-shadow: 0 1px 1px rgba(35, 40, 47, 0.15), 0 0 0 1px rgba(35, 40, 47, 0.2),
+  box-shadow:
+    0 1px 1px rgba(35, 40, 47, 0.15),
+    0 0 0 1px rgba(35, 40, 47, 0.2),
     0 0 0 3px rgba(255, 255, 255, 0.5);
-  box-shadow: var(
+  box-shadow:
+    var(
       --plyr-range-thumb-shadow,
       0 1px 1px rgba(35, 40, 47, 0.15),
       0 0 0 1px rgba(35, 40, 47, 0.2)
@@ -1694,7 +1725,9 @@ a.plyr__control::before {
   position: absolute;
   transform: translate(0, 10px) scale(0.8);
   transform-origin: 50% 100%;
-  transition: transform 0.2s 0.1s ease, opacity 0.2s 0.1s ease;
+  transition:
+    transform 0.2s 0.1s ease,
+    opacity 0.2s 0.1s ease;
   z-index: 2;
 }
 

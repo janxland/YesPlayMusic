@@ -70,7 +70,24 @@
           </select>
         </div>
       </div>
-
+      <h3>字体</h3>
+      <div class="item">
+        <div class="left">
+          <div class="title"> {{ $t('settings.webFont.text') }} </div>
+        </div>
+        <div class="right">
+          <select v-model="fontFamilyName">
+            <option
+              v-for="font in fonts"
+              :key="font.name"
+              :label="font.name"
+              :value="font.name"
+            >
+              <span :style="{ fontFamily: font.import }">{{ font.name }}</span>
+            </option>
+          </select>
+        </div>
+      </div>
       <h3>音质</h3>
       <div class="item">
         <div class="left">
@@ -709,6 +726,7 @@
 </template>
 
 <script>
+/* eslint-disable */
 import { mapState, mapActions } from 'vuex';
 import { isLooseLoggedIn, doLogout } from '@/utils/auth';
 import { auth as lastfmAuth } from '@/api/lastfm';
@@ -747,6 +765,9 @@ export default {
   },
   computed: {
     ...mapState(['player', 'settings', 'data', 'lastfm']),
+    fonts() {
+      return this.$store.state.fonts;
+    },
     isElectron() {
       return process.env.IS_ELECTRON;
     },
@@ -839,6 +860,17 @@ export default {
           value,
         });
         changeAppearance(value);
+      },
+    },
+    fontFamilyName: {
+      get() {
+        return this.settings.fontFamilyName ?? "思源黑体中文";
+      },
+      set(value) {
+        if (value === this.settings.fontFamilyName) return;
+        localStorage.setItem('fontFamilyName', value);
+        this.$store.commit('changefontFamilyName', value);
+        this.clearCache();
       },
     },
     musicQuality: {
@@ -1599,8 +1631,11 @@ input[type='number'] {
   transition: 0.2s cubic-bezier(0.24, 0, 0.5, 1);
 }
 .afterAnimation {
-  box-shadow: 0 0 0 1px hsla(0, 0%, 0%, 0.1), 0 4px 0px 0 hsla(0, 0%, 0%, 0.04),
-    0 4px 9px hsla(0, 0%, 0%, 0.13), 0 3px 3px hsla(0, 0%, 0%, 0.05);
+  box-shadow:
+    0 0 0 1px hsla(0, 0%, 0%, 0.1),
+    0 4px 0px 0 hsla(0, 0%, 0%, 0.04),
+    0 4px 9px hsla(0, 0%, 0%, 0.13),
+    0 3px 3px hsla(0, 0%, 0%, 0.05);
   -webkit-transition: 0.35s cubic-bezier(0.54, 1.6, 0.5, 1);
   transition: 0.35s cubic-bezier(0.54, 1.6, 0.5, 1);
 }
@@ -1641,8 +1676,11 @@ input[type='number'] {
   content: '';
   position: absolute;
   display: block;
-  box-shadow: 0 0 0 1px hsla(0, 0%, 0%, 0.02), 0 4px 0px 0 hsla(0, 0%, 0%, 0.01),
-    0 4px 9px hsla(0, 0%, 0%, 0.08), 0 3px 3px hsla(0, 0%, 0%, 0.03);
+  box-shadow:
+    0 0 0 1px hsla(0, 0%, 0%, 0.02),
+    0 4px 0px 0 hsla(0, 0%, 0%, 0.01),
+    0 4px 9px hsla(0, 0%, 0%, 0.08),
+    0 3px 3px hsla(0, 0%, 0%, 0.03);
   -webkit-transition: 0.35s cubic-bezier(0.54, 1.6, 0.5, 1);
   transition: 0.35s cubic-bezier(0.54, 1.6, 0.5, 1);
   background: #fff;

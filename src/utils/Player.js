@@ -383,8 +383,8 @@ export default class {
     });
   }
   _getAudioSourceFromNetease(track) {
-    if(true){
-    // if (isAccountLoggedIn()) { //不需要只需要登录的情况（个人修改）
+    if (true) {
+      // if (isAccountLoggedIn()) { //不需要只需要登录的情况（个人修改）
       return getMP3(track.id).then(result => {
         if (!result.data[0]) return null;
         if (!result.data[0].url) return null;
@@ -471,14 +471,15 @@ export default class {
     return this._getAudioSourceBlobURL(buffer);
   }
   _getAudioSource(track) {
-    return this._getAudioSourceFromCache(String(track.id))
-      .then(source => {
-        console.debug(
-          `[debug][Player.js] Get Cache 👉 ${track.name} ,url:${source}`
-        );
-        return source ?? this._getAudioSourceFromNetease(track)
-        .then(source => {
-          let finalSource = source ?? this._getAudioSourceFromUnblockMusic(track);
+    return this._getAudioSourceFromCache(String(track.id)).then(source => {
+      console.debug(
+        `[debug][Player.js] Get Cache 👉 ${track.name} ,url:${source}`
+      );
+      return (
+        source ??
+        this._getAudioSourceFromNetease(track).then(source => {
+          let finalSource =
+            source ?? this._getAudioSourceFromUnblockMusic(track);
           console.debug(
             `[debug][Player.js] Get Mp3 From NeteaseAPI/Unblock 👉 ${track.name} ,url:${source}`
           );
@@ -486,8 +487,9 @@ export default class {
             cacheTrackSource(track, source, 128000);
           }
           return finalSource;
-        });;
-      })
+        })
+      );
+    });
   }
   _replaceCurrentTrack(
     id,

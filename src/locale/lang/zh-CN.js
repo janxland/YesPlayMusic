@@ -14,6 +14,7 @@ export default {
     search: '搜索',
     theme: '主题',
     github: 'GitHub 仓库',
+    index: '站长博客',
   },
   home: {
     recommendPlaylist: '推荐歌单',
@@ -136,6 +137,9 @@ export default {
     settings: '设置',
     logout: '登出',
     language: '语言',
+    webFont: {
+      text: '字体选择',
+    },
     musicQuality: {
       text: '音质选择',
       low: '普通',

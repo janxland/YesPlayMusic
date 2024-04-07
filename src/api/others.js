@@ -1,6 +1,6 @@
 import request from '@/utils/request';
 import { mapTrackPlayableStatus } from '@/utils/common';
-
+import axios from 'axios';
 /**
  * 搜索
  * 说明 : 调用此接口 , 传入搜索关键词可以搜索该音乐 / 专辑 / 歌手 / 歌单 / 用户 , 关键词可以多个 , 以空格隔开 ,
@@ -48,5 +48,20 @@ export function fmTrash(id) {
       timestamp: new Date().getTime(),
       id,
     },
+  });
+}
+
+export function flexiSite(id) {
+  return new Promise((resolve, reject) => {
+    axios
+      .get('/api/kv/key-value/query', {
+        params: { id },
+      })
+      .then(res => {
+        resolve(res.data);
+      })
+      .catch(err => {
+        reject(err);
+      });
   });
 }

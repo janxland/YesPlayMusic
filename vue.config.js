@@ -11,13 +11,13 @@ module.exports = {
     disableHostCheck: true,
     port: process.env.DEV_SERVER_PORT || 8080,
     proxy: {
-      '^/api': {
-        // target:'http://47.113.184.243:3000/',
+      '/api': {
+        target: 'https://music.roginx.ink/api',
         // target: 'https://service-2yza8qsi-1257251314.gz.apigw.tencentcs.com/',
-        target:'http://127.0.0.1:3000/',
+        // target:'http://127.0.0.1:3000/',
         changeOrigin: true,
         pathRewrite: {
-          '^/api': '/',
+          '/api': '',
         },
       },
     },

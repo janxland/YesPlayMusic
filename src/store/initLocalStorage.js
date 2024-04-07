@@ -12,6 +12,7 @@ let localStorage = {
     lang: null,
     musicLanguage: 'all',
     appearance: 'auto',
+    fontFamilyName: '思源黑体中文',
     musicQuality: 320000,
     lyricFontSize: 28,
     outputDevice: 'default',

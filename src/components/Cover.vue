@@ -163,7 +163,7 @@ img {
   top: 12px;
   height: 100%;
   width: 100%;
-  filter: blur(16px) opacity(0.6);
+  filter: blur(16px) opacity(0.8);
   transform: scale(0.92, 0.96);
   z-index: -1;
   background-size: cover;
