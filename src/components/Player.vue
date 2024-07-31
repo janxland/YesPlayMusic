@@ -73,6 +73,11 @@
             @click.native="Download"
             ><svg-icon icon-class="download"
           /></button-icon>
+          <button-icon
+            style="display: inline-block; vertical-align: middle"
+            @click.native="player.loadLocalMusic()"
+            ><svg-icon icon-class="upload"
+          /></button-icon>
         </div>
         <div class="blank"></div>
       </div>
@@ -252,6 +257,7 @@ export default {
     hasList() {
       return hasListSource();
     },
+    /* eslint-disable */
     Download() {
       const { name, ar } = this.currentTrack;
       const newMp3Url = this.player.nowMp3Url.split(':')[1];

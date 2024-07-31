@@ -68,19 +68,9 @@
 
 #app,
 input {
-  font-family:
-    var(--globalFont),
-    ui-sans-serif,
-    system-ui,
-    -apple-system,
-    BlinkMacSystemFont,
-    Helvetica Neue,
-    PingFang SC,
-    Microsoft YaHei,
-    Source Han Sans SC,
-    Noto Sans CJK SC,
-    WenQuanYi Micro Hei,
-    sans-serif,
+  font-family: var(--globalFont), ui-sans-serif, system-ui, -apple-system,
+    BlinkMacSystemFont, Helvetica Neue, PingFang SC, Microsoft YaHei,
+    Source Han Sans SC, Noto Sans CJK SC, WenQuanYi Micro Hei, sans-serif,
     microsoft uighur;
 }
 body {

@@ -3,9 +3,9 @@
   <head>
     <meta charset="utf-8" />
     <meta http-equiv="X-UA-Compatible" content="IE=edge" />
-    <!-- <meta name="referrer" content="no-referrer" /> -->
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link rel="icon" href="<%= BASE_URL %>favicon.ico" />
+    <meta name="force-rendering" content="webkit"/>
     <script src="https://hm.baidu.com/hm.js?4897a1b613242bbdf2413af83d2341dc"></script>
     <title> <%= htmlWebpackPlugin.options.title %> </title>
   </head>
@@ -19,5 +19,6 @@
       >
     </noscript>
     <div id="app"></div>
+    <script src="https://cdn.bootcdn.net/ajax/libs/jsmediatags/3.9.5/jsmediatags.min.js"></script>
   </body>
 </html>

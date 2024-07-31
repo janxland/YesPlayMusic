@@ -30,6 +30,7 @@
         :style="{ background }"
         :src="imageUrl"
       />
+      <Visualization :option="{}" ref="visualization"></Visualization>
       <div
         v-if="settings.lyricsBackground === true"
         class="gradient-background"
@@ -251,7 +252,12 @@
             >
           </div>
         </div>
-        <div class="right-side">
+        <div
+          class="right-side"
+          :style="{
+            transform: `perspective(${$store.state.visualSet.perspective}px) rotateY(${$store.state.visualSet.rotateY}deg)`,
+          }"
+        >
           <transition name="slide-fade">
             <div
               v-show="!noLyric"
@@ -300,6 +306,7 @@
 <script>
 // The lyrics page of Apple Music is so gorgeous, so I copy the design.
 // Some of the codes are from https://github.com/sl1673495/vue-netease-music
+/* eslint-disable */
 
 import { mapState, mapMutations, mapActions } from 'vuex';
 import VueSlider from 'vue-slider-component';
@@ -307,17 +314,18 @@ import { formatTrackTime } from '@/utils/common';
 import { getLyric } from '@/api/track';
 import { lyricParser } from '@/utils/lyrics';
 import ButtonIcon from '@/components/ButtonIcon.vue';
+import Visualization from '@/components/Visualization';
 import * as Vibrant from 'node-vibrant/dist/vibrant.worker.min.js';
 import Color from 'color';
 import { isAccountLoggedIn } from '@/utils/auth';
 import { hasListSource, getListSourcePath } from '@/utils/playList';
 import locale from '@/locale';
-
 export default {
   name: 'Lyrics',
   components: {
     VueSlider,
     ButtonIcon,
+    Visualization,
   },
   data() {
     return {
@@ -428,6 +436,9 @@ export default {
     this.getCoverColor();
     this.initDate();
   },
+  beforeDestroy() {
+    clearInterval(this.lyricsInterval);
+  },
   beforeDestroy: function () {
     if (this.timer) {
       clearInterval(this.timer);
@@ -441,6 +452,16 @@ export default {
     ...mapActions(['likeATrack']),
     async changeCover() {
       const pastedText = await navigator.clipboard.readText();
+      const isLink = text => {
+        try {
+          return !!new URL(text);
+        } catch (error) {
+          return false;
+        }
+      };
+      if (!isLink(pastedText)) {
+        return;
+      }
       this.resetImageUrl = pastedText;
       this.getCoverColor();
     },
@@ -584,12 +605,12 @@ export default {
         .getPalette()
         .then(palette => {
           const originColor = Color.rgb(palette.DarkMuted._rgb);
-          const color = originColor.darken(0.1).rgb().fade(0.2).string();
+          const color = originColor.darken(0.1).rgb().fade(0.28).string();
           const color2 = originColor
             .lighten(0.28)
             .rotate(-30)
             .rgb()
-            .fade(0.2)
+            .fade(0.4)
             .string();
           this.background = `linear-gradient(to top left, ${color}, ${color2})`;
         });
@@ -619,17 +640,17 @@ export default {
   0% {
     font-weight: 100;
     opacity: 0;
-    transform: translateX(100%) scale(0.2);
+    // transform: translateX(100%) scale(0.2);
   }
   80% {
     opacity: 0.8;
     font-weight: 500;
-    transform: translateY(0) scale(1.5);
+    // transform: translateY(0) scale(1.5);
   }
   100% {
     font-weight: normal;
     opacity: 1;
-    transform: translateY(0) scale(1);
+    // transform: translateY(0) scale(1);
   }
 }
 .highlight-lyric {

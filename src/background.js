@@ -280,9 +280,7 @@ class Background {
         })
         .then(result => {
           if (result.response === 0) {
-            shell.openExternal(
-              'https://github.com/qier222/YesPlayMusic'
-            );
+            shell.openExternal('https://github.com/qier222/YesPlayMusic');
           }
         });
     };

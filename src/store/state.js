@@ -53,4 +53,8 @@ export default {
   fontFamilyName: localStorage.getItem('fontFamilyName'),
   fonts: JSON.parse(localStorage.getItem('fonts')) || [],
   data: JSON.parse(localStorage.getItem('data')),
+  visualSet: {
+    perspective: 1000,
+    rotateY: 0,
+  },
 };

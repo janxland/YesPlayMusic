@@ -36,7 +36,6 @@ Vue.use(
   router
 );
 Vue.config.productionTip = false;
-
 NProgress.configure({ showSpinner: false, trickleSpeed: 100 });
 dailyTask();
 

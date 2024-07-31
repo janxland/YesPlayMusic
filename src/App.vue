@@ -82,6 +82,7 @@ export default {
     },
   },
   created() {
+    // 创建音频上下文
     if (this.isElectron) ipcRenderer(this);
     window.addEventListener('keydown', this.handleKeydown);
     this.fetchData();
@@ -90,7 +91,6 @@ export default {
         let settings = JSON.parse(res.result[0].value);
         console.log(settings);
         localStorage.setItem('fonts', JSON.stringify(settings.fonts));
-        console.log(this.$store.state);
         this.loadFont(
           localStorage.getItem('fontFamilyName') || settings.fonts[2].name
         );

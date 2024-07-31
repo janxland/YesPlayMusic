@@ -14,7 +14,6 @@ import shuffle from 'lodash/shuffle';
 import { decode as base642Buffer } from '@/utils/base64';
 
 const PLAY_PAUSE_FADE_DURATION = 200;
-
 /**
  * @readonly
  * @enum {string}
@@ -324,11 +323,13 @@ export default class {
     this._howler = new Howl({
       src: [source],
       html5: true,
+      crossOrigin: 'anonymous',
       preload: true,
       format: ['mp3', 'flac'],
       onend: () => {
         this._nextTrackCallback();
       },
+      onload: () => {},
     });
 
     this._howler.on('loaderror', (_, errCode) => {
@@ -985,5 +986,40 @@ export default class {
   }
   removeTrackFromQueue(index) {
     this._playNextList.splice(index, 1);
+  }
+  loadLocalMusic() {
+    /* eslint-disable */
+    const fileInput = document.createElement('input');
+    fileInput.type = 'file';
+    fileInput.style.display = 'none';
+    let that = this;
+    fileInput.addEventListener(
+      'change',
+      function (event) {
+        const file = event.target.files[0];
+        if (file) {
+          const reader = new FileReader();
+          reader.onload = function (event) {
+            const arrayBuffer = event.target.result;
+            const blob = new Blob([arrayBuffer]);
+            const url = URL.createObjectURL(blob);
+            jsmediatags.read(file, {
+              onSuccess: function (tag) {
+                console.log(tag); // 音乐名称E
+              },
+              onError: function (error) {
+                console.log(':(', error.type, error.info);
+                console.log(file.name.split('.')[0]);
+              },
+            });
+            that._playAudioSource(url, true);
+          };
+
+          reader.readAsArrayBuffer(file);
+        }
+      },
+      false
+    );
+    fileInput.click();
   }
 }
