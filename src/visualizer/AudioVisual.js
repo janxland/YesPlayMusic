@@ -115,7 +115,7 @@ export class AudioVisual {
     console.log(kickEnergy);
     circleRadius += kickEnergy * circleEdge * 1.618;
     for (let i = 0; i < bufferLength; i++) {
-      if(i < 60 ) continue
+      if (i < 60) continue;
       let value = buffer[i];
       if (i % (circleSplit || 3) != 0) continue;
       let angle = (Math.PI * (i * 1)) / 180; // 计算角度

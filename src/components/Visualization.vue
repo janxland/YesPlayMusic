@@ -232,7 +232,7 @@ export default {
     },
   },
   mounted() {
-    this.bindDrag(this.$refs.handleRange)
+    this.bindDrag(this.$refs.handleRange);
   },
   methods: {
     openVisualizer() {
@@ -264,7 +264,7 @@ export default {
     },
     bindDrag(el) {
       let thi = this;
-      const bind = (el)=> {
+      const bind = el => {
         let setPos = {
           x: 0,
           y: 0,
@@ -280,8 +280,8 @@ export default {
           };
           setPos.x += d.dX;
           setPos.y += d.dY;
-          thi.defaultSetting.centerX += d.dX/1000;
-          thi.defaultSetting.centerY += d.dY/1000;
+          thi.defaultSetting.centerX += d.dX / 1000;
+          thi.defaultSetting.centerY += d.dY / 1000;
           // el.style.transform = `translate(${setPos.x}px,${setPos.y}px)`;
           lastPos.x = curPos.x;
           lastPos.y = curPos.y;
@@ -312,9 +312,9 @@ export default {
           document.removeEventListener('mousemove', mouseMove);
           document.removeEventListener('mouseup', mouseUp);
         }
-      }
-      bind(el)
-    }
+      };
+      bind(el);
+    },
   },
 };
 </script>
