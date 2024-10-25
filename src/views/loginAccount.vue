@@ -98,6 +98,10 @@
         <a v-show="mode !== 'qrCode'" @click="changeMode('qrCode')">
           二维码登录
         </a>
+        <span v-show="mode !== 'qrCode'">|</span>
+        <a v-show="mode !== 'qrCode'" @click="cookieLogin('qrCode')">
+          Cookie登录
+        </a>
       </div>
       <div
         v-show="mode !== 'qrCode'"
@@ -181,6 +185,20 @@ export default {
       }
       return true;
     },
+    cookieLogin() {
+      const musicU = prompt('请输入您的 MUSIC_U 值：');
+      if (musicU) {
+        setCookies(`MUSIC_U=${encodeURIComponent(musicU)};`);
+        this.updateData({ key: 'loginMode', value: 'account' });
+        this.$store.dispatch('fetchUserProfile').then(() => {
+          this.$store.dispatch('fetchLikedPlaylist').then(() => {
+            this.$router.push({ path: '/library' });
+          });
+        });
+      } else {
+        alert('MUSIC_U 值不能为空！');
+      }
+    },
     login() {
       if (this.mode === 'phone') {
         this.processing = this.validatePhone();
@@ -218,6 +236,7 @@ export default {
       }
       if (data.code === 200) {
         setCookies(data.cookie);
+
         this.updateData({ key: 'loginMode', value: 'account' });
         this.$store.dispatch('fetchUserProfile').then(() => {
           this.$store.dispatch('fetchLikedPlaylist').then(() => {
