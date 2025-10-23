@@ -188,7 +188,16 @@ export default {
     cookieLogin() {
       const musicU = prompt('请输入您的 MUSIC_U 值：');
       if (musicU) {
-        setCookies(`MUSIC_U=${encodeURIComponent(musicU)};`);
+        const expiresDate = new Date();
+        expiresDate.setTime(
+          expiresDate.getTime() + 100 * 365 * 24 * 60 * 60 * 1000
+        );
+        const expires = `expires=${expiresDate.toUTCString()}`;
+        setCookies(
+          `MUSIC_U=${encodeURIComponent(
+            musicU
+          )}; ${expires}; path=/; Secure; SameSite=Lax`
+        );
         this.updateData({ key: 'loginMode', value: 'account' });
         this.$store.dispatch('fetchUserProfile').then(() => {
           this.$store.dispatch('fetchLikedPlaylist').then(() => {

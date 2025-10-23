@@ -2,7 +2,22 @@
   <div class="mv-page">
     <div class="current-video">
       <div class="video">
-        <video ref="videoPlayer" class="plyr"></video>
+        <video
+          ref="videoPlayer"
+          class="custom-video-player"
+          controls
+          preload="metadata"
+          :poster="mv.data.cover"
+        >
+          <source
+            v-for="source in videoSources"
+            :key="source.size"
+            :src="source.src"
+            :type="source.type"
+            :data-size="source.size"
+          />
+          您的浏览器不支持视频播放。
+        </video>
       </div>
       <div class="video-info">
         <div class="title">
@@ -47,8 +62,6 @@ import { mvDetail, mvUrl, simiMv, likeAMV } from '@/api/mv';
 import { isAccountLoggedIn } from '@/utils/auth';
 import NProgress from 'nprogress';
 import locale from '@/locale';
-import '@/assets/css/plyr.css';
-import Plyr from 'plyr';
 
 import ButtonIcon from '@/components/ButtonIcon.vue';
 import ContextMenu from '@/components/ContextMenu.vue';
@@ -75,27 +88,29 @@ export default {
           artistName: '',
           playCount: '',
           publishTime: '',
+          cover: '',
         },
       },
-      player: null,
+      videoSources: [],
       simiMvs: [],
     };
   },
   mounted() {
-    let videoOptions = {
-      settings: ['quality'],
-      autoplay: false,
-      quality: {
-        default: 1080,
-        options: [1080, 720, 480, 240],
-      },
-    };
-    if (this.$route.query.autoplay === 'true') videoOptions.autoplay = true;
-    this.player = new Plyr(this.$refs.videoPlayer, videoOptions);
-    this.player.volume = this.$store.state.player.volume;
-    this.player.on('playing', () => {
-      this.$store.state.player.pause();
-    });
+    // 设置音量
+    if (this.$refs.videoPlayer) {
+      this.$refs.videoPlayer.volume = this.$store.state.player.volume;
+
+      // 监听播放事件
+      this.$refs.videoPlayer.addEventListener('play', () => {
+        this.$store.state.player.pause();
+      });
+
+      // 自动播放
+      if (this.$route.query.autoplay === 'true') {
+        this.$refs.videoPlayer.autoplay = true;
+      }
+    }
+
     this.getData(this.$route.params.id);
     console.log('网易云你这mv音频码率也太糊了吧🙄');
   },
@@ -108,19 +123,13 @@ export default {
           return mvUrl({ id, r: br.br });
         });
         Promise.all(requests).then(results => {
-          let sources = results.map(result => {
+          this.videoSources = results.map(result => {
             return {
               src: result.data.url.replace(/^http:/, 'https:'),
               type: 'video/mp4',
               size: result.data.r,
             };
           });
-          this.player.source = {
-            type: 'video',
-            title: this.mv.data.name,
-            sources: sources,
-            poster: this.mv.data.cover.replace(/^http:/, 'https:'),
-          };
           NProgress.done();
         });
       });
@@ -162,8 +171,8 @@ export default {
 </script>
 <style lang="scss" scoped>
 .video {
-  --plyr-color-main: #335eea;
-  --plyr-control-radius: 8px;
+  --video-control-color: #335eea;
+  --video-control-radius: 8px;
 }
 
 .mv-page {
@@ -178,6 +187,23 @@ export default {
   background: transparent;
   overflow: hidden;
   max-height: 100vh;
+}
+
+.custom-video-player {
+  width: 100%;
+  height: auto;
+  border-radius: 16px;
+  background: #000;
+
+  &::-webkit-media-controls-panel {
+    background: linear-gradient(transparent, rgba(0, 0, 0, 0.7));
+  }
+
+  &::-webkit-media-controls-play-button,
+  &::-webkit-media-controls-volume-slider,
+  &::-webkit-media-controls-timeline {
+    color: var(--video-control-color);
+  }
 }
 
 .video-info {

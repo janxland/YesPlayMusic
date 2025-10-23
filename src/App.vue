@@ -88,7 +88,7 @@ export default {
     this.fetchData();
     flexiSite(2).then(res => {
       if (res.code === 200) {
-        let settings = JSON.parse(res.result[0].value);
+        let settings = res.data.value;
         console.log(settings);
         localStorage.setItem('fonts', JSON.stringify(settings.fonts));
         this.loadFont(
