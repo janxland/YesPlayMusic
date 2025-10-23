@@ -113,6 +113,8 @@ export default {
     pause: 'Pause',
     mute: 'Mute',
     nextUp: 'Next Up',
+    translationLyric: 'lyric (trans)',
+    PronunciationLyric: 'lyric (pronounce)',
   },
   modal: {
     close: 'Close',
@@ -130,6 +132,17 @@ export default {
     settings: 'Settings',
     logout: 'LOGOUT',
     language: 'Languages',
+    lyric: 'Lyric',
+    others: 'Others',
+    customization: 'Customization',
+    MusicGenrePreference: {
+      text: 'Music Language Preference',
+      none: 'No preferences',
+      mandarin: 'Mandarin',
+      western: 'Europe & America',
+      korean: 'Korean',
+      japanese: 'Japanese',
+    },
     musicQuality: {
       text: 'Music Quality',
       low: 'Low',
@@ -180,6 +193,13 @@ export default {
       exit: 'Exit',
       minimizeToTray: 'Minimize to tray',
     },
+    enableOsdlyricsSupport: {
+      title: 'desktop lyrics support',
+      desc1:
+        'Only takes effect under Linux. After enabled, it downloads the lyrics file to the local, and tries to launch OSDLyrics at startup.',
+      desc2:
+        'Please ensure that you have installed OSDLyrics before turning on this.',
+    },
     unm: {
       enable: 'Enable',
       audioSource: {
@@ -224,6 +244,8 @@ export default {
     minePlaylists: 'My Playlists',
     likedPlaylists: 'Liked Playlists',
     cardiacMode: 'Cardiac Mode',
+    copyLyric: 'Copy Lyric',
+    copyLyricWithTranslation: 'Copy Lyric With Translation',
   },
   toast: {
     savedToPlaylist: 'Saved to playlist',

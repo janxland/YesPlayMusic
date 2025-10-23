@@ -226,6 +226,13 @@ export default {
         : '';
     },
   },
+  mounted() {
+    this.setupMediaControls();
+    window.addEventListener('keydown', this.handleKeydown);
+  },
+  beforeDestroy() {
+    window.removeEventListener('keydown', this.handleKeydown);
+  },
   methods: {
     ...mapMutations(['toggleLyrics']),
     ...mapActions(['showToast', 'likeATrack']),
@@ -299,6 +306,39 @@ export default {
     },
     mute() {
       this.player.mute();
+    },
+
+    setupMediaControls() {
+      if ('mediaSession' in navigator) {
+        navigator.mediaSession.setActionHandler('play', () => {
+          this.playOrPause();
+        });
+        navigator.mediaSession.setActionHandler('pause', () => {
+          this.playOrPause();
+        });
+        navigator.mediaSession.setActionHandler('previoustrack', () => {
+          this.playPrevTrack();
+        });
+        navigator.mediaSession.setActionHandler('nexttrack', () => {
+          this.playNextTrack();
+        });
+      }
+    },
+
+    handleKeydown(event) {
+      switch (event.code) {
+        case 'MediaPlayPause':
+          this.playOrPause();
+          break;
+        case 'MediaTrackPrevious':
+          this.playPrevTrack();
+          break;
+        case 'MediaTrackNext':
+          this.playNextTrack();
+          break;
+        default:
+          break;
+      }
     },
   },
 };

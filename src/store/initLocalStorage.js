@@ -24,6 +24,7 @@ let localStorage = {
     nyancatStyle: true,
     showLyricsTranslation: true,
     lyricsBackground: true,
+    enableOsdlyricsSupport: false,
     closeAppOption: 'ask',
     enableDiscordRichPresence: false,
     enableGlobalShortcut: true,
@@ -36,6 +37,8 @@ let localStorage = {
       server: '',
       port: null,
     },
+    enableRealIP: false,
+    realIP: null,
     shortcuts: shortcuts,
   },
   data: {

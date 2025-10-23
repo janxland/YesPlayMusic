@@ -2,19 +2,19 @@
   <div>
     <div ref="visualizer-container" class="visualizer-container">
       <div class="settings-container">
-        <div class="settings-bookstrap" ref="handleRange">></div>
+        <div ref="handleRange" class="settings-bookstrap">></div>
         <div class="top-open-visualizer">
           <span class="label-text">打开可视化</span>
           <label class="switch" @click.prevent="openVisualizer()">
-            <input type="checkbox" v-model="switchOpenVisualizer" />
+            <input v-model="switchOpenVisualizer" type="checkbox" />
             <span class="slider"></span>
           </label>
         </div>
         <div class="setting-item">
           <span>样式：</span>
           <input
-            type="range"
             v-model="defaultSetting.type"
+            type="range"
             min="0"
             max="1"
             step="1"
@@ -23,8 +23,8 @@
         <div class="setting-item">
           <span>fftSize：</span>
           <input
-            type="range"
             v-model="defaultSetting.fftSize"
+            type="range"
             :min="Math.log2(32)"
             :max="Math.log2(4096)"
             step="1"
@@ -33,8 +33,8 @@
         <div class="setting-item">
           <span>中心 X 值：</span>
           <input
-            type="range"
             v-model="defaultSetting.centerX"
+            type="range"
             min="0"
             max="1"
             step="0.01"
@@ -43,8 +43,8 @@
         <div class="setting-item">
           <span>中心 Y 值：</span>
           <input
-            type="range"
             v-model="defaultSetting.centerY"
+            type="range"
             min="0"
             max="1"
             step="0.01"
@@ -53,8 +53,8 @@
         <div class="setting-item">
           <span>歌词透视深度：</span>
           <input
-            type="range"
             v-model="$store.state.visualSet.perspective"
+            type="range"
             min="100"
             max="1000"
             step="50"
@@ -63,8 +63,8 @@
         <div class="setting-item">
           <span>歌词透视方向</span>
           <input
-            type="range"
             v-model="$store.state.visualSet.rotateY"
+            type="range"
             min="-180"
             max="180"
             step="1"
@@ -73,8 +73,8 @@
         <div class="setting-item">
           <span>线宽：</span>
           <input
-            type="range"
             v-model="defaultSetting.lineWidth"
+            type="range"
             min="1"
             max="15"
             step="1"
@@ -83,8 +83,8 @@
         <div class="setting-item">
           <span>线间距：</span>
           <input
-            type="range"
             v-model="defaultSetting.lineSpacing"
+            type="range"
             min="0.1"
             max="10"
             step="0.1"
@@ -92,57 +92,57 @@
         </div>
         <div class="setting-item">
           <span>线条颜色：</span>
-          <input type="color" v-model="defaultSetting.lineColor" />
+          <input v-model="defaultSetting.lineColor" type="color" />
         </div>
         <div class="setting-item">
           <span>阴影颜色：</span>
-          <input type="color" v-model="defaultSetting.shadowColor" />
+          <input v-model="defaultSetting.shadowColor" type="color" />
         </div>
         <div class="setting-item">
           <span>阴影模糊：</span>
           <input
-            type="range"
             v-model="defaultSetting.shadowBlur"
+            type="range"
             min="1"
             max="10"
             step="1"
           />
         </div>
-        <div class="setting-item" v-if="defaultSetting.type === 1">
+        <div v-if="defaultSetting.type === 1" class="setting-item">
           <span>半径（环形）：</span>
           <input
-            type="range"
             v-model="defaultSetting.circleRadius"
+            type="range"
             min="10"
             max="500"
             step="10"
           />
         </div>
-        <div class="setting-item" v-if="defaultSetting.type === 1">
+        <div v-if="defaultSetting.type === 1" class="setting-item">
           <span>分割数（环形）：</span>
           <input
-            type="range"
             v-model="defaultSetting.circleSplit"
+            type="range"
             min="1"
             max="30"
             step="1"
           />
         </div>
-        <div class="setting-item" v-if="defaultSetting.type === 1">
+        <div v-if="defaultSetting.type === 1" class="setting-item">
           <span>循环数（环形）：</span>
           <input
-            type="range"
             v-model="defaultSetting.circleRange"
+            type="range"
             min="60"
             max="1080"
             step="30"
           />
         </div>
-        <div class="setting-item" v-if="defaultSetting.type === 1">
+        <div v-if="defaultSetting.type === 1" class="setting-item">
           <span>边缘倍数（环形）：</span>
           <input
-            type="range"
             v-model="defaultSetting.circleEdge"
+            type="range"
             min="0.1"
             max="1.5"
             step="0.1"
@@ -150,13 +150,13 @@
         </div>
         <div class="setting-item">
           <span>线头类型：</span>
-          <input type="checkbox" v-model="defaultSetting.isRound" />
+          <input v-model="defaultSetting.isRound" type="checkbox" />
         </div>
       </div>
       <canvas
+        v-show="switchOpenVisualizer"
         id="visualizer-canvas"
         ref="canvas"
-        v-show="switchOpenVisualizer"
       ></canvas>
     </div>
   </div>

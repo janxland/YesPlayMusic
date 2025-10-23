@@ -7,16 +7,19 @@
       <div class="title">{{ $t('login.loginText') }}</div>
       <div class="section-2">
         <div v-show="mode === 'phone'" class="input-box">
-          <div class="container" :class="{ active: inputFocus === 'phone' }">
+          <div
+            class="container"
+            :class="{ active: ['phone', 'countryCode'].includes(inputFocus) }"
+          >
             <svg-icon icon-class="mobile" />
             <div class="inputs">
               <input
                 id="countryCode"
                 v-model="countryCode"
                 :placeholder="
-                  inputFocus === 'phone' ? '' : $t('login.countryCode')
+                  inputFocus === 'countryCode' ? '' : $t('login.countryCode')
                 "
-                @focus="inputFocus = 'phone'"
+                @focus="inputFocus = 'countryCode'"
                 @blur="inputFocus = ''"
                 @keyup.enter="login"
               />
@@ -289,6 +292,8 @@ export default {
       });
     },
     checkQrCodeLogin() {
+      // 清除二维码检测
+      clearInterval(this.qrCodeCheckInterval);
       this.qrCodeCheckInterval = setInterval(() => {
         if (this.qrCodeKey === '') return;
         loginQrCodeCheck(this.qrCodeKey).then(result => {

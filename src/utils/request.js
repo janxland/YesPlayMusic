@@ -32,8 +32,15 @@ service.interceptors.request.use(function (config) {
     config.params.realIP = '211.161.244.70';
   }
 
+  // Force real_ip
+  const enableRealIP = JSON.parse(
+    localStorage.getItem('settings')
+  ).enableRealIP;
+  const realIP = JSON.parse(localStorage.getItem('settings')).realIP;
   if (process.env.VUE_APP_REAL_IP) {
     config.params.realIP = process.env.VUE_APP_REAL_IP;
+  } else if (enableRealIP) {
+    config.params.realIP = realIP;
   }
 
   const proxy = JSON.parse(localStorage.getItem('settings')).proxyConfig;
@@ -51,8 +58,16 @@ service.interceptors.response.use(
   },
   async error => {
     /** @type {import('axios').AxiosResponse | null} */
-    const response = error.response;
-    const data = response.data;
+    let response;
+    let data;
+    if (error === 'TypeError: baseURL is undefined') {
+      response = error;
+      data = error;
+      console.error("You must set up the baseURL in the service's config");
+    } else if (error.response) {
+      response = error.response;
+      data = response.data;
+    }
 
     if (
       response &&
