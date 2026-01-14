@@ -111,9 +111,16 @@ export default {
         font => font.name === fontFamily
       );
       const fontUrl = fontFamily?.href;
+      if (!fontUrl) return;
+
+      // 使用 media="print" 技巧避免阻塞渲染，加载完成后切换为 all
       const fontLink = document.createElement('link');
       fontLink.setAttribute('rel', 'stylesheet');
       fontLink.setAttribute('href', fontUrl);
+      fontLink.setAttribute('media', 'print');
+      fontLink.onload = function () {
+        this.media = 'all';
+      };
       document.head.appendChild(fontLink);
       document.documentElement.style.setProperty(
         '--globalFont',
