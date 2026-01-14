@@ -7,7 +7,17 @@
     <link rel="icon" href="<%= BASE_URL %>favicon.ico" />
     <meta name="force-rendering" content="webkit"/>
     <script defer src="https://hm.baidu.com/hm.js?4897a1b613242bbdf2413af83d2341dc"></script>
-    <script async src="https://edu.roginx.ink/api/tracking/script.js" data-tracking-id="track_5d6c1bc7890344e6957c2209313067d7" data-debug="true"></script>
+    <script>
+      // 只在 *.roginx.ink 域名下加载埋点脚本，避免本地开发环境加载
+      if (window.location.hostname.endsWith('.roginx.ink') || window.location.hostname === 'roginx.ink') {
+        var trackingScript = document.createElement('script');
+        trackingScript.async = true;
+        trackingScript.src = 'https://edu.roginx.ink/api/tracking/script.js';
+        trackingScript.setAttribute('data-tracking-id', 'track_5d6c1bc7890344e6957c2209313067d7');
+        trackingScript.setAttribute('data-debug', 'true');
+        document.head.appendChild(trackingScript);
+      }
+    </script>
     <title> <%= htmlWebpackPlugin.options.title %> </title>
   </head>
   
