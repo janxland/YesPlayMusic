@@ -1,5 +1,5 @@
 <template>
-  <div class="player" @click="toggleLyrics">
+  <div class="player" @click="handleClick" @mousedown="handleMouseDown">
     <div
       class="progress-bar"
       :class="{
@@ -204,6 +204,11 @@ export default {
     ButtonIcon,
     VueSlider,
   },
+  data() {
+    return {
+      mouseDownTarget: null,
+    };
+  },
   computed: {
     ...mapState(['player', 'settings', 'data']),
     currentTrack() {
@@ -236,6 +241,14 @@ export default {
   methods: {
     ...mapMutations(['toggleLyrics']),
     ...mapActions(['showToast', 'likeATrack']),
+    handleClick(event) {
+      if (event.target == this.mouseDownTarget) {
+        this.toggleLyrics();
+      }
+    },
+    handleMouseDown(event) {
+      this.mouseDownTarget = event.target;
+    },
     playPrevTrack() {
       this.player.playPrevTrack();
     },
