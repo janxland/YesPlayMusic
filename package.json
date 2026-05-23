@@ -17,7 +17,7 @@
     "electron:serve": "set NODE_OPTIONS=--openssl-legacy-provider && vue-cli-service electron:serve",
     "electron:buildicon": "electron-icon-builder --input=./build/icons/icon.png --output=build --flatten",
     "electron:publish": "set NODE_OPTIONS=--openssl-legacy-provider && vue-cli-service electron:build -mwl -p always",
-    "postinstall": "electron-builder install-app-deps && node scripts/postinstall-hook.js",
+    "postinstall": "node scripts/postinstall-hook.js",
     "postuninstall": "electron-builder install-app-deps",
     "electron:extract": "node scripts/electron-auto-extract.js",
     "electron:fix": "node scripts/electron-auto-extract.js",
