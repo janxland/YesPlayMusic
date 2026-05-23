@@ -20,7 +20,6 @@
     "postinstall": "node scripts/postinstall-hook.js",
     "postuninstall": "electron-builder install-app-deps",
     "electron:extract": "node scripts/electron-auto-extract.js",
-    "electron:fix": "node scripts/electron-auto-extract.js",
     "prettier": "npx prettier --write ./src",
     "prettier:check": "npx prettier --check ./src",
     "prettier:all": "npx prettier --write .",
