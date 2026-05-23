@@ -1,0 +1,4 @@
+{
+  "type": "module",
+  "//": "Local scope marker — lets Node treat visualizer/*.js as native ESM during unit tests. Webpack/Babel ignore this field and continue using their own module resolution."
+}

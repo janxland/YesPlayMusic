@@ -1,26 +1,35 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta http-equiv="X-UA-Compatible" content="IE=edge" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link rel="icon" href="<%= BASE_URL %>favicon.ico" />
-    <meta name="force-rendering" content="webkit"/>
-    <script defer src="https://hm.baidu.com/hm.js?4897a1b613242bbdf2413af83d2341dc"></script>
+    <meta name="force-rendering" content="webkit" />
+    <script
+      defer
+      src="https://hm.baidu.com/hm.js?4897a1b613242bbdf2413af83d2341dc"
+    ></script>
     <script>
       // 只在 *.roginx.ink 域名下加载埋点脚本，避免本地开发环境加载
-      if (window.location.hostname.endsWith('.roginx.ink') || window.location.hostname === 'roginx.ink') {
+      if (
+        window.location.hostname.endsWith('.roginx.ink') ||
+        window.location.hostname === 'roginx.ink'
+      ) {
         var trackingScript = document.createElement('script');
         trackingScript.async = true;
         trackingScript.src = 'https://edu.roginx.ink/api/tracking/script.js';
-        trackingScript.setAttribute('data-tracking-id', 'track_5d6c1bc7890344e6957c2209313067d7');
+        trackingScript.setAttribute(
+          'data-tracking-id',
+          'track_5d6c1bc7890344e6957c2209313067d7'
+        );
         trackingScript.setAttribute('data-debug', 'true');
         document.head.appendChild(trackingScript);
       }
     </script>
     <title> <%= htmlWebpackPlugin.options.title %> </title>
   </head>
-  
+
   <body>
     <noscript>
       <strong
@@ -30,6 +39,9 @@
       >
     </noscript>
     <div id="app"></div>
-    <script defer src="https://cdn.bootcdn.net/ajax/libs/jsmediatags/3.9.5/jsmediatags.min.js"></script>
+    <script
+      defer
+      src="https://cdn.bootcdn.net/ajax/libs/jsmediatags/3.9.5/jsmediatags.min.js"
+    ></script>
   </body>
 </html>

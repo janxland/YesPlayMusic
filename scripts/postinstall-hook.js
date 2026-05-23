@@ -9,7 +9,10 @@ const path = require('path');
 
 const packageJson = require(path.join(process.cwd(), 'package.json'));
 
-if (!packageJson.dependencies?.electron && !packageJson.devDependencies?.electron) {
+if (
+  !packageJson.dependencies?.electron &&
+  !packageJson.devDependencies?.electron
+) {
   process.exit(0);
 }
 

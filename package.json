@@ -22,8 +22,10 @@
     "electron:extract": "node scripts/electron-auto-extract.js",
     "prettier": "npx prettier --write ./src",
     "prettier:check": "npx prettier --check ./src",
-    "prettier:all": "npx prettier --write .",
     "lint:fix": "vue-cli-service lint --fix",
+    "lint:visualizer": "vue-cli-service lint src/components/visualizer src/components/Visualization.vue src/visualizer",
+    "test:visualizer": "node src/visualizer/__tests__/run.mjs",
+    "check": "npm run prettier:check && npm run lint:visualizer && npm run test:visualizer",
     "format": "npm run prettier && npm run lint:fix",
     "netease_api:run": "npx @neteaseapireborn/api"
   },
@@ -133,7 +135,20 @@
     "globals": {
       "ipcRenderer": "off"
     },
-    "rules": {}
+    "rules": {
+      "no-unused-vars": ["error", { "argsIgnorePattern": "^_" }]
+    },
+    "overrides": [
+      {
+        "files": ["src/**/__tests__/**/*.js"],
+        "env": { "es2020": true },
+        "globals": { "globalThis": "readonly" }
+      },
+      {
+        "files": ["src/components/visualizer/VisualizerPanel.vue"],
+        "rules": { "vue/no-mutating-props": "off" }
+      }
+    ]
   },
   "browserslist": [
     "> 1%",
@@ -142,7 +157,7 @@
   ],
   "husky": {
     "hooks": {
-      "pre-commit": "npm run prettier"
+      "pre-commit": "npm run check"
     }
   }
 }
