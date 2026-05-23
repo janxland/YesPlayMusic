@@ -28,6 +28,7 @@
     "netease_api:run": "npx @neteaseapireborn/api"
   },
   "main": "background.js",
+  "packageManager": "pnpm@9.15.9",
   "engines": {
     "node": "14 || 16"
   },

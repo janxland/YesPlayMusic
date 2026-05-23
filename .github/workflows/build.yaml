@@ -1,7 +1,8 @@
 name: Release
 
 env:
-  YARN_INSTALL_NOPT: yarn add --ignore-platform --ignore-optional
+  NODE_OPTIONS: --openssl-legacy-provider
+  PNPM_ADD_NOPT: pnpm add --no-save --no-optional
 
 on:
   push:
@@ -23,15 +24,20 @@ jobs:
 
     steps:
       - name: Check out Git repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           submodules: 'recursive'
 
-      - name: Install Node.js, NPM and Yarn
-        uses: actions/setup-node@v3
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
         with:
           node-version: 16
-          cache: 'yarn'
+          cache: 'pnpm'
 
       - name: Install RPM & Pacman (on Ubuntu)
         if: runner.os == 'Linux'
@@ -48,34 +54,34 @@ jobs:
       - id: get_unm_version
         name: Get the installed UNM version
         run: |
-          yarn --ignore-optional
+          pnpm install --frozen-lockfile
           unm_version=$(node -e "console.log(require('./node_modules/@unblockneteasemusic/rust-napi/package.json').version)")
-          echo "::set-output name=unmver::${unm_version}"
+          echo "unmver=${unm_version}" >> "$GITHUB_OUTPUT"
         shell: bash
 
       - name: Install UNM dependencies for Windows
         if: runner.os == 'Windows'
         run: |
-          ${{ env.YARN_INSTALL_NOPT }} \
-            @unblockneteasemusic/rust-napi-win32-x64-msvc@${{steps.get_unm_version.outputs.unmver}}
+          ${{ env.PNPM_ADD_NOPT }} \
+            @unblockneteasemusic/rust-napi-win32-x64-msvc@${{ steps.get_unm_version.outputs.unmver }}
         shell: bash
 
       - name: Install UNM dependencies for macOS
         if: runner.os == 'macOS'
         run: |
-          ${{ env.YARN_INSTALL_NOPT }} \
-            @unblockneteasemusic/rust-napi-darwin-x64@${{steps.get_unm_version.outputs.unmver}} \
-            @unblockneteasemusic/rust-napi-darwin-arm64@${{steps.get_unm_version.outputs.unmver}} \
+          ${{ env.PNPM_ADD_NOPT }} \
+            @unblockneteasemusic/rust-napi-darwin-x64@${{ steps.get_unm_version.outputs.unmver }} \
+            @unblockneteasemusic/rust-napi-darwin-arm64@${{ steps.get_unm_version.outputs.unmver }} \
             dmg-license
         shell: bash
 
       - name: Install UNM dependencies for Linux
         if: runner.os == 'Linux'
         run: |
-          ${{ env.YARN_INSTALL_NOPT }} \
-            @unblockneteasemusic/rust-napi-linux-x64-gnu@${{steps.get_unm_version.outputs.unmver}} \
-            @unblockneteasemusic/rust-napi-linux-arm64-gnu@${{steps.get_unm_version.outputs.unmver}} \
-            @unblockneteasemusic/rust-napi-linux-arm-gnueabihf@${{steps.get_unm_version.outputs.unmver}}
+          ${{ env.PNPM_ADD_NOPT }} \
+            @unblockneteasemusic/rust-napi-linux-x64-gnu@${{ steps.get_unm_version.outputs.unmver }} \
+            @unblockneteasemusic/rust-napi-linux-arm64-gnu@${{ steps.get_unm_version.outputs.unmver }} \
+            @unblockneteasemusic/rust-napi-linux-arm-gnueabihf@${{ steps.get_unm_version.outputs.unmver }}
         shell: bash
 
       - name: Build/release Electron app
@@ -96,6 +102,7 @@ jobs:
           release: ${{ startsWith(github.ref, 'refs/tags/v') }}
 
           use_vue_cli: true
+          skip_install: true
 
       - uses: actions/upload-artifact@v4
         with:
