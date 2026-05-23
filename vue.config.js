@@ -5,24 +5,21 @@ function resolve(dir) {
 }
 
 module.exports = {
-  // 生产环境打包不输出 map
   productionSourceMap: false,
-  // 配置publicPath，生产环境指向COS地址
   publicPath:
     process.env.NODE_ENV === 'production'
-      ? 'https://cos.roginx.ink/www/music/dist/'
+      ? process.env.VUE_APP_PUBLIC_PATH || '/'
       : '/',
   devServer: {
     disableHostCheck: true,
     port: process.env.DEV_SERVER_PORT || 8080,
     proxy: {
       '/api': {
-        target: 'https://music.roginx.ink/api',
-        // target: 'https://service-2yza8qsi-1257251314.gz.apigw.tencentcs.com/',
-        // target:'http://127.0.0.1:3000/',
+        target:
+          process.env.DEV_SERVER_API_PROXY_TARGET || 'http://127.0.0.1:3000',
         changeOrigin: true,
         pathRewrite: {
-          '/api': '',
+          '/api': process.env.DEV_SERVER_API_PATH_REWRITE || '/',
         },
       },
     },

@@ -51,6 +51,7 @@ export function fmTrash(id) {
   });
 }
 
+// 获取全域管理配置 无需理会
 export function flexiSite(id) {
   return new Promise((resolve, reject) => {
     axios
