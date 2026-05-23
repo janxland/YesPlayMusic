@@ -263,9 +263,7 @@ async function installElectron() {
 
   const electronPath = findElectronModulePath();
   if (!electronPath) {
-    throw new Error(
-      '未找到 node_modules/electron，请先运行 pnpm i 安装依赖包'
-    );
+    throw new Error('未找到 node_modules/electron，请先运行 pnpm i 安装依赖包');
   }
 
   if (isElectronInstalled(electronPath, platform)) {
@@ -304,4 +302,8 @@ if (require.main === module) {
   });
 }
 
-module.exports = { installElectron, findElectronModulePath, getElectronVersion };
+module.exports = {
+  installElectron,
+  findElectronModulePath,
+  getElectronVersion,
+};

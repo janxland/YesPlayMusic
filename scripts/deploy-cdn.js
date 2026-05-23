@@ -14,18 +14,18 @@ console.log('脚本目录:', __dirname);
 let dotenv;
 try {
   dotenv = require('dotenv');
-  
+
   // 优先加载.env.production，如果不存在则加载.env.development
   const envProdPath = path.resolve(__dirname, '../.env.production');
   const envDevPath = path.resolve(__dirname, '../.env.development');
   const envPath = fs.existsSync(envProdPath) ? envProdPath : envDevPath;
-  
+
   console.log(`尝试加载环境变量文件: ${envPath}`);
   console.log(`该文件是否存在: ${fs.existsSync(envPath)}`);
-  
+
   // 加载环境变量
   const result = dotenv.config({ path: envPath });
-  
+
   if (result.error) {
     console.error('加载环境变量失败:', result.error);
   } else {
@@ -35,7 +35,11 @@ try {
     Object.keys(process.env).forEach(key => {
       if (key.startsWith('COS_')) {
         const value = process.env[key];
-        console.log(`${key}: ${key.includes('SECRET') ? (value ? '******' : '未设置') : value}`);
+        console.log(
+          `${key}: ${
+            key.includes('SECRET') ? (value ? '******' : '未设置') : value
+          }`
+        );
       }
     });
   }
@@ -60,16 +64,18 @@ const cosConfig = {
   Prefix: process.env.COS_PREFIX || 'www/music/dist',
   Domain: process.env.COS_DOMAIN,
   cdnDomain: process.env.COS_CDN_DOMAIN,
-  useAnonymous: process.env.COS_ANONYMOUS === 'true'
+  useAnonymous: process.env.COS_ANONYMOUS === 'true',
 };
 
 console.log('COS配置信息：', {
   Bucket: cosConfig.Bucket,
   Region: cosConfig.Region,
   Prefix: cosConfig.Prefix,
-  SecretId: cosConfig.SecretId ? `${cosConfig.SecretId.substring(0, 5)}...` : '未设置',
+  SecretId: cosConfig.SecretId
+    ? `${cosConfig.SecretId.substring(0, 5)}...`
+    : '未设置',
   SecretKey: cosConfig.SecretKey ? '******' : '未设置',
-  useAnonymous: cosConfig.useAnonymous
+  useAnonymous: cosConfig.useAnonymous,
 });
 
 // 如果没有SecretId和SecretKey，尝试直接从文件中读取
@@ -80,7 +86,7 @@ if (!cosConfig.SecretId || !cosConfig.SecretKey) {
     if (fs.existsSync(envPath)) {
       const envContent = fs.readFileSync(envPath, 'utf8');
       console.log('环境变量文件内容（隐藏敏感信息）:');
-      
+
       // 显示文件内容，但隐藏敏感信息
       const sanitizedContent = envContent
         .split('\n')
@@ -94,9 +100,9 @@ if (!cosConfig.SecretId || !cosConfig.SecretKey) {
           return line;
         })
         .join('\n');
-      
+
       console.log(sanitizedContent);
-      
+
       // 手动解析环境变量
       const envVars = {};
       envContent.split('\n').forEach(line => {
@@ -109,7 +115,7 @@ if (!cosConfig.SecretId || !cosConfig.SecretKey) {
           }
         }
       });
-      
+
       // 更新配置
       if (envVars.COS_SECRET_ID) cosConfig.SecretId = envVars.COS_SECRET_ID;
       if (envVars.COS_SECRET_KEY) cosConfig.SecretKey = envVars.COS_SECRET_KEY;
@@ -118,15 +124,18 @@ if (!cosConfig.SecretId || !cosConfig.SecretKey) {
       if (envVars.COS_PREFIX) cosConfig.Prefix = envVars.COS_PREFIX;
       if (envVars.COS_DOMAIN) cosConfig.Domain = envVars.COS_DOMAIN;
       if (envVars.COS_CDN_DOMAIN) cosConfig.cdnDomain = envVars.COS_CDN_DOMAIN;
-      if (envVars.COS_ANONYMOUS) cosConfig.useAnonymous = envVars.COS_ANONYMOUS === 'true';
-      
+      if (envVars.COS_ANONYMOUS)
+        cosConfig.useAnonymous = envVars.COS_ANONYMOUS === 'true';
+
       console.log('手动解析后的COS配置：', {
         Bucket: cosConfig.Bucket,
         Region: cosConfig.Region,
         Prefix: cosConfig.Prefix,
-        SecretId: cosConfig.SecretId ? `${cosConfig.SecretId.substring(0, 5)}...` : '未设置',
+        SecretId: cosConfig.SecretId
+          ? `${cosConfig.SecretId.substring(0, 5)}...`
+          : '未设置',
         SecretKey: cosConfig.SecretKey ? '******' : '未设置',
-        useAnonymous: cosConfig.useAnonymous
+        useAnonymous: cosConfig.useAnonymous,
       });
     } else {
       console.log('环境变量文件不存在');
@@ -145,7 +154,9 @@ try {
   try {
     execSync('npm install cos-nodejs-sdk-v5 --save-dev', { stdio: 'inherit' });
   } catch (installError) {
-    console.error('安装cos-nodejs-sdk-v5失败，请手动安装: npm install cos-nodejs-sdk-v5 --save-dev');
+    console.error(
+      '安装cos-nodejs-sdk-v5失败，请手动安装: npm install cos-nodejs-sdk-v5 --save-dev'
+    );
     process.exit(1);
   }
   COS = require('cos-nodejs-sdk-v5');
@@ -156,7 +167,7 @@ const cos = new COS({
   SecretId: cosConfig.useAnonymous ? undefined : cosConfig.SecretId,
   SecretKey: cosConfig.useAnonymous ? undefined : cosConfig.SecretKey,
   // 如果使用匿名访问，则不提供密钥
-  ...cosConfig.useAnonymous && { 
+  ...(cosConfig.useAnonymous && {
     Anonymous: true,
     getAuthorization: function (options, callback) {
       callback({
@@ -165,14 +176,16 @@ const cos = new COS({
         SecurityToken: undefined,
         ExpiredTime: undefined,
       });
-    }
-  }
+    },
+  }),
 });
 
 // COS配置
 const Bucket = cosConfig.Bucket;
 const Region = cosConfig.Region;
-const cosBaseDir = cosConfig.Prefix.endsWith('/') ? cosConfig.Prefix : cosConfig.Prefix + '/';
+const cosBaseDir = cosConfig.Prefix.endsWith('/')
+  ? cosConfig.Prefix
+  : cosConfig.Prefix + '/';
 
 // 本地dist目录
 const distDir = path.resolve(__dirname, '../dist');
@@ -190,12 +203,14 @@ function checkCOSPermission() {
     console.log('使用匿名访问模式，跳过权限检查');
     return Promise.resolve(true);
   }
-  
+
   return new Promise((resolve, reject) => {
     cos.getService({}, (err, data) => {
       if (err) {
         console.error('COS权限检查失败:', err);
-        console.log('提示: 如果是权限问题，可以尝试设置环境变量 COS_ANONYMOUS=true 使用匿名访问');
+        console.log(
+          '提示: 如果是权限问题，可以尝试设置环境变量 COS_ANONYMOUS=true 使用匿名访问'
+        );
         reject(err);
         return;
       }
@@ -216,18 +231,18 @@ function checkCOSPermission() {
 function getAllFiles(dir) {
   let results = [];
   const list = fs.readdirSync(dir);
-  
+
   list.forEach(file => {
     const filePath = path.join(dir, file);
     const stat = fs.statSync(filePath);
-    
+
     if (stat && stat.isDirectory()) {
       results = results.concat(getAllFiles(filePath));
     } else {
       results.push(filePath);
     }
   });
-  
+
   return results;
 }
 
@@ -260,9 +275,9 @@ function getMimeType(filePath) {
     '.woff': 'font/woff',
     '.ttf': 'font/ttf',
     '.eot': 'application/vnd.ms-fontobject',
-    '.otf': 'font/otf'
+    '.otf': 'font/otf',
   };
-  
+
   return mimeTypes[ext] || 'application/octet-stream';
 }
 
@@ -274,29 +289,34 @@ function getMimeType(filePath) {
 function uploadFile(filePath) {
   const relativePath = path.relative(distDir, filePath).replace(/\\/g, '/');
   const cosKey = cosBaseDir + relativePath;
-  
+
   return new Promise((resolve, reject) => {
-    cos.putObject({
-      Bucket,
-      Region,
-      Key: cosKey,
-      Body: fs.createReadStream(filePath),
-      ContentType: getMimeType(filePath),
-      // 设置CORS头
-      Headers: {
-        'x-cos-acl': 'public-read',
-        'Access-Control-Allow-Origin': '*',
-        'Cache-Control': relativePath.includes('index.html') ? 'no-cache' : 'max-age=31536000'
+    cos.putObject(
+      {
+        Bucket,
+        Region,
+        Key: cosKey,
+        Body: fs.createReadStream(filePath),
+        ContentType: getMimeType(filePath),
+        // 设置CORS头
+        Headers: {
+          'x-cos-acl': 'public-read',
+          'Access-Control-Allow-Origin': '*',
+          'Cache-Control': relativePath.includes('index.html')
+            ? 'no-cache'
+            : 'max-age=31536000',
+        },
+      },
+      (err, data) => {
+        if (err) {
+          console.error(`上传失败: ${relativePath}`, err);
+          reject(err);
+          return;
+        }
+        console.log(`上传成功: ${relativePath} -> ${cosKey}`);
+        resolve(data);
       }
-    }, (err, data) => {
-      if (err) {
-        console.error(`上传失败: ${relativePath}`, err);
-        reject(err);
-        return;
-      }
-      console.log(`上传成功: ${relativePath} -> ${cosKey}`);
-      resolve(data);
-    });
+    );
   });
 }
 
@@ -306,49 +326,59 @@ function uploadFile(filePath) {
 async function main() {
   try {
     console.log('开始部署YesPlayMusic到COS...');
-    
+
     // 检查COS权限
     try {
       await checkCOSPermission();
     } catch (permErr) {
-      console.error('COS权限检查失败，请确认SecretId和SecretKey是否正确，以及是否有足够的权限');
+      console.error(
+        'COS权限检查失败，请确认SecretId和SecretKey是否正确，以及是否有足够的权限'
+      );
       process.exit(1);
     }
-    
+
     // 获取所有文件
     const files = getAllFiles(distDir);
     console.log(`找到 ${files.length} 个文件需要上传`);
-    
+
     // 上传重要文件
-    const importantFiles = files.filter(file => 
-      file.includes('index.html') || 
-      file.includes('manifest.json') ||
-      file.includes('service-worker.js')
+    const importantFiles = files.filter(
+      file =>
+        file.includes('index.html') ||
+        file.includes('manifest.json') ||
+        file.includes('service-worker.js')
     );
-    
+
     console.log('首先上传关键文件...');
     for (const file of importantFiles) {
       await uploadFile(file);
     }
-    
+
     // 上传其他文件
     const otherFiles = files.filter(file => !importantFiles.includes(file));
     console.log('上传其余文件...');
-    
+
     // 并行上传其他文件，每次10个
     const batchSize = 10;
     for (let i = 0; i < otherFiles.length; i += batchSize) {
       const batch = otherFiles.slice(i, i + batchSize);
       await Promise.all(batch.map(file => uploadFile(file)));
-      console.log(`进度: ${Math.min(i + batchSize, otherFiles.length)}/${otherFiles.length}`);
+      console.log(
+        `进度: ${Math.min(i + batchSize, otherFiles.length)}/${
+          otherFiles.length
+        }`
+      );
     }
-    
+
     console.log('部署完成!');
-    console.log(`YesPlayMusic已部署到: https://${Bucket}.cos.${Region}.myqcloud.com/${cosBaseDir}index.html`);
+    console.log(
+      `YesPlayMusic已部署到: https://${Bucket}.cos.${Region}.myqcloud.com/${cosBaseDir}index.html`
+    );
     if (cosConfig.cdnDomain) {
-      console.log(`CDN访问地址: ${cosConfig.cdnDomain}/${cosBaseDir}index.html`);
+      console.log(
+        `CDN访问地址: ${cosConfig.cdnDomain}/${cosBaseDir}index.html`
+      );
     }
-    
   } catch (error) {
     console.error('部署失败:', error);
     process.exit(1);
