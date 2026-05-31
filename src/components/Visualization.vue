@@ -203,9 +203,28 @@ export default {
         this._bootTimer = null;
         const canvas = this.$refs.frame?.getCanvas();
         if (!canvas) return;
-        node.crossOrigin = 'anonymous';
-        this.AV = new AudioVisual(canvas, node, this.setting);
-        this.AV.loadMusic(node.context, node);
+        // 不再强制设置 crossOrigin：其他第三方音频源（酷我/QQ等）不返回 CORS 头，
+        // 强设 crossOrigin='anonymous' 会让浏览器拒载音频。
+        // AudioVisual 内部会优先使用 captureStream，它对未设置 crossOrigin 的
+        // cross-origin 音频只会输出静默流，可视化“没动静”，但播放不受影响。
+        try {
+          this.AV = new AudioVisual(canvas, node, this.setting);
+          this.AV.loadMusic(node.context, node);
+        } catch (err) {
+          if (err && err.code === 'AV_NO_CORS_SAFE_SOURCE') {
+            console.warn(
+              '[Visualization] 当前音源不支持 CORS，已跳过可视化以保证播放。'
+            );
+          } else {
+            console.error('[Visualization] AV init failed', err);
+          }
+          if (this.AV) {
+            try {
+              this.AV.destroy();
+            } catch (_) {}
+            this.AV = null;
+          }
+        }
       }, 400);
     },
 

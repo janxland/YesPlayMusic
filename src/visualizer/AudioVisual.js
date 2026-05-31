@@ -366,10 +366,20 @@ export class AudioVisual {
       }
     }
 
-    // ── 路径 B：createMediaElementSource 回退（保留旧行为） ──
-    // 该 audio 如果已经被别的 ctx 绑定，这里会抛 InvalidStateError。
-    // 但因为上面走了全局 ctx 单例 + audio.__avSource__ 缓存，正常路径下不会发生。
-    if (!audio.crossOrigin) audio.crossOrigin = 'anonymous';
+    // ── 路径 B：createMediaElementSource 回退──
+    // 该路径会接管 <audio> 输出，一旦源不是同源 / 不带 CORS头，
+    // 浏览器会拒载音频 → 整首歌提不出声。
+    // 为了“可视化失败也不能影响播放”，这里只在 audio 已经明确允许
+    // CORS （crossOrigin 已设置且 src 为同源 / 可信代理）时才走。
+    if (!audio.crossOrigin) {
+      console.warn(
+        '[AudioVisual] captureStream unavailable and audio is without crossOrigin; ' +
+          'skipping analyzer to avoid breaking playback for cross-origin sources.'
+      );
+      const e = new Error('AV_NO_CORS_SAFE_SOURCE');
+      e.code = 'AV_NO_CORS_SAFE_SOURCE';
+      throw e;
+    }
     let src;
     try {
       src = ctx.createMediaElementSource(audio);

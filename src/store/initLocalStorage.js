@@ -21,7 +21,7 @@ let localStorage = {
     automaticallyCacheSongs: true,
     cacheLimit: 8192,
     enableReversedMode: false,
-    nyancatStyle: true,
+    nyancatStyle: false,
     showLyricsTranslation: true,
     lyricsBackground: true,
     enableOsdlyricsSupport: false,

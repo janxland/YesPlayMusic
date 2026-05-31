@@ -88,7 +88,8 @@ function getAllFiles(dir) {
     const filePath = path.join(dir, entry.name);
     if (entry.isDirectory()) {
       results.push(...getAllFiles(filePath));
-    } else {
+    } else if (!entry.name.endsWith('.map')) {
+      // 跳过 sourcemap 文件，避免线上暴露源码
       results.push(filePath);
     }
   }
