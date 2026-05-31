@@ -1,6 +1,11 @@
 <template>
   <div class="daily-recommend-card" @click="goToDailyTracks">
-    <img :src="coverUrl" loading="lazy" />
+    <img
+      :src="coverUrl"
+      referrerpolicy="no-referrer"
+      onerror="if(!this.dataset.fallback){this.dataset.fallback=1;this.src='/img/logos/yesplaymusic.png';}else{this.onerror=null;}"
+      loading="lazy"
+    />
     <div class="container">
       <div class="title-box">
         <div class="title">
