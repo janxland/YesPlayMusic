@@ -5,7 +5,8 @@ function resolve(dir) {
 }
 
 module.exports = {
-  productionSourceMap: false,
+  productionSourceMap: true,
+  lintOnSave: false,
   publicPath:
     process.env.NODE_ENV === 'production'
       ? process.env.VUE_APP_PUBLIC_PATH || '/'

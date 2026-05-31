@@ -60,10 +60,17 @@ export function getTrackDetail(ids) {
         ids,
       },
     }).then(data => {
-      data.songs.map(song => {
-        const privileges = data.privileges.find(t => t.id === song.id);
+      if (!data || !Array.isArray(data.songs)) {
+        return { songs: [], privileges: [] };
+      }
+      const privilegesList = Array.isArray(data.privileges)
+        ? data.privileges
+        : [];
+      data.songs.forEach(song => {
+        const privileges = privilegesList.find(t => t.id === song.id);
         cacheTrackDetail(song, privileges);
       });
+      data.privileges = privilegesList;
       data.songs = mapTrackPlayableStatus(data.songs, data.privileges);
       return data;
     });
@@ -74,10 +81,11 @@ export function getTrackDetail(ids) {
   }
 
   return getTrackDetailFromCache(idsInArray).then(result => {
-    if (result) {
+    if (result && Array.isArray(result.songs)) {
       result.songs = mapTrackPlayableStatus(result.songs, result.privileges);
+      return result;
     }
-    return result ?? fetchLatest();
+    return fetchLatest();
   });
 }
 

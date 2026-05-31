@@ -429,16 +429,29 @@ export default class {
   _getAudioSourceFromNetease(track) {
     if (true) {
       // if (isAccountLoggedIn()) { //不需要只需要登录的情况（个人修改）
-      return getMP3(track.id).then(result => {
-        if (!result.data[0]) return null;
-        if (!result.data[0].url) return null;
-        if (result.data[0].freeTrialInfo !== null) return null; // 跳过只能试听的歌曲
-        const source = result.data[0].url.replace(/^http:/, 'https:');
-        if (store.state.settings.automaticallyCacheSongs) {
-          cacheTrackSource(track, source, result.data[0].br);
-        }
-        return source;
-      });
+      return getMP3(track.id)
+        .then(result => {
+          if (!result || !Array.isArray(result.data) || !result.data[0]) {
+            return null;
+          }
+          const item = result.data[0];
+          if (!item.url) return null;
+          if (item.freeTrialInfo !== null) return null; // 跳过只能试听的歌曲
+          const source = item.url.replace(/^http:/, 'https:');
+          if (store.state.settings.automaticallyCacheSongs) {
+            cacheTrackSource(track, source, item.br);
+          }
+          return source;
+        })
+        .catch(err => {
+          console.warn(
+            '[Player] getMP3 failed:',
+            err?.message || err,
+            'trackId=',
+            track.id
+          );
+          return null;
+        });
     } else {
       return new Promise(resolve => {
         resolve(`https://music.163.com/song/media/outer/url?id=${track.id}`);
@@ -451,9 +464,12 @@ export default class {
       process.env.IS_ELECTRON !== true ||
       store.state.settings.enableUnblockNeteaseMusic === false
     ) {
-      return unblock(track.id).then(result => {
-        return result.url;
-      });
+      return unblock(track.id)
+        .then(result => result?.url ?? null)
+        .catch(err => {
+          console.warn('[Player] unblock failed:', err?.message || err);
+          return null;
+        });
     }
 
     /**

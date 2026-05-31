@@ -47,7 +47,8 @@
                 <img
                   :src="imageUrl"
                   loading="lazy"
-                  onerror="this.src='https://p2.music.126.net/UeTuwE7pvjBpypWLudqukA==/3132508627578625.jpg'; this.onerror=null;"
+                  referrerpolicy="no-referrer"
+                  onerror="if(!this.dataset.fallback){this.dataset.fallback=1;this.src='/img/logos/yesplaymusic.png';}else{this.onerror=null;}"
                   @contextmenu="changeCover"
                 />
                 <img
@@ -186,18 +187,10 @@
                 </button-icon>
                 <div class="middle">
                   <button-icon
-                    v-show="!player.isPersonalFM"
                     :title="$t('player.previous')"
                     @click.native="playPrevTrack"
                   >
                     <svg-icon icon-class="previous" />
-                  </button-icon>
-                  <button-icon
-                    v-show="player.isPersonalFM"
-                    title="不喜欢"
-                    @click.native="moveToFMTrash"
-                  >
-                    <svg-icon icon-class="thumbs-down" />
                   </button-icon>
                   <button-icon
                     id="play"

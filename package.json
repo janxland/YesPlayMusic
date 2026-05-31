@@ -37,7 +37,6 @@
   "dependencies": {
     "@neteaseapireborn/api": "^4.29.7",
     "@unblockneteasemusic/rust-napi": "^0.4.0",
-    "NeteaseCloudMusicApi": "^4.8.7",
     "axios": "^0.26.1",
     "browser-id3-writer": "^6.1.0",
     "change-case": "^4.1.2",
@@ -72,6 +71,7 @@
     "md5": "^2.3.0",
     "mpris-service": "^2.1.2",
     "music-metadata": "^7.5.3",
+    "NeteaseCloudMusicApi": "^4.8.7",
     "node-vibrant": "^3.2.1-alpha.1",
     "nprogress": "^0.2.0",
     "pac-proxy-agent": "^4.1.0",
@@ -109,6 +109,7 @@
     "prettier": "2.5.1",
     "sass": "^1.26.11",
     "sass-loader": "^10.0.2",
+    "source-map-js": "^1.2.1",
     "vue-cli-plugin-electron-builder": "~2.1.1",
     "vue-template-compiler": "^2.6.11"
   },
@@ -136,17 +137,33 @@
       "ipcRenderer": "off"
     },
     "rules": {
-      "no-unused-vars": ["error", { "argsIgnorePattern": "^_" }]
+      "no-unused-vars": [
+        "error",
+        {
+          "argsIgnorePattern": "^_"
+        }
+      ],
+      "prettier/prettier": "warn"
     },
     "overrides": [
       {
-        "files": ["src/**/__tests__/**/*.js"],
-        "env": { "es2020": true },
-        "globals": { "globalThis": "readonly" }
+        "files": [
+          "src/**/__tests__/**/*.js"
+        ],
+        "env": {
+          "es2020": true
+        },
+        "globals": {
+          "globalThis": "readonly"
+        }
       },
       {
-        "files": ["src/components/visualizer/VisualizerPanel.vue"],
-        "rules": { "vue/no-mutating-props": "off" }
+        "files": [
+          "src/components/visualizer/VisualizerPanel.vue"
+        ],
+        "rules": {
+          "vue/no-mutating-props": "off"
+        }
       }
     ]
   },

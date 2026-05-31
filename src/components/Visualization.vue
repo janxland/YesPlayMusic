@@ -83,12 +83,29 @@ export default {
       setting: loadSetting(),
       _bootTimer: null,
       _saveTimer: null,
+      docHidden: typeof document !== 'undefined' ? !!document.hidden : false,
     };
   },
   computed: {
-    ...mapState(['player']),
+    ...mapState(['player', 'showLyrics']),
     isWindowMode() {
       return this.setting.mode === 'window';
+    },
+    /**
+     * 是否应当实际跑可视化：
+     *   - 用户开启（enabled）
+     *   - 当前在歌词页（showLyrics）—— Visualization 只在歌词页内可见，
+     *     歌词页隐藏后继续跑 RAF/FFT 完全是浪费 CPU
+     *   - 页面处于 visible 状态（标签切走/最小化后依然暂停）
+     *   - 正在播放（暂停状态下 AnalyserNode 输出全 0，没必要刷帧）
+     */
+    shouldRun() {
+      return (
+        this.enabled &&
+        this.showLyrics &&
+        !this.docHidden &&
+        !!this.player?.playing
+      );
     },
   },
   watch: {
@@ -109,12 +126,25 @@ export default {
     panelOpen(v) {
       saveUiState({ enabled: this.enabled, panelOpen: v });
     },
+    // 核心：隐藏 / 暂停 / 离页 时停掉 RAF，避免白白吃 CPU
+    shouldRun(v) {
+      if (v) this._resume();
+      else this._pause();
+    },
   },
   mounted() {
-    if (this.enabled) this.start();
+    this._onVis = () => {
+      this.docHidden = !!document.hidden;
+    };
+    document.addEventListener('visibilitychange', this._onVis);
+    if (this.shouldRun) this.start();
   },
   beforeDestroy() {
     clearTimeout(this._saveTimer);
+    if (this._onVis) {
+      document.removeEventListener('visibilitychange', this._onVis);
+      this._onVis = null;
+    }
     this._teardown();
   },
   methods: {
@@ -132,6 +162,26 @@ export default {
       this.enabled = false;
       this._teardown();
     },
+    /**
+     * 轻量暂停：仅停 RAF，不销毁 AudioVisual / Worker / AudioContext，
+     * 以便重新进歌词页时能零成本恢复。
+     */
+    _pause() {
+      if (this._bootTimer) {
+        clearInterval(this._bootTimer);
+        this._bootTimer = null;
+      }
+      if (this.AV) this.AV.stop();
+    },
+    _resume() {
+      if (!this.enabled) return;
+      if (this.AV) {
+        this.AV.refresh();
+        this.AV.start();
+      } else {
+        this.start();
+      }
+    },
     _teardown() {
       if (this._bootTimer) {
         clearInterval(this._bootTimer);
@@ -144,10 +194,13 @@ export default {
     },
     start() {
       this.enabled = true;
+      // 如果不该跑（例如歌词页未打开），只记录开关状态，暂停启动流水线
+      if (!this.shouldRun) return;
       this._bootTimer = setInterval(() => {
         const node = this.player?._howler?._sounds?.[0]?._node;
         if (!node || !isLoggedIn() || this.AV) return;
         clearInterval(this._bootTimer);
+        this._bootTimer = null;
         const canvas = this.$refs.frame?.getCanvas();
         if (!canvas) return;
         node.crossOrigin = 'anonymous';
