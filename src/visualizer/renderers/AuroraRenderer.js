@@ -47,7 +47,14 @@ export class AuroraRenderer extends BaseRenderer {
     for (let l = 0; l < LAYERS; l++) {
       const layerT = this._t * (0.6 + l * 0.25);
       // 层独立：振幅、频率、Y 偏移
-      const amp = (60 + l * 30 + frame.loudness * 90) * breath;
+      const sens = Number.isFinite(+opt.sensitivity) ? +opt.sensitivity : 1;
+      const vBoost = Number.isFinite(+opt.vocalBoost) ? +opt.vocalBoost : 1;
+      const amp =
+        (60 +
+          l * 30 +
+          frame.loudness * 90 * sens +
+          (frame.vocal || 0) * 140 * sens * vBoost) *
+        breath;
       const freq = 0.0035 + l * 0.0015 + frame.mid * 0.003;
       const phase = layerT + l * 1.7;
       const yOff = baseY + (l - 1) * 40 * breath;

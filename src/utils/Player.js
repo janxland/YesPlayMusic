@@ -333,12 +333,51 @@ export default class {
   }
   _playAudioSource(source, autoplay = true) {
     Howler.unload();
+    // 双轨策略 ——「播放永远成功，可视化尽力而为」：
+    //
+    //  - 网易云自有域 (*.music.126.net / *.126.net / *.163yun.com) 与
+    //    blob/data 源：实际返回 Access-Control-Allow-Origin: *，
+    //    可以安全地把 <audio crossOrigin="anonymous"> 打开，
+    //    这样 captureStream 拿到的音轨不会被 CORS 标脏，
+    //    Web Audio 可视化才能拿到真实频谱。
+    //
+    //  - 其他第三方 CDN (kuwo / qq / migu / joox / bilibili 等 unblock 回源)
+    //    不返回 CORS 头，一旦带 Origin 请求会被浏览器以 CORS 直接拦截
+    //    (ERR_FAILED)。这种源必须裸加载（不设 crossOrigin），
+    //    可视化由 ProceduralFrame 程序化兜底，绝不阻塞播放。
+    //
+    // Howler 的 html5 audio pool 会复用同一批 <audio> 元素，所以每次
+    // 切歌都需要根据新源主动写正/清掉 crossOrigin，避免历史污染。
+    const corsSafe = (() => {
+      if (typeof source !== 'string') return false;
+      if (source.startsWith('blob:') || source.startsWith('data:')) return true;
+      try {
+        const host = new URL(source, window.location.href).hostname;
+        return /(^|\.)(music\.163\.com|126\.net|163yun\.com)$/i.test(host);
+      } catch (_) {
+        return false;
+      }
+    })();
+    try {
+      if (Howler && Array.isArray(Howler._html5AudioPool)) {
+        for (const el of Howler._html5AudioPool) {
+          if (!el) continue;
+          if (corsSafe) {
+            if (el.crossOrigin !== 'anonymous') el.crossOrigin = 'anonymous';
+          } else if (el.crossOrigin) {
+            el.crossOrigin = null;
+          }
+        }
+      }
+    } catch (_) {}
     this._howler = new Howl({
       src: [source],
       html5: true,
-      // 不强制设置 crossOrigin，避免对未配置 CORS 的第三方音频源
-      // (如 kuwo/QQ 等 UNM 回源 CDN) 触发 CORS 拦截。
-      // 可视化打开时会由 AudioVisual 内部按需设置 crossOrigin 并重载。
+      // Howler 在 _create 内会把这个值写到 <audio>.crossOrigin。
+      // 'use-credentials' 会带 Cookie，对网易云不需要；'anonymous'
+      // 仅声明这是匿名 CORS 请求，与上面 audio pool 同步。
+      xhr: undefined,
+      ...(corsSafe ? { html5PoolSize: undefined } : {}),
       preload: true,
       format: ['mp3', 'flac'],
       onend: () => {
@@ -351,6 +390,18 @@ export default class {
         }
       },
     });
+    // 兜底：Howler 创建完 sound 后，对当前实际使用的 <audio> 节点
+    // 再同步一次 crossOrigin，避免极少数情况下 pool 里没有可复用元素。
+    try {
+      const node = this._howler?._sounds?.[0]?._node;
+      if (node) {
+        if (corsSafe && node.crossOrigin !== 'anonymous') {
+          node.crossOrigin = 'anonymous';
+        } else if (!corsSafe && node.crossOrigin) {
+          node.crossOrigin = null;
+        }
+      }
+    } catch (_) {}
 
     this._howler.on('loaderror', (_, errCode) => {
       // https://developer.mozilla.org/en-US/docs/Web/API/MediaError/code
@@ -532,7 +583,7 @@ export default class {
     const buffer = base642Buffer(retrieveSongInfo.url);
     return this._getAudioSourceBlobURL(buffer);
   }
-  _getAudioSource(track) {
+  _getAudioSource(track, { allowUnblock = true } = {}) {
     return this._getAudioSourceFromCache(String(track.id)).then(source => {
       console.debug(
         `[debug][Player.js] Get Cache 👉 ${track.name} ,url:${source}`
@@ -550,7 +601,14 @@ export default class {
           }
           return neteaseSource;
         }
-        // 2) 网易云无可用源，回退到 unblock（只调用一次）
+        // 2) 网易云无可用源；仅当真正要播放时才回退到 unblock
+        // 预缓存（下一首）不触发 unblock，避免对每首不可播曲目都尝试解锁
+        if (!allowUnblock) {
+          console.debug(
+            `[debug][Player.js] Netease no source, skip unblock (prefetch) 👉 ${track.name}`
+          );
+          return null;
+        }
         console.debug(
           `[debug][Player.js] Netease no source, fallback to UnblockMusic 👉 ${track.name}`
         );
@@ -652,7 +710,9 @@ export default class {
     getTrackDetail(nextTrackID).then(data => {
       const track = data?.songs?.[0];
       if (!track) return;
-      this._getAudioSource(track);
+      // 预缓存只走网易云源，不触发 unblock。
+      // unblock 仅在用户实际播放该曲目且网易云无源时才尝试，失败再切下一首。
+      this._getAudioSource(track, { allowUnblock: false });
     });
   }
   _loadSelfFromLocalStorage() {
@@ -1007,28 +1067,62 @@ export default class {
     }
   }
   playAlbumByID(id, trackID = 'first') {
-    getAlbum(id).then(data => {
-      let trackIDs = data.songs.map(t => t.id);
-      console.log('playAlbumByID');
-      this.replacePlaylist(trackIDs, id, 'album', trackID);
-    });
+    const inflightKey = `album:${id}|${trackID}`;
+    if (this._playPlaylistInflight === inflightKey) return;
+    this._playPlaylistInflight = inflightKey;
+    getAlbum(id)
+      .then(data => {
+        let trackIDs = data.songs.map(t => t.id);
+        this.replacePlaylist(trackIDs, id, 'album', trackID);
+      })
+      .catch(err => {
+        console.warn('[Player] playAlbumByID failed:', err?.message || err);
+      })
+      .finally(() => {
+        if (this._playPlaylistInflight === inflightKey) {
+          this._playPlaylistInflight = null;
+        }
+      });
   }
   playPlaylistByID(id, trackID = 'first', noCache = false) {
     console.debug(
       `[debug][Player.js] playPlaylistByID 👉 id:${id} trackID:${trackID} noCache:${noCache}`
     );
-    getPlaylistDetail(id, noCache).then(data => {
-      let trackIDs = data.playlist.trackIds.map(t => t.id);
-      console.log('getPlaylistDetail');
-      this.replacePlaylist(trackIDs, id, 'playlist', trackID);
-    });
+    // 连点同一歌单 / 切换前一次还没回数据时再点别的歌单，避免叠加请求。
+    const inflightKey = `${id}|${trackID}`;
+    if (this._playPlaylistInflight === inflightKey) return;
+    this._playPlaylistInflight = inflightKey;
+    getPlaylistDetail(id, noCache)
+      .then(data => {
+        let trackIDs = data.playlist.trackIds.map(t => t.id);
+        this.replacePlaylist(trackIDs, id, 'playlist', trackID);
+      })
+      .catch(err => {
+        console.warn('[Player] playPlaylistByID failed:', err?.message || err);
+      })
+      .finally(() => {
+        if (this._playPlaylistInflight === inflightKey) {
+          this._playPlaylistInflight = null;
+        }
+      });
   }
   playArtistByID(id, trackID = 'first') {
-    getArtist(id).then(data => {
-      let trackIDs = data.hotSongs.map(t => t.id);
-      console.log('playArtistByID');
-      this.replacePlaylist(trackIDs, id, 'artist', trackID);
-    });
+    const inflightKey = `artist:${id}|${trackID}`;
+    if (this._playPlaylistInflight === inflightKey) return;
+    this._playPlaylistInflight = inflightKey;
+    getArtist(id)
+      .then(data => {
+        let trackIDs = data.hotSongs.map(t => t.id);
+        this.replacePlaylist(trackIDs, id, 'artist', trackID);
+      })
+      .catch(err => {
+        console.warn('[Player] playArtistByID failed:', err?.message || err);
+      })
+      .finally(() => {
+        if (this._playPlaylistInflight === inflightKey) {
+          this._playPlaylistInflight = null;
+        }
+      });
   }
   playTrackOnListByID(id, listName = 'default') {
     if (listName === 'default') {

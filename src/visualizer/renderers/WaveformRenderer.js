@@ -18,9 +18,19 @@ export class WaveformRenderer extends BaseRenderer {
   draw(ctx, frame, opt) {
     const { width: W, height: H } = this;
     const cy = H * opt.centerY;
-    const amp =
-      Math.min(H * 0.35, 360) *
-      (0.6 + frame.loudness * 0.6 + frame.kick * 0.25);
+    const sens = Number.isFinite(+opt.sensitivity) ? +opt.sensitivity : 1;
+    const vBoost = Number.isFinite(+opt.vocalBoost) ? +opt.vocalBoost : 1;
+    // 以人声为主驱动振幅：sensitivity 全局倍率 + vocalBoost 人声项倍率。
+    const drive = Math.pow(
+      Math.min(
+        1,
+        frame.loudness * 0.55 +
+          (frame.vocal || 0) * 0.85 * vBoost +
+          frame.kick * 0.4
+      ),
+      0.7
+    );
+    const amp = Math.min(H * 0.6, 720) * (0.35 + drive * 1.25 * sens);
 
     this.motionFade(ctx, 0.22);
 

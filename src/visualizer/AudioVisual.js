@@ -13,11 +13,27 @@
 import { AudioAnalyzer } from './core/AudioAnalyzer.js';
 import { BeatDetector } from './core/BeatDetector.js';
 import { WorkerAnalyzer } from './core/WorkerAnalyzer.js';
+import { ProceduralFrame } from './core/ProceduralFrame.js';
 import { BarsRenderer } from './renderers/BarsRenderer.js';
 import { RadialRenderer } from './renderers/RadialRenderer.js';
 import { WaveformRenderer } from './renderers/WaveformRenderer.js';
 import { ParticlesRenderer } from './renderers/ParticlesRenderer.js';
 import { AuroraRenderer } from './renderers/AuroraRenderer.js';
+
+/**
+ * 设置 window.__AV_DEBUG__ = true 可在控制台看到切歌 / source 重建 /
+ * captureStream / analyzer 升级等完整生命周期，便于定位"切歌后假数据"问题。
+ */
+function avlog(...args) {
+  try {
+    if (typeof window !== 'undefined' && window.__AV_DEBUG__) {
+      // eslint-disable-next-line no-console
+      console.log('[AV]', ...args);
+    }
+  } catch (_) {
+    /* noop */
+  }
+}
 
 const DEFAULTS = Object.freeze({
   centerX: 0.5,
@@ -37,6 +53,11 @@ const DEFAULTS = Object.freeze({
   circleRange: 360,
   fftSize: 11, // 2^11 = 2048
   type: 1,
+  // 可视化幅度 / 波动全局倍率。 默认1 = 当前表现，
+  // 调高 -> 幅度更大、走势更剧烈；调低 -> 更内敛。范围 [0.2, 3]。
+  sensitivity: 1,
+  // 人声占主导的额外加权（0 = 关，1 = 默认，越大人声越占主角）。
+  vocalBoost: 1,
   // 新：渲染层级（z-index）、显示模式与窗口边界（0..1 归一化）
   zIndex: 0,
   mode: 'cover', // 'cover' 全屏 | 'window' 自由窗口（由外部容器决定 canvas 实际大小）
@@ -96,6 +117,16 @@ export class AudioVisual {
     this.beat = new BeatDetector();
     this.renderer = RENDERER_FACTORY[this.opt.type]();
 
+    // 程序化兜底：当 captureStream 被 CORS 污染导致
+    // 样本恒为 0，或根本不支持 captureStream 时，自动接管。
+    // 与真实 analyzer 完全解耦。
+    this._proc = new ProceduralFrame();
+    this._procActive = false;
+    this._silentMs = 0; // 连续静音累计
+    this._activeMs = 0; // 连续有声累计
+    this._SILENT_THRESHOLD_MS = 1200; // 播放中持续 1.2s 静音 -> 切程序化
+    this._RECOVER_THRESHOLD_MS = 600; // 恢复有声 0.6s -> 切回真实源
+
     this._raf = 0;
     this._lastT = 0;
     this._running = false;
@@ -112,32 +143,146 @@ export class AudioVisual {
     this._applySize();
   }
 
-  /** 兼容旧 API：建立 Web Audio 图并启动渲染。 */
-  loadMusic(audioContext, audio) {
+  /**
+   * 兼容旧 API。无论是否首次绑定，统一走 changeMediaElementSource：
+   * 始终使用全局单例 AudioContext（HTMLMediaElement 一旦绑定到某 ctx
+   * 就再也不能换），传入的 audioContext 参数仅作语义保留。
+   */
+  loadMusic(_audioContext, audio) {
+    this.changeMediaElementSource(audio);
+  }
+
+  /**
+   * 切歌或首次绑定都调这个。
+   *
+   * 不再向上抛 AV_NOT_READY / AV_NOT_SUPPORTED：
+   *   - NOT_SUPPORTED（环境无 captureStream）→ 直接以「程序化兜底」模式启动；
+   *   - NOT_READY（音轨暂未就绪）→ 同样先用程序化数据驱动渲染，
+   *     待 audio 触发 'playing' 后由 Vue 层重新调用本方法升级到真实分析。
+   * 由此完全解耦：可视化永远会跑，CORS / 自动播放策略 / Worker 失败
+   * 都不会中断画面。
+   */
+  changeMediaElementSource(audio) {
+    const sameAudio = audio && audio === this.audio;
     if (audio) this.audio = audio;
-
-    // 始终使用全局单例以避免「HTMLMediaElement 已绑定到别的 ctx」报错：
-    // - 传入的 audioContext 只有在与已有绑定 context 一致时才安全，不一致一律忽略。
-    const ctx = getSharedAudioContext();
-    const source = this._cachedSourceFor(ctx, this.audio);
-
-    // 恢复被挂起的 context（主音频不受影响，仅唤醒分析路径）
-    if (ctx.state === 'suspended' && typeof ctx.resume === 'function') {
-      ctx.resume().catch(() => {});
+    avlog('changeMediaElementSource', {
+      sameAudio,
+      paused: audio && audio.paused,
+      readyState: audio && audio.readyState,
+      src: audio && audio.currentSrc,
+      hasCachedSource: !!(audio && audio.__avSource__),
+    });
+    // 切到新 audio 时清掉旧的「等待真实源就绪」监听，避免回调里再去操作旧元素
+    this._clearUpgradeWatcher();
+    if (this.analyzer) {
+      this.analyzer.destroy();
+      this.analyzer = null;
     }
-
-    this.analyzer = this._createAnalyzer(ctx, source);
+    // 关键：Howler html5 audio pool 切歌时复用同一 <audio>，仅换 src。
+    // captureStream() 派生的 MediaStream 会随 src 变化自动接上新音频，
+    // 所以 sameAudio 时 **完全不要** 重建 source —— 重建只会让浏览器内部的
+    // capture session 抖动一次，新 worker AGC 又得冷启动 4s，肉眼看就是
+    // "切歌后画面压平 / 没数据"。直接复用 cached source 即可。
+    //
+    // 仅在这两种情况下才 disconnect 旧 source：
+    //   1) 换了不同的 <audio> 元素（极少见）
+    //   2) cached source 已死（track ended）
+    // 而且永远不调 track.stop()——Chromium 上 stop 一次就让该 audio 元素的
+    // capture session 永久死亡，之后所有 captureStream() 都返回 0 live track。
+    if (!sameAudio && this.audio && this.audio.__avSource__) {
+      try {
+        this.audio.__avSource__.disconnect();
+      } catch (_) {
+        /* noop */
+      }
+      this.audio.__avSource__ = null;
+      avlog('disconnected old source on different audio');
+    }
+    try {
+      const ctx = getSharedAudioContext();
+      if (ctx.state === 'suspended' && typeof ctx.resume === 'function') {
+        ctx.resume().catch(() => {});
+      }
+      const source = this._cachedSourceFor(ctx, this.audio);
+      this.analyzer = this._createAnalyzer(ctx, source);
+      this._silentMs = 0;
+      this._activeMs = 0;
+      // 拿到真实分析后，关闭程序化兜底——避免新歌前几帧仍被假数据驱动。
+      this._procActive = false;
+      avlog('analyzer created (real source)');
+    } catch (err) {
+      // captureStream 暂未就绪 / 不支持 / AudioContext 创建失败：
+      // 先以程序化兜底渲染，并在新 audio 真正出声后自动升级到真实分析。
+      this._procActive = true;
+      const code = err && err.code;
+      avlog('source not ready, fall back to procedural:', code || err);
+      if (code !== 'AV_NOT_SUPPORTED') {
+        this._scheduleUpgradeToRealSource();
+      }
+    }
     this.start();
   }
 
-  /** 兼容旧 API：切换 audio 元素时调用。 */
-  changeMediaElementSource(audio) {
-    this.audio = audio;
-    if (this.analyzer) {
-      const ctx = this.analyzer.ctx;
-      this.analyzer.destroy();
-      const source = this._cachedSourceFor(ctx, audio);
-      this.analyzer = this._createAnalyzer(ctx, source);
+  /**
+   * 自愈：监听当前 audio 的就绪事件，一旦真正出声就重新尝试拿
+   * 真实 captureStream，把 procedural 兜底升级为真实 analyzer。
+   */
+  _scheduleUpgradeToRealSource() {
+    const audio = this.audio;
+    if (!audio || !audio.addEventListener) return;
+    this._clearUpgradeWatcher();
+    avlog('scheduleUpgrade: waiting for audio to become ready');
+    const tryUpgrade = label => {
+      // 已经升级到真实分析则结束
+      if (this.analyzer) {
+        this._clearUpgradeWatcher();
+        return;
+      }
+      avlog('upgrade attempt:', label, {
+        readyState: audio.readyState,
+        paused: audio.paused,
+      });
+      try {
+        const ctx = getSharedAudioContext();
+        const source = this._cachedSourceFor(ctx, audio);
+        // 升级成功：换上真实 analyzer，关闭兜底
+        this.analyzer = this._createAnalyzer(ctx, source);
+        this._procActive = false;
+        this._silentMs = 0;
+        this._activeMs = 0;
+        avlog('upgrade succeeded → real analyzer online');
+        this._clearUpgradeWatcher();
+      } catch (err) {
+        // 监听是被动的（事件触发才执行），不会自旋；保留监听等下一次事件再试。
+        avlog('upgrade failed, will retry on next event:', err && err.code);
+      }
+    };
+    const events = ['playing', 'loadeddata', 'canplay', 'canplaythrough'];
+    const handler = ev => tryUpgrade(ev && ev.type);
+    events.forEach(ev => audio.addEventListener(ev, handler));
+    this._upgradeOff = () => {
+      events.forEach(ev => {
+        try {
+          audio.removeEventListener(ev, handler);
+        } catch (_) {
+          /* noop */
+        }
+      });
+    };
+    // 若 audio 已在播放，立刻尝试一次（事件可能已经错过）
+    if (!audio.paused && audio.readyState >= 2) {
+      Promise.resolve().then(() => tryUpgrade('immediate'));
+    }
+  }
+
+  _clearUpgradeWatcher() {
+    if (this._upgradeOff) {
+      try {
+        this._upgradeOff();
+      } catch (_) {
+        /* noop */
+      }
+      this._upgradeOff = null;
     }
   }
 
@@ -181,6 +326,7 @@ export class AudioVisual {
 
   destroy() {
     this.stop();
+    this._clearUpgradeWatcher();
     if (this._ro) this._ro.disconnect();
     else window.removeEventListener('resize', this._onResize);
     if (this.analyzer) this.analyzer.destroy();
@@ -191,64 +337,102 @@ export class AudioVisual {
   // ---------- 内部 ----------
 
   _renderFrame(now, dt) {
-    if (!this.analyzer) return;
     const bandCount = pickBandCount(this.opt);
     const needWave = this.opt.type === 2;
 
-    if (this._workerMode) {
-      // 1) 通知 worker 算下一帧（异步）
-      this.analyzer.update(now, bandCount, needWave);
-      // 2) 用上一帧 worker 回传的结果绘制（首帧未到达则跳过绘制）
-      const f = this.analyzer.latestFrame;
-      if (!f) return;
-      this.renderer.draw(
-        this.ctx2d,
-        {
-          bands: f.bands,
-          spectrum: f.spectrum,
-          waveform: f.waveform,
-          bass: f.bass,
-          mid: f.mid,
-          treble: f.treble,
-          loudness: f.loudness,
-          centroid: f.centroid,
-          beat: f.beat,
-          intensity: f.intensity,
-          kick: f.kick,
+    // 取得真实分析帧（若 analyzer 不存在或为 worker 首帧未到，则为 null）
+    let frame = null;
+    if (this.analyzer) {
+      if (this._workerMode) {
+        this.analyzer.update(now, bandCount, needWave);
+        frame = this.analyzer.latestFrame;
+      } else {
+        this.analyzer.update();
+        const spectrum = this.analyzer.spectrum;
+        const bands = this.analyzer.getBands(bandCount);
+        const { beat, intensity, kick } = this.beat.update(spectrum, now);
+        const waveform = needWave ? this.analyzer.getWaveform() : null;
+        frame = {
+          bands,
+          spectrum,
+          waveform,
+          bass: this.analyzer.bass,
+          mid: this.analyzer.mid,
+          treble: this.analyzer.treble,
+          vocal: this.analyzer.vocal,
+          loudness: this.analyzer.loudness,
+          centroid: this.analyzer.centroid,
+          beat,
+          intensity,
+          kick,
           time: now,
-        },
-        this.opt,
-        dt
-      );
-      return;
+        };
+      }
     }
 
-    // 主线程回退路径（与旧实现完全一致）
-    this.analyzer.update();
-    const spectrum = this.analyzer.spectrum;
-    const bands = this.analyzer.getBands(bandCount);
-    const { beat, intensity, kick } = this.beat.update(spectrum, now);
-    const waveform = needWave ? this.analyzer.getWaveform() : null;
+    // 静音侦测：仅在「音频正在播放」时才决策是否切换到程序化兜底。
+    // 暂停 / 未就绪 → 真实帧本就为 0，画面应当静止；
+    // 程序化模式也立即关闭，避免没在播却还有"心电图"波动。
+    const audio = this.audio;
+    const isPlaying =
+      !!audio && !audio.paused && audio.readyState >= 2 && !audio.ended;
+    const realLoud = frame ? frame.loudness || 0 : 0;
+    const SILENT_EPS = 0.0008;
 
-    this.renderer.draw(
-      this.ctx2d,
-      {
-        bands,
-        spectrum,
-        waveform,
-        bass: this.analyzer.bass,
-        mid: this.analyzer.mid,
-        treble: this.analyzer.treble,
-        loudness: this.analyzer.loudness,
-        centroid: this.analyzer.centroid,
-        beat,
-        intensity,
-        kick,
-        time: now,
-      },
-      this.opt,
-      dt
-    );
+    if (!isPlaying) {
+      // 立刻退出程序化模式，且清零计数；下次开始播放再重新评估
+      this._procActive = false;
+      this._silentMs = 0;
+      this._activeMs = 0;
+    } else if (!frame) {
+      this._procActive = true;
+    } else if (realLoud < SILENT_EPS) {
+      this._silentMs += dt;
+      this._activeMs = 0;
+      if (this._silentMs >= this._SILENT_THRESHOLD_MS) this._procActive = true;
+    } else {
+      this._activeMs += dt;
+      this._silentMs = 0;
+      if (this._activeMs >= this._RECOVER_THRESHOLD_MS)
+        this._procActive = false;
+    }
+
+    // 程序化兜底：仅在播放中且需要兜底时启用
+    if (this._procActive && isPlaying) {
+      frame = this._proc.generate(now, {
+        fftSize: this.opt.fftSize,
+        bandCount,
+        needWave,
+        playing: true,
+        audioTime: audio ? audio.currentTime : undefined,
+      });
+    }
+
+    if (!frame) return; // worker 首帧未到 + 程序化未启用：跳过
+
+    // 调试：每秒一次打印当前数据来源 / 响度 / 频带峰值，
+    // 让用户能在控制台直接确认"切歌后是不是真的拿到真实数据"。
+    if (typeof window !== 'undefined' && window.__AV_DEBUG__ && isPlaying) {
+      this._dbgAcc = (this._dbgAcc || 0) + dt;
+      if (this._dbgAcc >= 1000) {
+        this._dbgAcc = 0;
+        const bands = frame.bands;
+        let maxBand = 0;
+        if (bands && bands.length) {
+          for (let i = 0; i < bands.length; i++) {
+            if (bands[i] > maxBand) maxBand = bands[i];
+          }
+        }
+        avlog('frame', {
+          src: this._procActive ? 'procedural' : 'real',
+          loudness: +realLoud.toFixed(4),
+          maxBand: +maxBand.toFixed(3),
+          beat: !!frame.beat,
+        });
+      }
+    }
+
+    this.renderer.draw(this.ctx2d, frame, this.opt, dt);
   }
 
   /**
@@ -303,6 +487,8 @@ export class AudioVisual {
     n.isRound = Boolean(n.isRound);
     if (typeof n.lineColor !== 'string') n.lineColor = DEFAULTS.lineColor;
     if (typeof n.shadowColor !== 'string') n.shadowColor = DEFAULTS.shadowColor;
+    n.sensitivity = clamp(num(n.sensitivity, 1), 0.2, 3);
+    n.vocalBoost = clamp(num(n.vocalBoost, 1), 0, 2);
     // 新增字段：层级 / 模式 / 边界
     n.zIndex = clamp(Math.round(num(n.zIndex, 0)), -99, 999);
     n.mode = n.mode === 'window' ? 'window' : 'cover';
@@ -317,101 +503,109 @@ export class AudioVisual {
   }
 
   /**
-   * 「无侵入旁路 tap」：
-   *   首选 HTMLMediaElement.captureStream() + MediaStreamAudioSourceNode
-   *   ─────────────────────────────────────────────────────────────────
-   *   - 不会重定向 <audio> 元素的原生扬声器输出，主音频完全不被触碰
-   *     → 开/关可视化、切换歌词页都绝对不会静音；
-   *   - 跨域无 CORS（如网易云 CDN）最坏情况下分析数据为 0，可视化没动静，
-   *     但绝不会像 createMediaElementSource 那样把声音整段清零；
-   *   - 不依赖用户手势 / AudioContext.resume，永远兼容自动播放策略；
-   *   - 不需要把 source 接到 destination，AnalyserNode 是单纯的 tap。
+   * 「无侵入旁路 tap」：HTMLMediaElement.captureStream() →
+   * MediaStreamAudioSourceNode → AnalyserNode（不接 destination）。
    *
-   *   兼容性回退：
-   *   captureStream 在极个别环境（老 Safari、特殊 WebView）不存在时，
-   *   退回到 createMediaElementSource 旧路径，但保留 GainNode 干线 +
-   *   永久 destination 连接 + 30ms 淡入，使旧路径下的主音频也不会被切断。
+   *   - 不会重定向 <audio> 元素的原生扬声器输出，主音频完全不被触碰
+   *     → 开/关可视化、暂停、切换歌词页都绝不会静音；
+   *   - 跨域 CDN 即便没 CORS 头，最坏情况是分析数据为 0（仍然渲染），
+   *     绝不会像 createMediaElementSource 那样把声音整段清零；
+   *   - 不依赖用户手势 / AudioContext.resume，永远兼容自动播放策略。
+   *
+   * 错误码：
+   *   AV_NOT_READY     —— captureStream 暂时还没拿到音轨，调用方
+   *                       应监听 audio 的 'playing'/'loadeddata' 后重试。
+   *   AV_NOT_SUPPORTED —— 当前环境根本不支持 captureStream，永久放弃。
    */
   _cachedSourceFor(ctx, audio) {
     if (!audio) throw new Error('AudioVisual: audio element is required');
 
-    // 优先从 audio 元素本身上拿已缓存的 source，
-    // 保证「关闭可视化 → 重新打开」能复用同一个 node，不再重复创建。
-    if (audio.__avSource__ && audio.__avSource__.context === ctx) {
-      return audio.__avSource__;
-    }
-
-    // ── 路径 A：captureStream 旁路（首选） ──
-    const capture =
-      typeof audio.captureStream === 'function'
-        ? () => audio.captureStream()
-        : typeof audio.mozCaptureStream === 'function'
-        ? () => audio.mozCaptureStream()
-        : null;
-    if (capture) {
-      try {
-        const stream = capture.call(audio);
-        if (stream && stream.getAudioTracks && stream.getAudioTracks().length) {
-          const src = ctx.createMediaStreamSource(stream);
-          src.__avMode__ = 'capture';
-          src.__avStream__ = stream;
-          audio.__avSource__ = src;
-          return src;
-        }
-      } catch (e) {
-        console.warn(
-          '[AudioVisual] captureStream failed, fallback to MediaElementSource',
-          e
-        );
+    // 复用同一 ctx 上的旧 source。关键：Chromium 上一旦 track.stop() 过，
+    // 该 audio 元素的 capture session 永久死亡，之后所有 captureStream()
+    // 都返回 0 live track。所以即使检测到旧 stream 的 track 已 ended，
+    // 也只 disconnect、不 stop，由浏览器自己回收。
+    //
+    // 切歌（src 变更）后 cached track 虽然 readyState='live'，但 muted=true
+    // —— Chromium 不会自动把新 src 的解码输出接到旧 track，导致 worker 收到
+    // 全 0 频谱，loudness 永远 0。检测 muted 字段，muted 视为死链强制重建。
+    const cached = audio.__avSource__;
+    if (cached && cached.context === ctx) {
+      const stream = cached.__avStream__;
+      const tracks =
+        stream && stream.getAudioTracks ? stream.getAudioTracks() : [];
+      const allLiveAndUnmuted =
+        tracks.length > 0 &&
+        tracks.every(t => t.readyState === 'live' && !t.muted);
+      if (allLiveAndUnmuted) {
+        avlog('reuse cached source (alive & unmuted)');
+        return cached;
       }
+      try {
+        cached.disconnect();
+      } catch (_) {
+        /* noop */
+      }
+      audio.__avSource__ = null;
+      avlog('cached source dead/muted, will re-capture', {
+        tracks: tracks.map(t => ({ rs: t.readyState, muted: t.muted })),
+      });
     }
 
-    // ── 路径 B：createMediaElementSource 回退──
-    // 该路径会接管 <audio> 输出，一旦源不是同源 / 不带 CORS头，
-    // 浏览器会拒载音频 → 整首歌提不出声。
-    // 为了“可视化失败也不能影响播放”，这里只在 audio 已经明确允许
-    // CORS （crossOrigin 已设置且 src 为同源 / 可信代理）时才走。
-    if (!audio.crossOrigin) {
-      console.warn(
-        '[AudioVisual] captureStream unavailable and audio is without crossOrigin; ' +
-          'skipping analyzer to avoid breaking playback for cross-origin sources.'
-      );
-      const e = new Error('AV_NO_CORS_SAFE_SOURCE');
-      e.code = 'AV_NO_CORS_SAFE_SOURCE';
+    if (typeof audio.captureStream !== 'function') {
+      const e = new Error('AV_NOT_SUPPORTED');
+      e.code = 'AV_NOT_SUPPORTED';
       throw e;
     }
-    let src;
-    try {
-      src = ctx.createMediaElementSource(audio);
-    } catch (err) {
-      console.warn(
-        '[AudioVisual] createMediaElementSource failed (already bound). Skipping analyzer for this element.',
-        err
-      );
-      throw err;
-    }
-    const trunk = ctx.createGain();
-    trunk.gain.value = 1;
-    src.connect(trunk);
-    trunk.connect(ctx.destination);
-    src.__avMode__ = 'element';
-    src.__avTrunkGain__ = trunk;
-    audio.__avSource__ = src;
-    this._fadeTrunkIn(src, ctx);
-    return src;
-  }
 
-  _fadeTrunkIn(source, ctx) {
-    const gain = source && source.__avTrunkGain__;
-    if (!gain || !gain.gain) return;
-    const t0 = ctx.currentTime;
+    let stream;
     try {
-      gain.gain.cancelScheduledValues(t0);
-      gain.gain.setValueAtTime(0.0001, t0);
-      gain.gain.exponentialRampToValueAtTime(1, t0 + 0.03);
-    } catch (_) {
-      gain.gain.value = 1;
+      stream = audio.captureStream();
+    } catch (err) {
+      const e = new Error('AV_NOT_SUPPORTED');
+      e.code = 'AV_NOT_SUPPORTED';
+      e.cause = err;
+      throw e;
     }
+
+    const tracks =
+      stream && stream.getAudioTracks ? stream.getAudioTracks() : [];
+    const goodTracks = tracks.filter(t => t.readyState === 'live' && !t.muted);
+    avlog('captureStream', {
+      streamId: stream && stream.id,
+      totalTracks: tracks.length,
+      liveUnmuted: goodTracks.length,
+      detail: tracks.map(t => ({ rs: t.readyState, muted: t.muted })),
+    });
+
+    if (!goodTracks.length) {
+      // track 数为 0 / ended / muted：抛 NOT_READY 让上层挂事件等真正出声再重试。
+      // 同时挂一次 unmute 监听：muted track 未来变 unmuted 时自动触发重新捕获。
+      if (tracks.length > 0) {
+        const t = tracks[0];
+        try {
+          t.addEventListener(
+            'unmute',
+            () => {
+              avlog('track unmuted → schedule upgrade');
+              if (this.audio) this.audio.__avSource__ = null; // 强制重建
+              this._scheduleUpgradeToRealSource();
+            },
+            { once: true }
+          );
+        } catch (_) {
+          /* noop */
+        }
+      }
+      const e = new Error('AV_NOT_READY');
+      e.code = 'AV_NOT_READY';
+      throw e;
+    }
+
+    const src = ctx.createMediaStreamSource(stream);
+    src.__avStream__ = stream;
+    audio.__avSource__ = src;
+    avlog('created MediaStreamSource on shared ctx');
+    return src;
   }
 }
 

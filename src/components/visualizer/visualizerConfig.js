@@ -19,17 +19,19 @@ export const PALETTES = Object.freeze([
   { name: '极光绿', line: '#5cffb1', shadow: '#0e2a22' },
 ]);
 
-/** 默认窗口几何（左下角悬浮 40% × 38%）。 */
+/** 默认窗口几何：贴窗口底部、全宽，类似经典播放器频谱条。 */
 export const DEFAULT_BOUNDS = Object.freeze({
-  x: 0.08,
-  y: 0.55,
-  w: 0.4,
-  h: 0.38,
+  x: 0,
+  y: 0.72,
+  w: 1,
+  h: 0.28,
 });
 
 export const DEFAULT_SETTING = Object.freeze({
   centerX: 0.5,
-  centerY: 0.55,
+  // 渲染基线下沉到窗口底部，频谱柱/光刺自下而上长出，
+  // 与 DEFAULT_BOUNDS（贴底）的自由编辑模式视觉一致。
+  centerY: 0.85,
   lineWidth: 4,
   lineSpacing: 4,
   lineColor: '#e1306c',
@@ -44,6 +46,11 @@ export const DEFAULT_SETTING = Object.freeze({
   isRound: true,
   type: 1,
   fftSize: 11,
+  // 灵敏度：统一控制频谱柱/光刺/波形/极光的高度与波动范围。
+  // 1 = 默认；调高 -> 起伏更剧烈；调低 -> 更内敛。
+  sensitivity: 1,
+  // 人声主导加权（0 关闭，1 默认，>1 进一步突出人声段）。
+  vocalBoost: 1,
   zIndex: 0,
   mode: 'cover',
   bounds: { ...DEFAULT_BOUNDS },
