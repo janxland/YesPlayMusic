@@ -80,6 +80,28 @@
       <!-- 基础 -->
       <template v-if="activeTab === 'basic'">
         <div class="row">
+          <label>灵敏度</label>
+          <input
+            v-model.number="setting.sensitivity"
+            type="range"
+            min="0.2"
+            max="3"
+            step="0.05"
+          />
+          <span class="val">{{ Number(setting.sensitivity).toFixed(2) }}</span>
+        </div>
+        <div class="row">
+          <label>人声强调</label>
+          <input
+            v-model.number="setting.vocalBoost"
+            type="range"
+            min="0"
+            max="2"
+            step="0.05"
+          />
+          <span class="val">{{ Number(setting.vocalBoost).toFixed(2) }}</span>
+        </div>
+        <div class="row">
           <label>分辨率</label>
           <input
             v-model.number="setting.fftSize"

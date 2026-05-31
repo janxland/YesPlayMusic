@@ -111,6 +111,10 @@ export default {
   pointer-events: none;
   /* canvas 本身保持矩形，不裁剪，便于像素融入周围 */
   display: block;
+  /* 切歌 / seek 时由父级临时把 opacity 设为 0，再恢复 1，
+     250ms 过渡形成丝滑淡出淡入，规避 AV 重建瞬间的画面突变。 */
+  opacity: 1;
+  transition: opacity 0.25s ease;
 }
 .frame-handle {
   position: absolute;

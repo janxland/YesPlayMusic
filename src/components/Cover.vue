@@ -80,13 +80,19 @@ export default {
   },
   methods: {
     play() {
+      // 防止快速连点：800ms 内重复点击同一封面直接忽略，避免触发多次
+      // playPlaylistByID -> /playlist/detail -> /song/url 的请求链
+      const now = Date.now();
+      if (this._lastPlayClickAt && now - this._lastPlayClickAt < 800) return;
+      this._lastPlayClickAt = now;
       const player = this.$store.state.player;
       const playActions = {
         album: player.playAlbumByID,
         playlist: player.playPlaylistByID,
         artist: player.playArtistByID,
       };
-      playActions[this.type].bind(player)(this.id);
+      const fn = playActions[this.type];
+      if (fn) fn.bind(player)(this.id);
     },
     goTo() {
       this.$router.push({

@@ -97,15 +97,12 @@ export default {
      *   - 当前在歌词页（showLyrics）—— Visualization 只在歌词页内可见，
      *     歌词页隐藏后继续跑 RAF/FFT 完全是浪费 CPU
      *   - 页面处于 visible 状态（标签切走/最小化后依然暂停）
-     *   - 正在播放（暂停状态下 AnalyserNode 输出全 0，没必要刷帧）
+     *
+     * 注意：暂停 (player.playing=false) 时仍然继续渲染——AnalyserNode
+     * 会输出 0 数据，画面静止/淡出，符合“暂停音乐≠停止可视化”的语义。
      */
     shouldRun() {
-      return (
-        this.enabled &&
-        this.showLyrics &&
-        !this.docHidden &&
-        !!this.player?.playing
-      );
+      return this.enabled && this.showLyrics && !this.docHidden;
     },
   },
   watch: {
@@ -131,8 +128,17 @@ export default {
       if (v) this._resume();
       else this._pause();
     },
+    // 切歌：旧 audio 节点已被 Howler.unload() 销毁，必须把可视化指向新节点。
+    'player.currentTrack.id'() {
+      if (!this.shouldRun) return;
+      // 切歌一律完整重建 AV（与刷新等价），力度/状态完全一致。
+      this._rebindToNewAudio();
+    },
   },
   mounted() {
+    try {
+      window.__YPM_AV_ENABLED__ = !!this.enabled;
+    } catch (_) {}
     this._onVis = () => {
       this.docHidden = !!document.hidden;
     };
@@ -160,6 +166,9 @@ export default {
     },
     stop() {
       this.enabled = false;
+      try {
+        window.__YPM_AV_ENABLED__ = false;
+      } catch (_) {}
       this._teardown();
     },
     /**
@@ -167,10 +176,8 @@ export default {
      * 以便重新进歌词页时能零成本恢复。
      */
     _pause() {
-      if (this._bootTimer) {
-        clearInterval(this._bootTimer);
-        this._bootTimer = null;
-      }
+      this._clearBootTimer();
+      this._clearReadyListener();
       if (this.AV) this.AV.stop();
     },
     _resume() {
@@ -183,49 +190,215 @@ export default {
       }
     },
     _teardown() {
-      if (this._bootTimer) {
-        clearInterval(this._bootTimer);
-        this._bootTimer = null;
+      this._clearBootTimer();
+      this._clearRebindTimer();
+      this._clearReadyListener();
+      this._unbindAudioEvents();
+      if (this._fadeTimer) {
+        clearTimeout(this._fadeTimer);
+        this._fadeTimer = null;
+      }
+      if (this._fadeSafetyTimer) {
+        clearTimeout(this._fadeSafetyTimer);
+        this._fadeSafetyTimer = null;
       }
       if (this.AV) {
         this.AV.destroy();
         this.AV = null;
       }
     },
-    start() {
-      this.enabled = true;
-      // 如果不该跑（例如歌词页未打开），只记录开关状态，暂停启动流水线
-      if (!this.shouldRun) return;
-      this._bootTimer = setInterval(() => {
-        const node = this.player?._howler?._sounds?.[0]?._node;
-        if (!node || !isLoggedIn() || this.AV) return;
+    _clearBootTimer() {
+      if (this._bootTimer) {
         clearInterval(this._bootTimer);
         this._bootTimer = null;
-        const canvas = this.$refs.frame?.getCanvas();
-        if (!canvas) return;
-        // 不再强制设置 crossOrigin：其他第三方音频源（酷我/QQ等）不返回 CORS 头，
-        // 强设 crossOrigin='anonymous' 会让浏览器拒载音频。
-        // AudioVisual 内部会优先使用 captureStream，它对未设置 crossOrigin 的
-        // cross-origin 音频只会输出静默流，可视化“没动静”，但播放不受影响。
-        try {
-          this.AV = new AudioVisual(canvas, node, this.setting);
-          this.AV.loadMusic(node.context, node);
-        } catch (err) {
-          if (err && err.code === 'AV_NO_CORS_SAFE_SOURCE') {
-            console.warn(
-              '[Visualization] 当前音源不支持 CORS，已跳过可视化以保证播放。'
-            );
-          } else {
-            console.error('[Visualization] AV init failed', err);
-          }
-          if (this.AV) {
-            try {
-              this.AV.destroy();
-            } catch (_) {}
-            this.AV = null;
-          }
+      }
+    },
+    _clearRebindTimer() {
+      if (this._rebindTimer) {
+        clearInterval(this._rebindTimer);
+        this._rebindTimer = null;
+      }
+    },
+    /**
+     * 取消挂在某 audio 节点上的“等就绪再重试”监听，避免重复绑定。
+     */
+    _clearReadyListener() {
+      if (this._readyOff) {
+        this._readyOff();
+        this._readyOff = null;
+      }
+    },
+    /**
+     * 在 audio 元素上一次性监听 'playing' / 'loadeddata' —— 一旦真正开始
+     * 出声，captureStream 才会有音轨可拿。回调里再尝试 attach / rebind。
+     */
+    _waitAudioReady(node, retry) {
+      this._clearReadyListener();
+      const handler = () => {
+        this._clearReadyListener();
+        if (!this.shouldRun) return;
+        retry();
+      };
+      node.addEventListener('playing', handler, { once: true });
+      node.addEventListener('loadeddata', handler, { once: true });
+      this._readyOff = () => {
+        node.removeEventListener('playing', handler);
+        node.removeEventListener('loadeddata', handler);
+      };
+    },
+    start() {
+      this.enabled = true;
+      try {
+        window.__YPM_AV_ENABLED__ = true;
+      } catch (_) {}
+      if (!this.shouldRun) return;
+      this._tryAttach();
+    },
+    /**
+     * 等待 howler 的 _node 与 canvas 就绪后调用 _attachTo。
+     * 使用短轮询是因为 Howler 在 html5 模式下异步创建 _node。
+     */
+    _tryAttach() {
+      if (this.AV) return;
+      this._clearBootTimer();
+      let tries = 0;
+      this._bootTimer = setInterval(() => {
+        tries++;
+        if (this.AV || !this.shouldRun) {
+          this._clearBootTimer();
+          return;
         }
-      }, 400);
+        const node = this.player?._howler?._sounds?.[0]?._node;
+        const canvas = this.$refs.frame?.getCanvas();
+        if (node && canvas && isLoggedIn()) {
+          this._clearBootTimer();
+          this._attachTo(node, canvas);
+        } else if (tries > 25) {
+          this._clearBootTimer();
+        }
+      }, 200);
+    },
+    _attachTo(node, canvas) {
+      // 不设置 crossOrigin：第三方音源 (kuwo / qq / migu / joox 等) 不返回
+      // Access-Control-Allow-Origin，一旦带 Origin 头将被 CORS 拦截，导致无法播放。
+      // 播放优先；可视化对这些源会因为 captureStream tainted 而无声/失败，已可接受。
+      try {
+        this.AV = new AudioVisual(canvas, node, this.setting);
+        this.AV.loadMusic(node.context, node);
+        this._bindAudioEvents(node);
+        this._fadeInCanvas();
+      } catch (err) {
+        this._handleAttachError(err, node, () => this._attachTo(node, canvas));
+      }
+    },
+
+    /** 为当前 audio 节点挂 seeking/seeked 事件，实现拖动进度时丝滑过渡。 */
+    _bindAudioEvents(node) {
+      this._unbindAudioEvents();
+      const onSeeking = () => this._fadeOutCanvas();
+      const onSeeked = () => this._fadeInCanvas();
+      node.addEventListener('seeking', onSeeking);
+      node.addEventListener('seeked', onSeeked);
+      this._audioOff = () => {
+        try {
+          node.removeEventListener('seeking', onSeeking);
+          node.removeEventListener('seeked', onSeeked);
+        } catch (_) {}
+      };
+    },
+    _unbindAudioEvents() {
+      if (this._audioOff) {
+        this._audioOff();
+        this._audioOff = null;
+      }
+    },
+    _getCanvas() {
+      return this.$refs.frame?.getCanvas();
+    },
+    /** 立刻深度 0 × 0。 */
+    _fadeOutCanvas() {
+      const c = this._getCanvas();
+      if (!c) return;
+      c.style.opacity = '0';
+      // 取消已有的恢复计时，防止快速 seek 连击调乱状态
+      if (this._fadeTimer) {
+        clearTimeout(this._fadeTimer);
+        this._fadeTimer = null;
+      }
+      // 兜底：1.2s 内若仍未触发 fadeIn（attach 失败 / NOT_SUPPORTED 等），
+      // 强制恢复显示，避免画布永远透明造成"黑屏"。
+      if (this._fadeSafetyTimer) clearTimeout(this._fadeSafetyTimer);
+      this._fadeSafetyTimer = setTimeout(() => {
+        this._fadeSafetyTimer = null;
+        const cc = this._getCanvas();
+        if (cc && cc.style.opacity === '0') cc.style.opacity = '1';
+      }, 1200);
+    },
+    /** 下一帧 RAF 后设 opacity=1，CSS transition 接手。 */
+    _fadeInCanvas() {
+      const c = this._getCanvas();
+      if (!c) return;
+      // 给 AV 一小段充分时间走完重建（captureStream + worker AGC 冷启动），
+      // 避免淑入后第一帧仍是"质变"画面。
+      if (this._fadeTimer) clearTimeout(this._fadeTimer);
+      if (this._fadeSafetyTimer) {
+        clearTimeout(this._fadeSafetyTimer);
+        this._fadeSafetyTimer = null;
+      }
+      this._fadeTimer = setTimeout(() => {
+        this._fadeTimer = null;
+        const cc = this._getCanvas();
+        if (cc) cc.style.opacity = '1';
+      }, 60);
+    },
+    _handleAttachError(err, node, retry) {
+      if (this.AV) {
+        try {
+          this.AV.destroy();
+        } catch (_) {}
+        this.AV = null;
+      }
+      const code = err && err.code;
+      if (code === 'AV_NOT_READY') {
+        // 新 audio 还没真正出声，等 'playing' 后再来一次
+        this._waitAudioReady(node, retry);
+        return;
+      }
+      if (code === 'AV_NOT_SUPPORTED') {
+        console.warn(
+          '[Visualization] 当前环境不支持 captureStream，已跳过可视化以保证播放。'
+        );
+        return;
+      }
+      console.error('[Visualization] AV init failed', err);
+    },
+    /**
+     * 切歌后重建可视化，让"切歌"与"刷新"走完全相同的初始化路径。
+     *
+     * 旧实现走 changeMediaElementSource 试图复用 AV 实例，
+     * 但 worker AGC / runPeak 等内部状态在新旧歌之间无法平滑迁移，
+     * 用户感知就是「切歌力度与刷新不一致 + 切换瞬间卡顿」。
+     *
+     * 现做法：一刀切——destroy 旧 AV，再用 _tryAttach 等新 _node 出来后
+     * 按刷新路径全新构造 AudioVisual + Worker + AGC，状态白板，
+     * 视觉表现与刷新完全一致。
+     */
+    _rebindToNewAudio() {
+      this._clearRebindTimer();
+      this._clearReadyListener();
+      this._unbindAudioEvents();
+      // 立即淑出当前画面。后续 _attachTo 成功后会淑入。
+      this._fadeOutCanvas();
+      // 立刻把旧 AV 整个拆掉：worker terminate / source disconnect /
+      // stream tracks stop —— 与 destroy() 完全一致。
+      if (this.AV) {
+        try {
+          this.AV.destroy();
+        } catch (_) {}
+        this.AV = null;
+      }
+      // 走与刷新相同的"等 _node + canvas 就绪 → _attachTo"路径。
+      this._tryAttach();
     },
 
     /* ---------- 自由布局 drag / resize ---------- */

@@ -234,6 +234,7 @@ import { getTrackDetail } from '@/api/track';
 import { isAccountLoggedIn } from '@/utils/auth';
 import nativeAlert from '@/utils/nativeAlert';
 import locale from '@/locale';
+import { cancelRequestsByTag } from '@/utils/request';
 
 import ButtonTwoTone from '@/components/ButtonTwoTone.vue';
 import ContextMenu from '@/components/ContextMenu.vue';
@@ -417,6 +418,10 @@ export default {
       if (!this.show) NProgress.start();
     }, 1000);
   },
+  beforeDestroy() {
+    if (this.id) cancelRequestsByTag(`playlist:${this.id}`);
+    NProgress.done();
+  },
   methods: {
     ...mapMutations(['appendTrackToPlayerList']),
     ...mapActions(['playFirstTrackOnList', 'playTrackOnListByID', 'showToast']),
@@ -471,8 +476,14 @@ export default {
       });
     },
     loadData(id, next = undefined) {
+      // 切换歌单时先取消上一次未完成的详情请求，避免旧请求晚到覆盖新页面
+      if (this.id && this.id !== id) {
+        cancelRequestsByTag(`playlist:${this.id}`);
+      }
       this.id = id;
-      getPlaylistDetail(this.id, true, this.$route.query.server || undefined)
+      // 默认走缓存（带 30s 内存缓存 + 后端 apicache）；只有 server 跨平台时才打时间戳
+      const noCache = !!this.$route.query.server;
+      getPlaylistDetail(this.id, noCache, this.$route.query.server || undefined)
         .then(data => {
           this.playlist = data.playlist;
           this.tracks = data.playlist.tracks;

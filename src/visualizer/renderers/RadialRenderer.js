@@ -70,14 +70,18 @@ export class RadialRenderer extends BaseRenderer {
     ctx.shadowColor = rgba(hexToRgb(opt.shadowColor), opt.shadowColorO ?? 1);
 
     const innerR = pulseR + 4;
+    const sens = Number.isFinite(+opt.sensitivity) ? +opt.sensitivity : 1;
+    const vBoost = Number.isFinite(+opt.vocalBoost) ? +opt.vocalBoost : 1;
     const maxOuter = Math.min(W, H) * 0.48;
-    const reach = maxOuter - innerR;
+    const reach = (maxOuter - innerR) * sens;
+    // 人声驱动的额外伸展（光刺的"呼吸感"主要随人声起伏）
+    const vocalReach = 1 + (frame.vocal || 0) * 0.7 * vBoost;
 
     for (let i = 0; i < stripCount; i++) {
       const v = bands[i];
       if (v <= 0.002) continue;
-      const norm = Math.pow(v, 0.82);
-      const len = norm * reach * edge + 6;
+      const norm = Math.pow(v, 0.7);
+      const len = norm * reach * edge * vocalReach + 6;
       const a = (i / stripCount) * Math.PI * 2;
       const cos = Math.cos(a);
       const sin = Math.sin(a);

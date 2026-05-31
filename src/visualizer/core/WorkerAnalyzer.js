@@ -34,7 +34,11 @@ export class WorkerAnalyzer {
     this.ctx = ctx;
     this.source = source;
     this.analyser = ctx.createAnalyser();
-    this.analyser.smoothingTimeConstant = options.smoothing ?? 0.82;
+    // 专业级默认：收紧 dB 范围 + 适中平滑，充分利用动态范围。
+    // Web Audio 默认 [-100, -30] dB 过于宽泛，流行乐中大量 bin 被压到死区。
+    this.analyser.smoothingTimeConstant = options.smoothing ?? 0.7;
+    this.analyser.minDecibels = options.minDb ?? -85;
+    this.analyser.maxDecibels = options.maxDb ?? -15;
 
     this._freqBuf = null;
     this._timeBuf = null;
@@ -64,8 +68,15 @@ export class WorkerAnalyzer {
       // 让外层可以感知失败并回退
       this._error = err;
     };
-    // 默认 attack/release 同步到 worker（与 AudioAnalyzer 默认一致）
-    this.worker.postMessage({ type: 'config', attack: 0.55, release: 0.08 });
+    // 默认 attack/release 同步到 worker（与 v2 默认一致）
+    // 同时下发 sampleRate 以便 worker 预算 A-weighting 与 Hz 刷物。
+    this.worker.postMessage({
+      type: 'config',
+      attack: 0.6,
+      release: 0.12,
+      sampleRate: ctx.sampleRate || 48000,
+      fftSize: this._size,
+    });
   }
 
   setFftPow(pow) {

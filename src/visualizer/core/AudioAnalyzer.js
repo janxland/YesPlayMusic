@@ -1,16 +1,37 @@
 /**
- * AudioAnalyzer
+ * AudioAnalyzer  (v2 — professional-grade fallback)
  * --------------------------------------------------------------
- * 对 Web Audio AnalyserNode 的高层封装：
- *  - 自适应 FFT 尺寸
- *  - 双时间常数包络平滑（fast attack / slow release）
- *  - 感知对数频段聚合（近似 Mel）
- *  - 低/中/高频能量与整体响度提取
+ * 当 Worker 不可用时启用的主线程版分析器；与 visualizer-worker.js 中
+ * 的算法保持 1:1 对齐：
+ *
+ *   1) 频率自适应平滑包络
+ *   2) Per-bin AGC（每 bin 慢衰减峰值归一化），输出 [0,1]
+ *   3) A-weighting → 响度
+ *   4) 响度长期峰值归一化（PLR/ReplayGain 思路）
+ *   5) 真实 Hz 网格的 1/3 倍频程频段聚合
  *
  * 设计原则：单一职责，只做"数据提取"，不做绘制。
  */
 
 const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
+
+function computeAWeights(N, sampleRate) {
+  const w = new Float32Array(N);
+  const nyq = sampleRate / 2;
+  for (let i = 0; i < N; i++) {
+    const f = (i + 0.5) * (nyq / N);
+    const f2 = f * f;
+    const num = 12200 * 12200 * f2 * f2;
+    const den =
+      (f2 + 20.6 * 20.6) *
+      Math.sqrt((f2 + 107.7 * 107.7) * (f2 + 737.9 * 737.9)) *
+      (f2 + 12200 * 12200);
+    const ra = den > 0 ? num / den : 0;
+    const a = ra > 0 ? 2.0 + (20 * Math.log(ra)) / Math.LN10 : -120;
+    w[i] = ra > 0 ? Math.pow(10, a / 20) : 0;
+  }
+  return w;
+}
 
 export class AudioAnalyzer {
   /**
@@ -18,30 +39,44 @@ export class AudioAnalyzer {
    * @param {AudioNode}    source     已构造的 MediaElementAudioSourceNode
    * @param {object}       [options]
    * @param {number}       [options.fftPow=11]   2^n 大小，n∈[5,15]
-   * @param {number}       [options.smoothing=0.82] AnalyserNode 内置时间常数
-   * @param {number}       [options.attack=0.55] 包络上升系数 (0~1, 越大越快)
-   * @param {number}       [options.release=0.08] 包络回落系数
+   * @param {number}       [options.smoothing=0.7]
+   * @param {number}       [options.minDb=-85]   AnalyserNode 下限
+   * @param {number}       [options.maxDb=-15]   AnalyserNode 上限
+   * @param {number}       [options.attack=0.6]
+   * @param {number}       [options.release=0.12]
    */
   constructor(ctx, source, options = {}) {
     this.ctx = ctx;
     this.source = source;
+    this.sampleRate = ctx.sampleRate || 48000;
     this.analyser = ctx.createAnalyser();
-    this.analyser.smoothingTimeConstant = options.smoothing ?? 0.82;
-    this._envelope = null;
+    // 收紧 dB 范围以充分利用动态范围。Web Audio 默认 [-100,-30] 过宽。
+    this.analyser.smoothingTimeConstant = options.smoothing ?? 0.7;
+    this.analyser.minDecibels = options.minDb ?? -85;
+    this.analyser.maxDecibels = options.maxDb ?? -15;
+
     this._buffer = null;
-    this.attack = options.attack ?? 0.55;
-    this.release = options.release ?? 0.08;
+    this._envelope = null;
+    this._normalized = null;
+    this._runPeak = null;
+    this._aWeight = null;
+
+    this.attack = options.attack ?? 0.6;
+    this.release = options.release ?? 0.12;
+    this.runPeakDecay = options.runPeakDecay ?? 0.997;
+    this.runPeakFloor = options.runPeakFloor ?? 0.06;
+
+    this._runLoudPeak = 0.12;
+    this.runLoudDecay = options.runLoudDecay ?? 0.9985;
+    this.runLoudFloor = options.runLoudFloor ?? 0.12;
+    this._loudness = 0;
 
     this.setFftPow(options.fftPow ?? 11);
 
-    // 「旁路 tap」接法：source→analyser（不连 destination）。
-    // AnalyserNode 不连 destination 也能采集数据，而主音频通路由
-    // AudioVisual._cachedSourceFor() 中的永久 source→trunk→destination
-    // 来保证，这样启/停可视化都不会造成音频静音。
+    // 旁路 tap：source→analyser，不接 destination。
     source.connect(this.analyser);
   }
 
-  /** 设置 FFT 大小（以 2 的幂表示），自动重建内部缓冲。 */
   setFftPow(pow) {
     const n = Number(pow);
     const p = clamp(Math.round(Number.isFinite(n) ? n : 11), 5, 15);
@@ -50,42 +85,65 @@ export class AudioAnalyzer {
     const bins = this.analyser.frequencyBinCount;
     this._buffer = new Uint8Array(bins);
     this._envelope = new Float32Array(bins);
+    this._normalized = new Float32Array(bins);
+    this._runPeak = new Float32Array(bins);
+    this._runPeak.fill(this.runPeakFloor);
+    this._aWeight = computeAWeights(bins, this.sampleRate);
     this._timeBuffer = new Uint8Array(size);
   }
 
-  /** 刷新一帧 FFT 数据并写入包络。 */
+  /** 拉一帧 byte FFT → 平滑 → AGC → 算响度。 */
   update() {
     this.analyser.getByteFrequencyData(this._buffer);
-    const env = this._envelope;
     const buf = this._buffer;
-    const N = buf.length;
+    const env = this._envelope;
+    const nrm = this._normalized;
+    const rp = this._runPeak;
     const aBase = this.attack;
     const rBase = this.release;
-    // 算法优化：
-    //  1. 频率自适应时间常数 —— 低频天然衰减慢，给它更慢的 attack / release，
-    //     高频给更快的 attack 以保留瞬态；范围在基准值 ±35% 内插值。
-    //  2. 轻量频谱倾斜补偿 —— 自然音乐高频能量较弱，按 +log2 给高频微弱增益，
-    //     让可视化在高频段也有可见的活动（系数温和，避免噪声放大）。
+    const decay = this.runPeakDecay;
+    const floor = this.runPeakFloor;
+    const N = buf.length;
+    const denom = N - 1 || 1;
     for (let i = 0; i < N; i++) {
-      const t = i / (N - 1 || 1); // 0..1，0=最低频
-      const aRate = aBase * (0.65 + 0.7 * t); // 低频慢，高频快
+      const t = i / denom;
+      const aRate = aBase * (0.65 + 0.7 * t);
       const rRate = rBase * (0.55 + 0.9 * t);
-      const tilt = 1 + 0.25 * Math.log2(1 + i / 32); // 温和高频提升
-      const v = Math.min(1, (buf[i] / 255) * tilt);
+      const v = buf[i] / 255;
       const prev = env[i];
-      env[i] = v > prev ? prev + (v - prev) * aRate : prev + (v - prev) * rRate;
+      const e =
+        v > prev ? prev + (v - prev) * aRate : prev + (v - prev) * rRate;
+      env[i] = e;
+      // per-bin AGC
+      let p = rp[i] * decay;
+      if (e > p) p = e;
+      if (p < floor) p = floor;
+      rp[i] = p;
+      let no = e / p;
+      if (no > 1) no = 1;
+      else if (no < 0) no = 0;
+      nrm[i] = no;
     }
+    // A-weighted RMS 响度 + 长期峰值归一化
+    const aw = this._aWeight;
+    let s = 0;
+    for (let i = 0; i < N; i++) {
+      const v = env[i] * aw[i];
+      s += v * v;
+    }
+    const rms = Math.sqrt(s / N);
+    let lp = this._runLoudPeak * this.runLoudDecay;
+    if (rms > lp) lp = rms;
+    if (lp < this.runLoudFloor) lp = this.runLoudFloor;
+    this._runLoudPeak = lp;
+    this._loudness = clamp(rms / lp, 0, 1);
   }
 
-  /** 返回原始（已归一化）频谱包络的只读视图。 */
+  /** 归一化频谱（per-bin AGC 之后） — 渲染端使用。 */
   get spectrum() {
-    return this._envelope;
+    return this._normalized;
   }
 
-  /**
-   * 取当前时域波形（用于波形渲染），返回归一化到 [-1,1] 的 Float32Array。
-   * 按需采样：仅在调用时才拉取 AnalyserNode 数据，避免 update() 多余开销。
-   */
   getWaveform() {
     if (!this.analyser.getByteTimeDomainData) return new Float32Array(0);
     this.analyser.getByteTimeDomainData(this._timeBuffer);
@@ -96,75 +154,86 @@ export class AudioAnalyzer {
   }
 
   get binCount() {
-    return this._envelope.length;
+    return this._normalized.length;
   }
 
-  /**
-   * 将 N 个 FFT bin 聚合为 M 个感知频段（对数刻度，近似 Mel）。
-   * 返回新的 Float32Array，避免外部修改内部状态。
-   */
+  /** 真实 Hz 的 1/3 倍频程对数频段聚合。 */
   getBands(bandCount = 64) {
     const M = Math.max(1, bandCount | 0);
-    const env = this._envelope;
-    const N = env.length;
+    const src = this._normalized;
+    const N = src.length;
+    const nyq = this.sampleRate / 2;
+    const binHz = nyq / N;
+    const fLo = 30;
+    const fHi = Math.min(16000, nyq * 0.95);
+    const logLo = Math.log(fLo);
+    const logHi = Math.log(fHi);
+    const step = (logHi - logLo) / M;
     const out = new Float32Array(M);
-    // 跳过最低 bin (常含直流偏移噪音)
-    const minLog = Math.log(2);
-    const maxLog = Math.log(N);
-    const step = (maxLog - minLog) / M;
     for (let i = 0; i < M; i++) {
-      const lo = Math.floor(Math.exp(minLog + step * i));
-      const hi = Math.max(
-        lo + 1,
-        Math.floor(Math.exp(minLog + step * (i + 1)))
-      );
-      let sum = 0;
+      const f0 = Math.exp(logLo + step * i);
+      const f1 = Math.exp(logLo + step * (i + 1));
+      const lo = Math.max(1, Math.floor(f0 / binHz));
+      let hi = Math.max(lo + 1, Math.floor(f1 / binHz));
+      if (hi > N) hi = N;
       let peak = 0;
-      const end = Math.min(hi, N);
-      for (let k = lo; k < end; k++) {
-        const v = env[k];
-        sum += v;
+      let sq = 0;
+      for (let k = lo; k < hi; k++) {
+        const v = src[k];
+        sq += v * v;
         if (v > peak) peak = v;
       }
-      const count = end - lo || 1;
-      // 60% 峰值 + 40% 平均：兼顾冲击感和稳定感
-      out[i] = peak * 0.6 + (sum / count) * 0.4;
+      const count = hi - lo || 1;
+      const rms = Math.sqrt(sq / count);
+      out[i] = peak * 0.5 + rms * 0.5;
     }
     return out;
   }
 
-  /** 区间 RMS 能量，索引按 bin 计。 */
-  energyInRange(loBin, hiBin) {
-    const env = this._envelope;
-    const lo = clamp(loBin | 0, 0, env.length - 1);
-    const hi = clamp(hiBin | 0, lo + 1, env.length);
-    let sum = 0;
-    for (let i = lo; i < hi; i++) sum += env[i] * env[i];
-    return Math.sqrt(sum / (hi - lo));
+  _hzIdx(hz) {
+    const N = this._normalized.length;
+    const binHz = this.sampleRate / 2 / N;
+    let b = Math.floor(hz / binHz);
+    if (b < 1) b = 1;
+    if (b > N) b = N;
+    return b;
   }
 
-  /** 低频能量（≈ 0~250Hz，bin 0~3% 区间）。 */
+  _rms(lo, hi) {
+    const src = this._normalized;
+    const N = src.length;
+    if (lo < 0) lo = 0;
+    if (hi > N) hi = N;
+    if (hi <= lo) return 0;
+    let s = 0;
+    for (let i = lo; i < hi; i++) s += src[i] * src[i];
+    return Math.sqrt(s / (hi - lo));
+  }
+
+  /** 低频能量 (20–160 Hz) */
   get bass() {
-    return this.energyInRange(1, Math.max(2, (this.binCount * 0.04) | 0));
+    return this._rms(this._hzIdx(20), this._hzIdx(160));
   }
-  /** 中频能量（≈ 250Hz~2kHz） */
+  /** 中频能量 (500 Hz – 2 kHz) */
   get mid() {
-    const n = this.binCount;
-    return this.energyInRange((n * 0.04) | 0, (n * 0.2) | 0);
+    return this._rms(this._hzIdx(500), this._hzIdx(2000));
   }
-  /** 高频能量 */
+  /** 高频能量 (4 kHz – nyquist) */
   get treble() {
-    const n = this.binCount;
-    return this.energyInRange((n * 0.2) | 0, n);
+    return this._rms(this._hzIdx(4000), this._normalized.length);
   }
-  /** 整体响度 [0,1] */
+  /** 人声带 (200 Hz – 4 kHz)：基频 + F1/F2 共振峰 */
+  get vocal() {
+    return this._rms(this._hzIdx(200), this._hzIdx(4000));
+  }
+  /** A-weighted 响度，已做长期峰值归一化，落在 [0,1] */
   get loudness() {
-    return this.energyInRange(1, this.binCount);
+    return this._loudness;
   }
 
-  /** 计算谱质心 (spectral centroid) 用于色相调制 [0,1]。 */
+  /** 谱质心 [0,1]（基于归一化包络） */
   get centroid() {
-    const env = this._envelope;
+    const env = this._normalized;
     let num = 0;
     let den = 0;
     for (let i = 0; i < env.length; i++) {
@@ -174,14 +243,16 @@ export class AudioAnalyzer {
     return den > 0 ? num / den / env.length : 0;
   }
 
+  /** 兼容旧 API：直接区间 RMS 能量（按 bin 索引） */
+  energyInRange(loBin, hiBin) {
+    return this._rms(loBin | 0, hiBin | 0);
+  }
+
   destroy() {
-    // 只断开 source→analyser 这条旁路边，保留主音频通路。
-    // 避免调用 source.disconnect()——那会一并断掉 source→trunk，
-    // 导致音乐完全静音。
     try {
       this.source.disconnect(this.analyser);
     } catch (_) {
-      // 部分浏览器不支持指定目标的 disconnect，退路为不做任何事
+      /* ignored */
     }
     try {
       this.analyser.disconnect();
@@ -190,5 +261,8 @@ export class AudioAnalyzer {
     }
     this._buffer = null;
     this._envelope = null;
+    this._normalized = null;
+    this._runPeak = null;
+    this._aWeight = null;
   }
 }

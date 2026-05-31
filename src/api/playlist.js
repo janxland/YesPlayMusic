@@ -45,7 +45,9 @@ export function dailyRecommendPlaylist(params) {
  */
 export function getPlaylistDetail(id, noCache = false, server = undefined) {
   let params = { id };
-  if (noCache) params.timestamp = new Date().getTime();
+  // 仅在主动要求 noCache 且确实需要绕过的场景才打时间戳。
+  // 之前所有调用方都默认传 true，导致服务端 apicache + 浏览器缓存双双失效。
+  if (noCache && server) params.timestamp = Date.now();
   return request({
     url: '/playlist/detail',
     method: 'get',
@@ -53,6 +55,9 @@ export function getPlaylistDetail(id, noCache = false, server = undefined) {
       ...params,
       server,
     },
+    // 30s 内存级 SWR：连续点同一歌单封面 / 多组件共用，直接命中。
+    memoryCache: { ttl: 30_000 },
+    requestTag: `playlist:${id}`,
   }).then(data => {
     if (data.playlist) {
       if (data.playlist.source) {

@@ -86,16 +86,37 @@ export default {
     if (this.isElectron) ipcRenderer(this);
     window.addEventListener('keydown', this.handleKeydown);
     this.fetchData();
-    flexiSite(2).then(res => {
-      if (res.code === 200) {
-        let settings = res.data.value;
-        console.log(settings);
-        localStorage.setItem('fonts', JSON.stringify(settings.fonts));
-        this.loadFont(
-          localStorage.getItem('fontFamilyName') || settings.fonts[2].name
-        );
+
+    // 字体配置：先用本地缓存即时上字体，再后台静默刷新远程配置。
+    // 之前每次启动都同步等 flexiSite(2)，是首屏字体跳动 + 网络黏脚的来源之一。
+    const cachedFonts = localStorage.getItem('fonts');
+    if (cachedFonts) {
+      try {
+        const fonts = JSON.parse(cachedFonts);
+        if (Array.isArray(fonts) && fonts.length) {
+          this.loadFont(
+            localStorage.getItem('fontFamilyName') || fonts[2]?.name
+          );
+        }
+      } catch (_) {
+        /* ignore */
       }
-    });
+    }
+    flexiSite(2)
+      .then(res => {
+        if (res && res.code === 200) {
+          const settings = res.data.value;
+          localStorage.setItem('fonts', JSON.stringify(settings.fonts));
+          if (!cachedFonts) {
+            this.loadFont(
+              localStorage.getItem('fontFamilyName') || settings.fonts[2].name
+            );
+          }
+        }
+      })
+      .catch(err => {
+        console.warn('[App] flexiSite failed:', err?.message || err);
+      });
   },
   methods: {
     handleKeydown(e) {
