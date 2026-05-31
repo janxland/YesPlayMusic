@@ -3,7 +3,13 @@
     <div class="container">
       <div v-if="showUserInfo" class="user">
         <div class="left">
-          <img class="avatar" :src="data.user.avatarUrl" loading="lazy" />
+          <img
+            class="avatar"
+            :src="data.user.avatarUrl"
+            referrerpolicy="no-referrer"
+            onerror="if(!this.dataset.fallback){this.dataset.fallback=1;this.src='/img/logos/yesplaymusic.png';}else{this.onerror=null;}"
+            loading="lazy"
+          />
           <div class="info">
             <div class="nickname">{{ data.user.nickname }}</div>
             <div class="extra-info">

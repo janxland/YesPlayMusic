@@ -17,7 +17,12 @@
         class="playlist"
         @click="addTrackToPlaylist(playlist.id)"
       >
-        <img :src="playlist.coverImgUrl | resizeImage(224)" loading="lazy" />
+        <img
+          :src="playlist.coverImgUrl | resizeImage(224)"
+          referrerpolicy="no-referrer"
+          onerror="if(!this.dataset.fallback){this.dataset.fallback=1;this.src='/img/logos/yesplaymusic.png';}else{this.onerror=null;}"
+          loading="lazy"
+        />
         <div class="info">
           <div class="title">{{ playlist.name }}</div>
           <div class="track-count">{{ playlist.trackCount }} 首</div>

@@ -50,7 +50,12 @@
                   onerror="this.src='https://p2.music.126.net/UeTuwE7pvjBpypWLudqukA==/3132508627578625.jpg'; this.onerror=null;"
                   @contextmenu="changeCover"
                 />
-                <img class="shadow" :src="imageUrl" />
+                <img
+                  class="shadow"
+                  :src="imageUrl"
+                  referrerpolicy="no-referrer"
+                  onerror="if(!this.dataset.fallback){this.dataset.fallback=1;this.src='/img/logos/yesplaymusic.png';}else{this.onerror=null;}"
+                />
               </div>
             </div>
             <div class="controls">

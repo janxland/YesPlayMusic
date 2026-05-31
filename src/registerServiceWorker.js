@@ -2,8 +2,24 @@
 
 import { register } from 'register-service-worker';
 
-if (!process.env.IS_ELECTRON) {
-  register(`${process.env.BASE_URL}service-worker.js`, {
+function getServiceWorkerUrl() {
+  const baseUrl = process.env.BASE_URL || '/';
+  try {
+    const resolvedBase = new URL(baseUrl, window.location.origin);
+    if (resolvedBase.origin !== window.location.origin) {
+      // Service Worker must be registered from the page origin, not the CDN.
+      return null;
+    }
+    return new URL('service-worker.js', resolvedBase).href;
+  } catch {
+    return `${baseUrl}service-worker.js`;
+  }
+}
+
+const serviceWorkerUrl = getServiceWorkerUrl();
+
+if (!process.env.IS_ELECTRON && serviceWorkerUrl) {
+  register(serviceWorkerUrl, {
     ready() {
       // console.log(
       //   "App is being served from cache by a service worker.\n" +

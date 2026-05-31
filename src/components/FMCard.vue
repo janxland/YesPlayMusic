@@ -1,6 +1,12 @@
 <template>
   <div class="fm" :style="{ background }" data-theme="dark">
-    <img :src="nextTrackCover" style="display: none" loading="lazy" />
+    <img
+      :src="nextTrackCover"
+      style="display: none"
+      referrerpolicy="no-referrer"
+      onerror="this.onerror=null"
+      loading="lazy"
+    />
     <img
       class="cover"
       :src="track.album && track.album.picUrl | resizeImage(512)"

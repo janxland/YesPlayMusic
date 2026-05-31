@@ -342,7 +342,12 @@ export default class {
       onend: () => {
         this._nextTrackCallback();
       },
-      onload: () => {},
+      onload: () => {
+        // 加载成功，清除该曲目的重试计数
+        if (this._loadErrorRetryMap) {
+          delete this._loadErrorRetryMap[this.currentTrackID];
+        }
+      },
     });
 
     this._howler.on('loaderror', (_, errCode) => {
@@ -350,19 +355,44 @@ export default class {
       // code 3: MEDIA_ERR_DECODE
       if (errCode === 3) {
         this._playNextTrack(this._isPersonalFM);
-      } else {
-        const t = this.progress;
-        this._replaceCurrentTrackAudio(this.currentTrack, false, false).then(
-          replaced => {
-            // 如果 replaced 为 false，代表当前的 track 已经不是这里想要替换的track
-            // 此时则不修改当前的歌曲进度
-            if (replaced) {
-              this._howler?.seek(t);
-              this.play();
-            }
-          }
-        );
+        return;
       }
+
+      // 防止 unblock / 网络源持续失败时无限循环重新拉取
+      // 对同一首歌只允许一次重试，第二次失败直接跳到下一首
+      const trackId = this.currentTrackID;
+      this._loadErrorRetryMap = this._loadErrorRetryMap || {};
+      const retried = this._loadErrorRetryMap[trackId] || 0;
+      if (retried >= 1) {
+        console.warn(
+          `[Player.js] loaderror retry limit reached for track ${trackId} (code=${errCode}), skip to next`
+        );
+        delete this._loadErrorRetryMap[trackId];
+        store.dispatch('showToast', `无法播放 ${this.currentTrack?.name}`);
+        this._playNextTrack(this._isPersonalFM);
+        return;
+      }
+      this._loadErrorRetryMap[trackId] = retried + 1;
+
+      const t = this.progress;
+      this._replaceCurrentTrackAudio(this.currentTrack, false, false).then(
+        replaced => {
+          // 如果 replaced 为 false，代表当前的 track 已经不是这里想要替换的track
+          // 此时则不修改当前的歌曲进度
+          if (replaced) {
+            this._howler?.seek(t);
+            this.play();
+          }
+        }
+      );
+    });
+
+    // Safari/iOS 自动播放策略：play() 返回的 promise 被拒绝时不应崩溃为未捕获异常
+    // 此事件由 Howler 在底层 <audio>.play() 拒绝时触发，避免反复上报埋点
+    this._howler.on('playerror', (_, err) => {
+      console.warn('[Player] playerror:', err);
+      this._setPlaying(false);
+      // 让 UI 进入暂停状态等待用户手势再次点击播放
     });
     if (autoplay) {
       this.play();
@@ -489,20 +519,25 @@ export default class {
       console.debug(
         `[debug][Player.js] Get Cache 👉 ${track.name} ,url:${source}`
       );
-      return (
-        source ??
-        this._getAudioSourceFromNetease(track).then(source => {
-          let finalSource =
-            source ?? this._getAudioSourceFromUnblockMusic(track);
+      if (source) return source;
+      // 1) 先尝试网易云原始链接
+      return this._getAudioSourceFromNetease(track).then(neteaseSource => {
+        if (neteaseSource) {
           console.debug(
-            `[debug][Player.js] Get Mp3 From NeteaseAPI/Unblock 👉 ${track.name} ,url:${source}`
+            `[debug][Player.js] Get Mp3 From NeteaseAPI 👉 ${track.name} ,url:${neteaseSource}`
           );
+          // 仅在拿到有效 url 时才缓存，避免用 null 触发 axios.get(null) 重复失败请求
           if (store.state.settings.automaticallyCacheSongs) {
-            cacheTrackSource(track, source, 128000);
+            cacheTrackSource(track, neteaseSource, 128000);
           }
-          return finalSource;
-        })
-      );
+          return neteaseSource;
+        }
+        // 2) 网易云无可用源，回退到 unblock（只调用一次）
+        console.debug(
+          `[debug][Player.js] Netease no source, fallback to UnblockMusic 👉 ${track.name}`
+        );
+        return this._getAudioSourceFromUnblockMusic(track);
+      });
     });
   }
   _replaceCurrentTrack(
@@ -516,7 +551,15 @@ export default class {
     if (id.constructor === Object)
       return this._replaceCurrentTrackByTrack(id, (autoplay = true));
     return getTrackDetail(id).then(data => {
-      const track = data.songs[0];
+      const track = data?.songs?.[0];
+      if (!track) {
+        console.warn(
+          `[Player] getTrackDetail returned no songs for id=${id}`,
+          data
+        );
+        store.dispatch('showToast', '获取歌曲信息失败');
+        return false;
+      }
       this._currentTrack = track;
       this._updateMediaSessionMetaData(track);
       return this._replaceCurrentTrackAudio(
@@ -589,7 +632,8 @@ export default class {
     if (!nextTrackID) return;
     if (this._personalFMTrack.id == nextTrackID) return;
     getTrackDetail(nextTrackID).then(data => {
-      let track = data.songs[0];
+      const track = data?.songs?.[0];
+      if (!track) return;
       this._getAudioSource(track);
     });
   }
@@ -904,7 +948,23 @@ export default class {
     if (this._howler?._sounds.length <= 0 || !this._howler?._sounds[0]._node) {
       return;
     }
-    this._howler?._sounds[0]._node.setSinkId(store.state.settings.outputDevice);
+    const node = this._howler._sounds[0]._node;
+    // Safari / iOS WebKit 不支持 setSinkId，做能力检测避免每次播放都抛错
+    if (typeof node.setSinkId !== 'function') {
+      return;
+    }
+    const device = store.state.settings.outputDevice;
+    if (!device) return;
+    try {
+      const ret = node.setSinkId(device);
+      if (ret && typeof ret.catch === 'function') {
+        ret.catch(err => {
+          console.warn('[Player] setSinkId failed:', err?.message || err);
+        });
+      }
+    } catch (err) {
+      console.warn('[Player] setSinkId threw:', err?.message || err);
+    }
   }
   replacePlaylist(
     trackIDs,
