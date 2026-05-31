@@ -336,7 +336,9 @@ export default class {
     this._howler = new Howl({
       src: [source],
       html5: true,
-      crossOrigin: 'anonymous',
+      // 不强制设置 crossOrigin，避免对未配置 CORS 的第三方音频源
+      // (如 kuwo/QQ 等 UNM 回源 CDN) 触发 CORS 拦截。
+      // 可视化打开时会由 AudioVisual 内部按需设置 crossOrigin 并重载。
       preload: true,
       format: ['mp3', 'flac'],
       onend: () => {
