@@ -20,8 +20,11 @@
       </div>
       <div class="controls">
         <div class="buttons">
-          <button-icon title="不喜欢" @click.native="moveToFMTrash">
-            <svg-icon id="thumbs-down" icon-class="thumbs-down" />
+          <button-icon
+            :title="$t('player.previous')"
+            @click.native="playPrevTrack"
+          >
+            <svg-icon icon-class="previous" />
           </button-icon>
           <button-icon
             :title="$t(isPlaying ? 'player.pause' : 'player.play')"
@@ -88,6 +91,9 @@ export default {
     },
     next() {
       this.player.playNextFMTrack();
+    },
+    playPrevTrack() {
+      this.player.playPrevTrack();
     },
     goToAlbum() {
       if (this.track.album.id === 0) return;

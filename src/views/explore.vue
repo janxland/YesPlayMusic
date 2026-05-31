@@ -87,6 +87,7 @@ export default {
     this.playlists = [];
     this.offset = 1;
     this.activeCategory = to.query.category;
+    this.reqToken++; // 作废所有在飞请求
     this.getPlaylist();
     next();
   },
@@ -100,6 +101,7 @@ export default {
       hasMore: true,
       allBigCats: ['语种', '风格', '场景', '情感', '主题'],
       showCatOptions: false,
+      reqToken: 0,
     };
   },
   computed: {
@@ -127,14 +129,33 @@ export default {
       } else {
         this.activeCategory = queryCategory;
       }
+      this.reqToken++;
       this.getPlaylist();
     },
     goToCategory(Category) {
       this.showCatOptions = false;
       this.$router.push({ name: 'explore', query: { category: Category } });
     },
-    updatePlaylist(playlists) {
-      this.playlists.push(...playlists);
+    updatePlaylist(playlists, token) {
+      // 丢弃已过期（分类切换前）的响应
+      if (token !== this.reqToken) return;
+      const incoming = Array.isArray(playlists) ? playlists : [];
+      const existingIds = new Set(this.playlists.map(p => p.id));
+      const deduped = [];
+      const seen = new Set();
+      for (const p of incoming) {
+        if (!p || p.id == null) continue;
+        if (existingIds.has(p.id) || seen.has(p.id)) continue;
+        seen.add(p.id);
+        deduped.push(p);
+      }
+      if (deduped.length === 0 && incoming.length > 0) {
+        // 后端返回的全是重复项，视为没有更多
+        this.hasMore = false;
+      }
+      if (deduped.length > 0) {
+        this.playlists.push(...deduped);
+      }
       this.loadingMore = false;
       this.showLoadMoreButton = true;
       NProgress.done();
@@ -154,32 +175,40 @@ export default {
       return this.getTopPlayList();
     },
     getRecommendPlayList() {
+      const token = this.reqToken;
       getRecommendPlayList(100, true).then(list => {
+        if (token !== this.reqToken) return;
         this.playlists = [];
-        this.updatePlaylist(list);
+        this.updatePlaylist(list, token);
       });
     },
     getHighQualityPlaylist() {
+      const token = this.reqToken;
       let playlists = this.playlists;
       let before =
         playlists.length !== 0 ? playlists[playlists.length - 1].updateTime : 0;
       highQualityPlaylist({ limit: 50, before }).then(data => {
-        this.updatePlaylist(data.playlists);
+        if (token !== this.reqToken) return;
+        this.updatePlaylist(data.playlists, token);
         this.hasMore = data.more;
       });
     },
     getTopLists() {
+      const token = this.reqToken;
       toplists().then(data => {
+        if (token !== this.reqToken) return;
         this.playlists = [];
-        this.updatePlaylist(data.list);
+        this.updatePlaylist(data.list, token);
       });
     },
     getTopPlayList() {
+      const token = this.reqToken;
       topPlaylist({
         cat: this.activeCategory,
         offset: this.playlists.length,
       }).then(data => {
-        this.updatePlaylist(data.playlists);
+        if (token !== this.reqToken) return;
+        this.updatePlaylist(data.playlists, token);
         this.hasMore = data.more;
       });
     },

@@ -6,7 +6,7 @@
   "singleQuote": true,
   "jsxSingleQuote": true,
   "arrowParens": "avoid",
-  "endOfLine": "lf",
+  "endOfLine": "auto",
   "bracketSpacing": true,
   "htmlWhitespaceSensitivity": "strict"
 }

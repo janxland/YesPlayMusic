@@ -34,8 +34,11 @@ export class AudioAnalyzer {
 
     this.setFftPow(options.fftPow ?? 11);
 
+    // 「旁路 tap」接法：source→analyser（不连 destination）。
+    // AnalyserNode 不连 destination 也能采集数据，而主音频通路由
+    // AudioVisual._cachedSourceFor() 中的永久 source→trunk→destination
+    // 来保证，这样启/停可视化都不会造成音频静音。
     source.connect(this.analyser);
-    this.analyser.connect(ctx.destination);
   }
 
   /** 设置 FFT 大小（以 2 的幂表示），自动重建内部缓冲。 */
@@ -172,11 +175,18 @@ export class AudioAnalyzer {
   }
 
   destroy() {
+    // 只断开 source→analyser 这条旁路边，保留主音频通路。
+    // 避免调用 source.disconnect()——那会一并断掉 source→trunk，
+    // 导致音乐完全静音。
+    try {
+      this.source.disconnect(this.analyser);
+    } catch (_) {
+      // 部分浏览器不支持指定目标的 disconnect，退路为不做任何事
+    }
     try {
       this.analyser.disconnect();
-      this.source.disconnect();
     } catch (_) {
-      /* 已断开则忽略 */
+      /* ignored */
     }
     this._buffer = null;
     this._envelope = null;

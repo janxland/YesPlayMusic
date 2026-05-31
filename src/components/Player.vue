@@ -85,16 +85,9 @@
         <div class="blank"></div>
         <div class="container" @click.stop>
           <button-icon
-            v-show="!player.isPersonalFM"
             :title="$t('player.previous')"
             @click.native="playPrevTrack"
             ><svg-icon icon-class="previous"
-          /></button-icon>
-          <button-icon
-            v-show="player.isPersonalFM"
-            title="不喜欢"
-            @click.native="moveToFMTrash"
-            ><svg-icon icon-class="thumbs-down"
           /></button-icon>
           <button-icon
             class="play"
