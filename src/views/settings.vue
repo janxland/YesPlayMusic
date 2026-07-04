@@ -7,7 +7,7 @@
             class="avatar"
             :src="data.user.avatarUrl"
             referrerpolicy="no-referrer"
-            onerror="if(!this.dataset.fallback){this.dataset.fallback=1;this.src='/img/logos/yesplaymusic.png';}else{this.onerror=null;}"
+            onerror="if(!this.dataset.fallback){this.dataset.fallback=1;this.src=window.__YPM_COVER_FALLBACK__}else{this.onerror=null}"
             loading="lazy"
           />
           <div class="info">

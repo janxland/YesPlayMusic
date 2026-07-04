@@ -28,7 +28,8 @@
           <img
             :src="currentTrack.al && currentTrack.al.picUrl | resizeImage(224)"
             loading="lazy"
-            onerror="this.src = 'https://p2.music.126.net/UeTuwE7pvjBpypWLudqukA==/3132508627578625.jpg'; this.onerror=null;"
+            referrerpolicy="no-referrer"
+            onerror="this.src=window.__YPM_COVER_FALLBACK__;this.onerror=null"
             @click="goToAlbum"
           />
           <div class="track-info" :title="audioSource">

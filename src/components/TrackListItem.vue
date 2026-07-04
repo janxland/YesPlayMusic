@@ -13,7 +13,8 @@
       :src="imgUrl"
       loading="lazy"
       :class="{ hover: focus }"
-      onerror="this.src = 'https://p2.music.126.net/UeTuwE7pvjBpypWLudqukA==/3132508627578625.jpg'; this.onerror=null;"
+      referrerpolicy="no-referrer"
+      onerror="this.src=window.__YPM_COVER_FALLBACK__;this.onerror=null"
       @click.stop="goToAlbum"
     />
     <div v-if="showOrderNumber" class="no">
@@ -98,6 +99,7 @@
 <script>
 import ArtistsInLine from '@/components/ArtistsInLine.vue';
 import ExplicitSymbol from '@/components/ExplicitSymbol.vue';
+import { COVER_FALLBACK } from '@/utils/imageFallback';
 import { mapState } from 'vuex';
 import { isNil } from 'lodash';
 
@@ -136,7 +138,8 @@ export default {
         this.track?.picUrl ??
         this.track?.al?.picUrl ??
         this.track?.album?.picUrl ??
-        'https://p2.music.126.net/UeTuwE7pvjBpypWLudqukA==/3132508627578625.jpg';
+        COVER_FALLBACK;
+      if (image.startsWith('data:')) return image;
       return image + '?param=224y224';
     },
     artists() {
