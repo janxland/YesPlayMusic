@@ -11,6 +11,24 @@
       src="https://hm.baidu.com/hm.js?4897a1b613242bbdf2413af83d2341dc"
     ></script>
     <script>
+      // 网易云封面 CDN 失效属于预期情况，阻止 resource 错误进入埋点
+      (function () {
+        var CDN_PATTERN = /music\.126\.net|163yun\.com/;
+        window.addEventListener(
+          'error',
+          function (e) {
+            if (!e.target || e.target === window) return;
+            if (e.target.tagName !== 'IMG') return;
+            var url = e.target.currentSrc || e.target.src || '';
+            if (CDN_PATTERN.test(url)) {
+              e.stopImmediatePropagation();
+            }
+          },
+          true
+        );
+      })();
+    </script>
+    <script>
       // 只在 *.roginx.ink 域名下加载埋点脚本，避免本地开发环境加载
       if (
         window.location.hostname.endsWith('.roginx.ink') ||

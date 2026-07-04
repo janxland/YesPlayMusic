@@ -29,6 +29,8 @@
         class="gradient-background slight-move"
         :style="{ background }"
         :src="imageUrl"
+        referrerpolicy="no-referrer"
+        onerror="if(!this.dataset.fallback){this.dataset.fallback=1;this.src=window.__YPM_COVER_FALLBACK__}else{this.onerror=null}"
       />
       <Visualization ref="visualization" :option="{}"></Visualization>
       <div
@@ -48,14 +50,14 @@
                   :src="imageUrl"
                   loading="lazy"
                   referrerpolicy="no-referrer"
-                  onerror="if(!this.dataset.fallback){this.dataset.fallback=1;this.src='/img/logos/yesplaymusic.png';}else{this.onerror=null;}"
+                  onerror="if(!this.dataset.fallback){this.dataset.fallback=1;this.src=window.__YPM_COVER_FALLBACK__}else{this.onerror=null}"
                   @contextmenu="changeCover"
                 />
                 <img
                   class="shadow"
                   :src="imageUrl"
                   referrerpolicy="no-referrer"
-                  onerror="if(!this.dataset.fallback){this.dataset.fallback=1;this.src='/img/logos/yesplaymusic.png';}else{this.onerror=null;}"
+                  onerror="if(!this.dataset.fallback){this.dataset.fallback=1;this.src=window.__YPM_COVER_FALLBACK__}else{this.onerror=null}"
                 />
               </div>
             </div>

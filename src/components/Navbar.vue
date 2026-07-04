@@ -49,6 +49,8 @@
         <img
           class="avatar"
           :src="avatarUrl"
+          referrerpolicy="no-referrer"
+          onerror="this.src=window.__YPM_COVER_FALLBACK__;this.onerror=null"
           loading="lazy"
           @click="showUserProfileMenu"
         />
@@ -95,6 +97,7 @@
 <script>
 import { mapState } from 'vuex';
 import { isLooseLoggedIn, doLogout } from '@/utils/auth';
+import { COVER_FALLBACK } from '@/utils/imageFallback';
 
 // import icons for win32 title bar
 // icons by https://github.com/microsoft/vscode-codicons
@@ -130,7 +133,7 @@ export default {
     avatarUrl() {
       return this.data?.user?.avatarUrl && this.isLooseLoggedIn
         ? `${this.data?.user?.avatarUrl}?param=512y512`
-        : 'http://s4.music.126.net/style/web2/img/default/default_avatar.jpg?param=60y60';
+        : COVER_FALLBACK;
     },
     hasCustomTitlebar() {
       return this.enableWin32Titlebar || this.enableLinuxTitlebar;

@@ -4,6 +4,8 @@
       <div v-show="type !== 'cloudDisk'" class="item-info">
         <img
           :src="rightClickedTrackComputed.al.picUrl | resizeImage(224)"
+          referrerpolicy="no-referrer"
+          onerror="if(!this.dataset.fallback){this.dataset.fallback=1;this.src=window.__YPM_COVER_FALLBACK__}else{this.onerror=null}"
           loading="lazy"
         />
         <div class="info">

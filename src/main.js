@@ -1,3 +1,4 @@
+import '@/utils/imageFallback';
 import Vue from 'vue';
 import VueGtag from 'vue-gtag';
 import App from './App.vue';
