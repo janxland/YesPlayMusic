@@ -1,6 +1,7 @@
-// deploy-cdn.js - 部署 YesPlayMusic 到腾讯云 COS
+// deploy-cdn.js - 部署 YesPlayMusic 到腾讯云 COS（OAuth→STS，不再需要真实密钥）
 
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const dotenv = require('dotenv');
 const COS = require('cos-nodejs-sdk-v5');
@@ -26,6 +27,66 @@ if (!envFile) {
   console.log(`已加载环境变量: ${envFile}`);
 }
 
+// ============================================================================
+// OAuth → STS（去隐私密钥）：读 ~/.roginx-cli/credentials.json（pnpm roginx-login 生成）
+// 链路: OAuth token → eorder-server /temp-credentials → 30min STS 临时密钥（收敛到 www/music/dist）
+// ============================================================================
+const OAUTH_BASE = process.env.ROGINX_OAUTH_BASE || 'https://edu.roginx.ink/api';
+const CLIENT_ID = 'roginx-cli';
+const CONFIG_NAME = process.env.COS_CONFIG_NAME || 'music';
+
+function readOAuthCredentials() {
+  const credPath = path.join(os.homedir(), '.roginx-cli', 'credentials.json');
+  if (!fs.existsSync(credPath)) {
+    throw new Error(
+      `未找到 OAuth 登录凭证: ${credPath}\n请先执行 pnpm roginx-login 完成浏览器 OAuth 登录`
+    );
+  }
+  return JSON.parse(fs.readFileSync(credPath, 'utf-8'));
+}
+
+async function refreshOAuthTokens(cred) {
+  const res = await fetch(`${OAUTH_BASE}/auth-center/oauth/token`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      grant_type: 'refresh_token',
+      refresh_token: cred.refreshToken,
+      client_id: CLIENT_ID,
+    }),
+  });
+  if (!res.ok) throw new Error(`OAuth 刷新失败: HTTP ${res.status}，请重新执行 pnpm roginx-login`);
+  const data = await res.json();
+  if (!data.accessToken) throw new Error(`OAuth 刷新失败: ${data.message || '未知错误'}`);
+  const updated = { ...cred, ...data };
+  fs.writeFileSync(path.join(os.homedir(), '.roginx-cli', 'credentials.json'), JSON.stringify(updated, null, 2));
+  console.log('🔄 OAuth token 已自动刷新');
+  return updated;
+}
+
+async function fetchTempCredentials(prefix) {
+  let cred = readOAuthCredentials();
+  let res = await fetch(
+    `${OAUTH_BASE}/cloud-storage/temp-credentials?configName=${encodeURIComponent(CONFIG_NAME)}&prefix=${encodeURIComponent(prefix)}`,
+    { headers: { Authorization: `Bearer ${cred.accessToken}` } }
+  );
+  if (res.status === 401) {
+    console.log('🔄 accessToken 过期，尝试自动刷新...');
+    cred = await refreshOAuthTokens(cred);
+    res = await fetch(
+      `${OAUTH_BASE}/cloud-storage/temp-credentials?configName=${encodeURIComponent(CONFIG_NAME)}&prefix=${encodeURIComponent(prefix)}`,
+      { headers: { Authorization: `Bearer ${cred.accessToken}` } }
+    );
+  }
+  if (!res.ok) throw new Error(`获取 STS 临时密钥失败: HTTP ${res.status}`);
+  const json = await res.json();
+  const d = json.data || json;
+  if (!d.secretId || !d.secretKey || !d.sessionToken) {
+    throw new Error(`STS 临时密钥返回不完整: ${json.message || ''}`);
+  }
+  return d; // { secretId, secretKey, sessionToken, bucket, region, prefix, ... }
+}
+
 const cosConfig = {
   SecretId: process.env.COS_SECRET_ID,
   SecretKey: process.env.COS_SECRET_KEY,
@@ -37,26 +98,35 @@ const cosConfig = {
   concurrency: parseInt(process.env.COS_UPLOAD_CONCURRENCY, 10) || 20,
 };
 
-if (!cosConfig.Bucket || !cosConfig.Region) {
-  console.error('错误: 请在 .env 中设置 COS_BUCKET 和 COS_REGION');
-  process.exit(1);
-}
-
-if (!cosConfig.useAnonymous && (!cosConfig.SecretId || !cosConfig.SecretKey)) {
-  console.error('错误: 请在 .env 中设置 COS_SECRET_ID 和 COS_SECRET_KEY');
-  process.exit(1);
-}
-
 const cosBaseDir = cosConfig.Prefix.endsWith('/')
   ? cosConfig.Prefix
   : `${cosConfig.Prefix}/`;
 
 const distDir = path.join(rootDir, 'dist');
 
-const cos = new COS({
+// COS 客户端（默认用 .env 密钥；无密钥时由 initCOSWithSts 用 OAuth STS 临时密钥重建）
+let cos = new COS({
   SecretId: cosConfig.useAnonymous ? undefined : cosConfig.SecretId,
   SecretKey: cosConfig.useAnonymous ? undefined : cosConfig.SecretKey,
 });
+
+/** 走 OAuth→STS 初始化 COS 客户端（.env 未配真实密钥时自动启用） */
+async function initCOSWithSts() {
+  if (cosConfig.useAnonymous) return; // 匿名模式不需要凭证
+  if (cosConfig.SecretId && cosConfig.SecretKey) return; // 已有 .env 密钥（历史兼容）
+
+  console.log(`🔐 未检测到 COS_SECRET_ID/KEY，走 OAuth→STS 获取临时密钥（configName=${CONFIG_NAME}）...`);
+  const cred = await fetchTempCredentials(cosBaseDir.replace(/\/$/, ''));
+  cos = new COS({
+    SecretId: cred.secretId,
+    SecretKey: cred.secretKey,
+    SecurityToken: cred.sessionToken,
+  });
+  // 用 STS 返回的权威 bucket/region
+  if (cred.bucket) cosConfig.Bucket = cred.bucket;
+  if (cred.region) cosConfig.Region = cred.region;
+  console.log(`✅ STS 临时密钥就绪（30min，权限收敛到 ${cred.prefix}）`);
+}
 
 const MIME_TYPES = {
   '.html': 'text/html',
@@ -170,11 +240,20 @@ async function main() {
     process.exit(1);
   }
 
+  // OAuth → STS：无 .env 真实密钥时自动获取临时密钥（隐私密钥不再进入仓库/配置）
+  await initCOSWithSts();
+
+  if (!cosConfig.Bucket || !cosConfig.Region) {
+    console.error('错误: 缺少 COS_BUCKET/COS_REGION（.env 或 STS 返回均无）');
+    process.exit(1);
+  }
+
   console.log('COS 配置:', {
     Bucket: cosConfig.Bucket,
     Region: cosConfig.Region,
     Prefix: cosBaseDir,
     concurrency: cosConfig.concurrency,
+    credential: cosConfig.SecretId ? 'env 密钥(历史兼容)' : 'OAuth STS 临时密钥',
   });
 
   console.log('检查 COS 权限...');

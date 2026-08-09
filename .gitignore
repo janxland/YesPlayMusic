@@ -42,3 +42,7 @@ devenv.local.nix
 
 # pre-commit
 .pre-commit-config.yaml
+
+# OAuth 凭证（严禁提交）
+.roginx-cli/
+credentials.json

@@ -1,8 +1,9 @@
 name: Release
 
 env:
-  NODE_OPTIONS: --openssl-legacy-provider
-  PNPM_ADD_NOPT: pnpm add --no-save --no-optional
+  # UNM 依赖是平台原生包（rust-napi-*），CI 用 --no-save 临时装不污染 pnpm-lock：
+  # pnpm 9 不再支持 --no-save（ERR_PNPM_OPTION_NOT_SUPPORTED），改用 npm install --no-save
+  PNPM_ADD_NOPT: npm install --no-save --no-optional
 
 on:
   push:
@@ -24,19 +25,20 @@ jobs:
 
     steps:
       - name: Check out Git repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           submodules: 'recursive'
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 9
+        uses: pnpm/action-setup@v5
+        # 不指定 version：自动读取 package.json 的 packageManager 字段（pnpm@9.15.9），
+        # 避免与 pnpm/action-setup 的 version 参数冲突（ERR_PNPM_BAD_PM_VERSION）
 
       - name: Install Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
-          node-version: 16
+          # Node 18 LTS：pnpm 9 要求 >=18.12，且 --openssl-legacy-provider 仍可用
+          node-version: 18
           cache: 'pnpm'
 
       - name: Install RPM & Pacman (on Ubuntu)
@@ -87,6 +89,8 @@ jobs:
       - name: Build/release Electron app
         uses: samuelmeuli/action-electron-builder@v1.6.0
         env:
+          # vue-cli/webpack4 构建需要 legacy provider（仅此步骤，Node 16 支持该 flag）
+          NODE_OPTIONS: --openssl-legacy-provider
           VUE_APP_NETEASE_API_URL: /api
           VUE_APP_ELECTRON_API_URL: /api
           VUE_APP_ELECTRON_API_URL_DEV: http://127.0.0.1:10754

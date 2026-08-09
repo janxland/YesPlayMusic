@@ -5,18 +5,18 @@
   "description": "A third party music player for Netease Music",
   "author": "qier222<qier222@outlook.com>",
   "scripts": {
-    "serve": "set NODE_OPTIONS=--openssl-legacy-provider && vue-cli-service serve",
-    "build": "set NODE_OPTIONS=--openssl-legacy-provider && vue-cli-service build",
+    "serve": "cross-env NODE_OPTIONS=--openssl-legacy-provider vue-cli-service serve",
+    "build": "cross-env NODE_OPTIONS=--openssl-legacy-provider vue-cli-service build",
     "lint": "vue-cli-service lint",
-    "deploy:cdn": "set NODE_OPTIONS=--openssl-legacy-provider && npm run build && node scripts/deploy-cdn.js",
-    "electron:build": "set NODE_OPTIONS=--openssl-legacy-provider && vue-cli-service electron:build -p never",
-    "electron:build-all": "set NODE_OPTIONS=--openssl-legacy-provider && vue-cli-service electron:build -p never -mwl",
-    "electron:build-mac": "set NODE_OPTIONS=--openssl-legacy-provider && vue-cli-service electron:build -p never -m",
-    "electron:build-win": "set NODE_OPTIONS=--openssl-legacy-provider && vue-cli-service electron:build -p never -w",
-    "electron:build-linux": "set NODE_OPTIONS=--openssl-legacy-provider && vue-cli-service electron:build -p never -l",
-    "electron:serve": "set NODE_OPTIONS=--openssl-legacy-provider && vue-cli-service electron:serve",
+    "deploy:cdn": "cross-env NODE_OPTIONS=--openssl-legacy-provider npm run build && node scripts/deploy-cdn.js",
+    "electron:build": "cross-env NODE_OPTIONS=--openssl-legacy-provider vue-cli-service electron:build -p never",
+    "electron:build-all": "cross-env NODE_OPTIONS=--openssl-legacy-provider vue-cli-service electron:build -p never -mwl",
+    "electron:build-mac": "cross-env NODE_OPTIONS=--openssl-legacy-provider vue-cli-service electron:build -p never -m",
+    "electron:build-win": "cross-env NODE_OPTIONS=--openssl-legacy-provider vue-cli-service electron:build -p never -w",
+    "electron:build-linux": "cross-env NODE_OPTIONS=--openssl-legacy-provider vue-cli-service electron:build -p never -l",
+    "electron:serve": "cross-env NODE_OPTIONS=--openssl-legacy-provider vue-cli-service electron:serve",
     "electron:buildicon": "electron-icon-builder --input=./build/icons/icon.png --output=build --flatten",
-    "electron:publish": "set NODE_OPTIONS=--openssl-legacy-provider && vue-cli-service electron:build -mwl -p always",
+    "electron:publish": "cross-env NODE_OPTIONS=--openssl-legacy-provider vue-cli-service electron:build -mwl -p always",
     "postinstall": "node scripts/postinstall-hook.js",
     "postuninstall": "electron-builder install-app-deps",
     "electron:extract": "node scripts/electron-auto-extract.js",
@@ -32,7 +32,7 @@
   "main": "background.js",
   "packageManager": "pnpm@9.15.9",
   "engines": {
-    "node": "14 || 16"
+    "node": "18 || 20"
   },
   "dependencies": {
     "@neteaseapireborn/api": "^4.29.7",
@@ -111,7 +111,8 @@
     "sass-loader": "^10.0.2",
     "source-map-js": "^1.2.1",
     "vue-cli-plugin-electron-builder": "~2.1.1",
-    "vue-template-compiler": "^2.6.11"
+    "vue-template-compiler": "^2.6.11",
+    "cross-env": "^7.0.3"
   },
   "resolutions": {
     "icon-gen": "3.0.0",
