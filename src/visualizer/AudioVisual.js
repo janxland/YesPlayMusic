@@ -233,17 +233,32 @@ export class AudioVisual {
     this._clearUpgradeWatcher();
     avlog('scheduleUpgrade: waiting for audio to become ready');
     const tryUpgrade = label => {
-      // 已经升级到真实分析则结束
-      if (this.analyzer) {
+      // 若真实分析已就绪且数据正常（非静音），结束重试。
+      // 注意：analyzer 存在 ≠ 数据正常——切歌后 capture session 可能
+      // 创建成功但一直输出 0（loudness≈0），此时必须强制重建 source。
+      if (this.analyzer && !this._procActive) {
         this._clearUpgradeWatcher();
         return;
       }
       avlog('upgrade attempt:', label, {
         readyState: audio.readyState,
         paused: audio.paused,
+        hasAnalyzer: !!this.analyzer,
+        procActive: this._procActive,
       });
       try {
         const ctx = getSharedAudioContext();
+        // 强制重建：清掉 cached source，让 _cachedSourceFor 重新 captureStream，
+        // 拿到跟随新 src 的全新 track（解决"analyzer 活着但数据恒 0"）。
+        if (this.audio && this.audio.__avSource__) {
+          try {
+            this.audio.__avSource__.disconnect();
+          } catch (_) {
+            /* noop */
+          }
+          this.audio.__avSource__ = null;
+          avlog('forced source reset before upgrade');
+        }
         const source = this._cachedSourceFor(ctx, audio);
         // 升级成功：换上真实 analyzer，关闭兜底
         this.analyzer = this._createAnalyzer(ctx, source);
@@ -273,9 +288,33 @@ export class AudioVisual {
     if (!audio.paused && audio.readyState >= 2) {
       Promise.resolve().then(() => tryUpgrade('immediate'));
     }
+    // 轮询兜底：切歌瞬间 'playing' 等事件往往已经触发过（新歌已在播），
+    // 只靠事件监听容易永久卡在程序化假数据。每 500ms 主动重试拿真实源，
+    // 最多 20 次（10s）；成功或超时后自动停止，不空转。
+    if (this._upgradePoll) {
+      clearInterval(this._upgradePoll);
+      this._upgradePoll = null;
+    }
+    let pollCount = 0;
+    const MAX_POLL = 30;
+    this._upgradePoll = setInterval(() => {
+      pollCount++;
+      // analyzer 存在但数据为 0（_procActive=true）时仍需继续重建，
+      // 只有「真实分析就绪且数据正常」才停止轮询。
+      if ((this.analyzer && !this._procActive) || pollCount > MAX_POLL) {
+        clearInterval(this._upgradePoll);
+        this._upgradePoll = null;
+        return;
+      }
+      tryUpgrade('poll');
+    }, 500);
   }
 
   _clearUpgradeWatcher() {
+    if (this._upgradePoll) {
+      clearInterval(this._upgradePoll);
+      this._upgradePoll = null;
+    }
     if (this._upgradeOff) {
       try {
         this._upgradeOff();
@@ -332,6 +371,19 @@ export class AudioVisual {
     if (this.analyzer) this.analyzer.destroy();
     this.renderer.dispose();
     this.analyzer = null;
+    // 关键：销毁时清掉挂在该 audio 元素上的 cached source。
+    // 切歌（Howler html5 pool 复用同一 <audio>）时若不清理，新 AV 会
+    // 复用旧 track —— 而 Chromium 上 src 变化后旧 track 不会自动接到
+    // 新解码输出（readyState='live' 但数据恒 0），导致可视化"假数据"。
+    // 只 disconnect、绝不 track.stop()（stop 一次 capture session 永久死）。
+    if (this.audio && this.audio.__avSource__) {
+      try {
+        this.audio.__avSource__.disconnect();
+      } catch (_) {
+        /* noop */
+      }
+      this.audio.__avSource__ = null;
+    }
   }
 
   // ---------- 内部 ----------
@@ -389,10 +441,15 @@ export class AudioVisual {
     } else if (realLoud < SILENT_EPS) {
       this._silentMs += dt;
       this._activeMs = 0;
-      if (this._silentMs >= this._SILENT_THRESHOLD_MS) this._procActive = true;
+      if (this._silentMs >= this._SILENT_THRESHOLD_MS && !this._procActive) {
+        this._procActive = true;
+        // 真实分析器存在但数据恒为 0：capture session 没接上新 src
+        // （切歌后 Chromium 常见），必须强制重建真实源而不是永远假数据。
+        this._scheduleUpgradeToRealSource();
+      }
     } else {
-      this._activeMs += dt;
       this._silentMs = 0;
+      this._activeMs += dt;
       if (this._activeMs >= this._RECOVER_THRESHOLD_MS)
         this._procActive = false;
     }
@@ -528,6 +585,8 @@ export class AudioVisual {
     // 切歌（src 变更）后 cached track 虽然 readyState='live'，但 muted=true
     // —— Chromium 不会自动把新 src 的解码输出接到旧 track，导致 worker 收到
     // 全 0 频谱，loudness 永远 0。检测 muted 字段，muted 视为死链强制重建。
+    // 双保险：即使 track 显示 live&unmuted（Chromium 部分版本 muted 检测不可靠），
+    // 只要 audio 的 src 已变化且与缓存时的 src 不一致，也视为过期强制重建。
     const cached = audio.__avSource__;
     if (cached && cached.context === ctx) {
       const stream = cached.__avStream__;
@@ -536,19 +595,25 @@ export class AudioVisual {
       const allLiveAndUnmuted =
         tracks.length > 0 &&
         tracks.every(t => t.readyState === 'live' && !t.muted);
-      if (allLiveAndUnmuted) {
-        avlog('reuse cached source (alive & unmuted)');
+      const srcChanged =
+        audio.currentSrc &&
+        cached.__avSrc__ &&
+        audio.currentSrc !== cached.__avSrc__;
+      if (allLiveAndUnmuted && !srcChanged) {
+        avlog('reuse cached source (alive & unmuted & same src)');
         return cached;
       }
+      avlog('cached source stale, will re-capture', {
+        allLiveAndUnmuted,
+        srcChanged,
+        tracks: tracks.map(t => ({ rs: t.readyState, muted: t.muted })),
+      });
       try {
         cached.disconnect();
       } catch (_) {
         /* noop */
       }
       audio.__avSource__ = null;
-      avlog('cached source dead/muted, will re-capture', {
-        tracks: tracks.map(t => ({ rs: t.readyState, muted: t.muted })),
-      });
     }
 
     if (typeof audio.captureStream !== 'function') {
@@ -603,6 +668,7 @@ export class AudioVisual {
 
     const src = ctx.createMediaStreamSource(stream);
     src.__avStream__ = stream;
+    src.__avSrc__ = audio.currentSrc || '';
     audio.__avSource__ = src;
     avlog('created MediaStreamSource on shared ctx');
     return src;
