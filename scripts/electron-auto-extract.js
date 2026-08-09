@@ -43,6 +43,21 @@ function getElectronPlatform() {
 }
 
 function getElectronArch() {
+  // 优先读环境变量（npm_config_arch / npm_config_target_arch / ELECTRON_ARCH）：
+  // arm64 runner（如 macos-latest）上 Electron 13 无 darwin-arm64 构建，可强制 x64
+  const forced =
+    process.env.npm_config_arch ||
+    process.env.npm_config_target_arch ||
+    process.env.ELECTRON_ARCH;
+  if (forced) {
+    if (['x64', 'arm64', 'ia32', 'armv7l'].includes(forced)) {
+      return forced;
+    }
+    if (forced === 'arm') {
+      return 'armv7l';
+    }
+  }
+
   switch (process.arch) {
     case 'x64':
       return 'x64';
