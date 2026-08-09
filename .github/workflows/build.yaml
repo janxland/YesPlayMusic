@@ -4,7 +4,8 @@ env:
   # UNM 依赖是平台原生包（rust-napi-*），CI 用 --no-save 临时装不污染 pnpm-lock：
   # pnpm 9 不再支持 --no-save（ERR_PNPM_OPTION_NOT_SUPPORTED），改用 npm install --no-save；
   # --legacy-peer-deps：npm 解析全依赖树时撞上项目原有的 eslint 6 vs eslint-config-prettier 8 peer 冲突
-  PNPM_ADD_NOPT: npm install --no-save --no-optional --legacy-peer-deps
+  # --no-package-lock：避免 npm 读写遗留的 package-lock.json（pnpm 项目不该有它）
+  PNPM_ADD_NOPT: npm install --no-save --no-optional --legacy-peer-deps --no-package-lock
 
 on:
   push:
@@ -74,19 +75,18 @@ jobs:
       - name: Install UNM dependencies for macOS
         if: runner.os == 'macOS'
         run: |
+          # macos-13 是 Intel x64 runner：只装 darwin-x64（darwin-arm64 会触发 npm EBADPLATFORM，且 Electron 13 无 arm64）
           ${{ env.PNPM_ADD_NOPT }} \
             @unblockneteasemusic/rust-napi-darwin-x64@${{ steps.get_unm_version.outputs.unmver }} \
-            @unblockneteasemusic/rust-napi-darwin-arm64@${{ steps.get_unm_version.outputs.unmver }} \
             dmg-license
         shell: bash
 
       - name: Install UNM dependencies for Linux
         if: runner.os == 'Linux'
         run: |
+          # ubuntu-22.04 是 x64 runner：只装 linux-x64-gnu（arm64/arm 包在 x64 上 npm EBADPLATFORM 拒绝）
           ${{ env.PNPM_ADD_NOPT }} \
-            @unblockneteasemusic/rust-napi-linux-x64-gnu@${{ steps.get_unm_version.outputs.unmver }} \
-            @unblockneteasemusic/rust-napi-linux-arm64-gnu@${{ steps.get_unm_version.outputs.unmver }} \
-            @unblockneteasemusic/rust-napi-linux-arm-gnueabihf@${{ steps.get_unm_version.outputs.unmver }}
+            @unblockneteasemusic/rust-napi-linux-x64-gnu@${{ steps.get_unm_version.outputs.unmver }}
         shell: bash
 
       - name: Build/release Electron app
