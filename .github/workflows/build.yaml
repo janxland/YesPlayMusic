@@ -22,7 +22,9 @@ jobs:
 
     strategy:
       matrix:
-        os: [macos-latest, windows-latest, ubuntu-22.04]
+        # macos-13 = Intel x64 runner：Electron 13 无 darwin-arm64 构建，必须在 x64 环境安装/打包
+        # （macos-latest 是 arm64，会因下载 darwin-arm64 zip 失败而报 "解压完成但未找到 electron 可执行文件"）
+        os: [macos-13, windows-latest, ubuntu-22.04]
 
     steps:
       - name: Check out Git repository
