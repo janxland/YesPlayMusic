@@ -24,6 +24,7 @@
           :style="{ backgroundImage: `url(${bgImageUrl})` }"
         />
       </div>
+      <Visualization ref="visualization" :option="{}"></Visualization>
       <div
         v-if="settings.lyricsBackground === true"
         class="gradient-background"
@@ -309,6 +310,7 @@ import { formatTrackTime } from '@/utils/common';
 import { getLyric, getCloudLyric } from '@/api/track';
 import { lyricParser, copyLyric, parseLyric } from '@/utils/lyrics';
 import ButtonIcon from '@/components/ButtonIcon.vue';
+import Visualization from '@/components/Visualization';
 import * as Vibrant from 'node-vibrant/dist/vibrant.worker.min.js';
 import Color from 'color';
 import { isAccountLoggedIn } from '@/utils/auth';
@@ -320,6 +322,7 @@ export default {
   components: {
     VueSlider,
     ButtonIcon,
+    Visualization,
     ContextMenu,
   },
   data() {
@@ -678,8 +681,13 @@ export default {
         .getPalette()
         .then(palette => {
           const originColor = Color.rgb(palette.DarkMuted._rgb);
-          const color = originColor.darken(0.1).rgb().string();
-          const color2 = originColor.lighten(0.28).rotate(-30).rgb().string();
+          const color = originColor.darken(0.1).rgb().fade(0.28).string();
+          const color2 = originColor
+            .lighten(0.28)
+            .rotate(-30)
+            .rgb()
+            .fade(0.4)
+            .string();
           this.background = `linear-gradient(to top left, ${color}, ${color2})`;
         });
     },
