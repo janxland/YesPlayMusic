@@ -2,8 +2,9 @@ name: Release
 
 env:
   # UNM 依赖是平台原生包（rust-napi-*），CI 用 --no-save 临时装不污染 pnpm-lock：
-  # pnpm 9 不再支持 --no-save（ERR_PNPM_OPTION_NOT_SUPPORTED），改用 npm install --no-save
-  PNPM_ADD_NOPT: npm install --no-save --no-optional
+  # pnpm 9 不再支持 --no-save（ERR_PNPM_OPTION_NOT_SUPPORTED），改用 npm install --no-save；
+  # --legacy-peer-deps：npm 解析全依赖树时撞上项目原有的 eslint 6 vs eslint-config-prettier 8 peer 冲突
+  PNPM_ADD_NOPT: npm install --no-save --no-optional --legacy-peer-deps
 
 on:
   push:
