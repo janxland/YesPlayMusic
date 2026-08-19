@@ -419,6 +419,20 @@ export default {
       return this.setting.mode === 'window';
     },
   },
+  watch: {
+    // 歌词透视 / 旋转由面板直接改 $store.state.visualSet（不走 mutation，
+    // 默认的 localStorage 插件不会触发保存）——这里手动持久化，避免刷新回默认。
+    '$store.state.visualSet': {
+      deep: true,
+      handler(v) {
+        try {
+          localStorage.setItem('visualSet', JSON.stringify(v));
+        } catch (_) {
+          /* noop */
+        }
+      },
+    },
+  },
   methods: {
     iconFor,
     applyPalette(p) {
