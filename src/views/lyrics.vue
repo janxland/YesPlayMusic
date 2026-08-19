@@ -228,7 +228,12 @@
           </div>
         </div>
       </div>
-      <div class="right-side">
+      <div
+        class="right-side"
+        :style="{
+          transform: `perspective(${$store.state.visualSet.perspective}px) rotateY(${$store.state.visualSet.rotateY}deg)`,
+        }"
+      >
         <transition name="slide-fade">
           <div
             v-show="!noLyric"
