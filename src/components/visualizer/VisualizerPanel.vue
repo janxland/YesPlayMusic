@@ -412,6 +412,19 @@
           />
           <span class="val">{{ $store.state.visualSet.rotateY }}°</span>
         </div>
+        <div class="row">
+          <label>歌词大小</label>
+          <input
+            v-model.number="$store.state.visualSet.lyricsScale"
+            type="range"
+            min="0.5"
+            max="3"
+            step="0.05"
+          />
+          <span class="val"
+            >{{ Number($store.state.visualSet.lyricsScale).toFixed(2) }}×</span
+          >
+        </div>
         <p class="tip">设置自动保存到本地（含布局、调色）。</p>
       </template>
     </div>
