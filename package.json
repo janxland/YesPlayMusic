@@ -9,6 +9,7 @@
     "build": "cross-env NODE_OPTIONS=--openssl-legacy-provider vue-cli-service build",
     "lint": "vue-cli-service lint",
     "deploy:cdn": "cross-env NODE_OPTIONS=--openssl-legacy-provider npm run build && node scripts/deploy-cdn.js",
+    "roginx-login": "node scripts/roginx-login.js",
     "electron:build": "cross-env NODE_OPTIONS=--openssl-legacy-provider vue-cli-service electron:build -p never",
     "electron:build-all": "cross-env NODE_OPTIONS=--openssl-legacy-provider vue-cli-service electron:build -p never -mwl",
     "electron:build-mac": "cross-env NODE_OPTIONS=--openssl-legacy-provider vue-cli-service electron:build -p never -m",
