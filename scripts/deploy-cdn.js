@@ -187,12 +187,15 @@ function uploadFile(filePath) {
         Key: cosKey,
         Body: fs.createReadStream(filePath),
         ContentType: getMimeType(filePath),
+        // Cache-Control 必须走 SDK 顶层 CacheControl 参数；放进 Headers 里
+        // 不会被识别为对象元数据，对象会落到存储桶默认缓存策略（曾导致
+        // index.html 被缓存 60 天、刷新不更新）。
+        CacheControl: relativePath.includes('index.html')
+          ? 'no-cache'
+          : 'max-age=31536000',
         Headers: {
           'x-cos-acl': 'public-read',
           'Access-Control-Allow-Origin': '*',
-          'Cache-Control': relativePath.includes('index.html')
-            ? 'no-cache'
-            : 'max-age=31536000',
         },
       },
       (err, data) => (err ? reject(err) : resolve(data))
