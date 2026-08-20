@@ -53,9 +53,11 @@ export default {
   fontFamilyName: localStorage.getItem('fontFamilyName'),
   fonts: JSON.parse(localStorage.getItem('fonts')) || [],
   data: JSON.parse(localStorage.getItem('data')),
-  // 歌词透视 / 旋转（可视化面板调节，持久化到 localStorage）
-  visualSet: JSON.parse(localStorage.getItem('visualSet')) || {
+  // 歌词透视 / 旋转 / 大小（可视化面板调节，持久化到 localStorage）
+  visualSet: {
     perspective: 1000,
     rotateY: 0,
+    lyricsScale: 1,
+    ...JSON.parse(localStorage.getItem('visualSet')),
   },
 };

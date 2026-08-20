@@ -435,8 +435,16 @@ export default {
       return ret;
     },
     lyricFontSize() {
+      const scale = this.$store.state.visualSet.lyricsScale || 1;
       return {
-        fontSize: `${this.$store.state.settings.lyricFontSize || 28}px`,
+        // 可视化面板「歌词大小」：直接缩放字号而非 transform: scale ——
+        // transform 只是放大已栅格化的文字图层，放大后发虚；字号缩放让
+        // 字形按目标尺寸重新渲染，任意倍率都清晰。内容变化被限制在
+        // 滚动容器内部（height:100% + overflow），不挤压其他布局；
+        // 高亮行由 centerHighlightLine 钉在容器中心。
+        fontSize: `${
+          (this.$store.state.settings.lyricFontSize || 28) * scale
+        }px`,
       };
     },
     noLyric() {
@@ -467,6 +475,10 @@ export default {
         clearInterval(this.lyricsInterval);
         this.$store.commit('enableScrolling', true);
       }
+    },
+    // 字号缩放会改变各行 offsetTop，需把高亮行重新钉回容器中心
+    '$store.state.visualSet.lyricsScale'() {
+      this.$nextTick(() => this.centerHighlightLine());
     },
   },
   created() {
@@ -661,14 +673,22 @@ export default {
           );
         });
         if (oldHighlightLyricIndex !== this.highlightLyricIndex) {
-          const el = document.getElementById(`line${this.highlightLyricIndex}`);
-          if (el)
-            el.scrollIntoView({
-              behavior: 'smooth',
-              block: 'center',
-            });
+          this.centerHighlightLine();
         }
       }, 50);
+    },
+    /** 把当前高亮行平滑滚动到歌词容器的垂直中心。 */
+    centerHighlightLine() {
+      const el = document.getElementById(`line${this.highlightLyricIndex}`);
+      const container = this.$refs.lyricsContainer;
+      // 手动 scrollTo 而非 scrollIntoView：只滚动歌词容器本身，
+      // 避免连带祖先/页面一起滚导致定位漂移。
+      if (el && container) {
+        container.scrollTo({
+          top: el.offsetTop - container.clientHeight / 2 + el.clientHeight / 2,
+          behavior: 'smooth',
+        });
+      }
     },
     moveToFMTrash() {
       this.player.moveToFMTrash();
@@ -981,12 +1001,16 @@ export default {
     padding-left: 78px;
     max-width: 460px;
     overflow-y: auto;
+    // 使其成为歌词行的 offsetParent，高亮定位用 offsetTop 精确计算
+    position: relative;
     transition: 0.5s;
     scrollbar-width: none; // firefox
 
     .line {
-      margin: 2px 0;
-      padding: 12px 18px;
+      // em 单位随歌词字号等比缩放（默认 28px 时即 2px / 12px / 18px），
+      // 保证大倍率下行的内边距/间距不与文字比例失调
+      margin: 0.07em 0;
+      padding: 0.43em 0.64em;
       transition: 0.5s;
       border-radius: 12px;
 
