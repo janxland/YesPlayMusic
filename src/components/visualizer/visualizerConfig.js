@@ -19,6 +19,12 @@ export const PALETTES = Object.freeze([
   { name: '极光绿', line: '#5cffb1', shadow: '#0e2a22' },
 ]);
 
+/**
+ * 「自动识别」预设标记：无固定色值，点击时从当前封面提取主色调，
+ * 提取结果写入 setting.autoPalette 以便跟随切歌刷新与高亮回显。
+ */
+export const AUTO_PALETTE = Object.freeze({ name: '自动识别', auto: true });
+
 /** 默认窗口几何：贴窗口底部、全宽，类似经典播放器频谱条。 */
 export const DEFAULT_BOUNDS = Object.freeze({
   x: 0,
@@ -39,6 +45,8 @@ export const DEFAULT_SETTING = Object.freeze({
   shadowColor: '#262626',
   shadowColorO: 1,
   shadowBlur: 14,
+  // 「自动识别」最近一次从封面提取的 { line, shadow }；null = 未使用。
+  autoPalette: null,
   circleRadius: 180,
   circleEdge: 0.7,
   circleSplit: 2,

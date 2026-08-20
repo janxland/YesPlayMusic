@@ -211,10 +211,26 @@
         </div>
         <div class="palette-row">
           <span class="palette-label">预设</span>
+          <!-- 自动识别：从当前封面提取主色调 -->
+          <button
+            class="palette-chip auto"
+            :class="{ active: isAutoActive, busy: autoBusy }"
+            :title="autoPaletteMark.name + '（提取封面主色调）'"
+            :disabled="autoBusy"
+            @click="applyAutoPalette"
+          >
+            <svg viewBox="0 0 24 24" width="12" height="12">
+              <path
+                d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"
+                fill="currentColor"
+              />
+            </svg>
+          </button>
           <button
             v-for="p in palettes"
             :key="p.name"
             class="palette-chip"
+            :class="{ active: isActive(p) }"
             :title="p.name"
             :style="{
               background: `linear-gradient(135deg, ${p.line}, ${p.shadow})`,
@@ -222,6 +238,24 @@
             @click="applyPalette(p)"
           ></button>
         </div>
+        <!-- 封面取色结果：两行两列展示 4 个颜色，点选任意色作为主色 -->
+        <div v-if="autoColorItems.length" class="auto-grid">
+          <button
+            v-for="(item, i) in autoColorItems"
+            :key="'ac-' + i"
+            class="auto-item"
+            :class="{ active: sameColor(setting.lineColor, item.value) }"
+            :title="item.tip"
+            @click="applyAutoColor(item.value)"
+          >
+            <span
+              class="auto-swatch"
+              :style="{ background: item.color }"
+            ></span>
+            <span class="auto-name">{{ item.name }}</span>
+          </button>
+        </div>
+        <p v-if="autoHint" class="tip muted">{{ autoHint }}</p>
       </template>
 
       <!-- 布局 -->
@@ -386,7 +420,12 @@
 
 <script>
 import { VISUAL_TYPES } from '@/visualizer/AudioVisual';
-import { PALETTES, iconFor } from './visualizerConfig';
+import { AUTO_PALETTE, PALETTES, iconFor } from './visualizerConfig';
+import { extractCoverPalette, shadowFromHex } from './coverColor';
+
+/** 忽略大小写的 HEX 比较（color input 与提取结果均为小写 hex）。 */
+const sameColor = (a, b) =>
+  String(a || '').toLowerCase() === String(b || '').toLowerCase();
 
 /**
  * VisualizerPanel —— 设置面板。
@@ -406,6 +445,10 @@ export default {
       activeTab: 'basic',
       visualTypes: VISUAL_TYPES,
       palettes: PALETTES,
+      autoPaletteMark: AUTO_PALETTE,
+      // 自动识别的加载态与提示文案
+      autoBusy: false,
+      autoHint: '',
       tabs: [
         { id: 'basic', label: '基础' },
         { id: 'color', label: '颜色' },
@@ -417,6 +460,48 @@ export default {
   computed: {
     isWindowMode() {
       return this.setting.mode === 'window';
+    },
+    /** 当前歌曲封面（缩到 512 便于 canvas 采样），与 resizeImage 滤镜同规则。 */
+    coverUrl() {
+      const url = this.$store.state.player?.currentTrack?.al?.picUrl;
+      if (!url) return '';
+      const https = url.slice(0, 5) === 'https' ? url : 'https' + url.slice(4);
+      return `${https}?param=512y512`;
+    },
+    /** 当前主/阴影色与最近一次封面取色结果一致，即视为处于「自动识别」。 */
+    isAutoActive() {
+      const ap = this.setting.autoPalette;
+      return (
+        !!ap &&
+        sameColor(this.setting.lineColor, ap.line) &&
+        sameColor(this.setting.shadowColor, ap.shadow)
+      );
+    },
+    /**
+     * 封面取色 4 色的展示项（两行两列）：
+     * 主色 / 阴影色按当前配对展示，三四色为备选，点选任意色作为主色。
+     * 旧数据可能没有 colors，此时不展示。
+     */
+    autoColorItems() {
+      const ap = this.setting.autoPalette;
+      if (!ap || !Array.isArray(ap.colors) || ap.colors.length < 4) return [];
+      const c = ap.colors;
+      return [
+        {
+          name: '主色',
+          color: c[0],
+          value: c[0],
+          tip: '第一主导色，点击应用默认配对',
+        },
+        {
+          name: '阴影色',
+          color: ap.shadow,
+          value: c[0],
+          tip: '由第二主导色派生的深色，点击恢复默认配对',
+        },
+        { name: '三色', color: c[2], value: c[2], tip: '点击作为主色应用' },
+        { name: '四色', color: c[3], value: c[3], tip: '点击作为主色应用' },
+      ];
     },
   },
   watch: {
@@ -432,12 +517,71 @@ export default {
         }
       },
     },
+    // 切歌：若当前处于「自动识别」状态，跟随新封面重新取色。
+    '$store.state.player.currentTrack.id'() {
+      if (this.isAutoActive && this.coverUrl) this.applyAutoPalette();
+    },
+  },
+  beforeDestroy() {
+    clearTimeout(this._hintTimer);
   },
   methods: {
     iconFor,
+    sameColor,
+    isActive(p) {
+      return (
+        sameColor(this.setting.lineColor, p.line) &&
+        sameColor(this.setting.shadowColor, p.shadow)
+      );
+    },
     applyPalette(p) {
       this.setting.lineColor = p.line;
       this.setting.shadowColor = p.shadow;
+    },
+    /** 点选封面取色色板：该色作为主色，同色相深色派生为阴影色。 */
+    applyAutoColor(c) {
+      const ap = this.setting.autoPalette;
+      // 选回第一主导色时还原提取时的原始配对（阴影取第二主导色深色），
+      // 其余颜色则派生同色相深色为阴影
+      const isDefault = ap && ap.colors && sameColor(c, ap.colors[0]);
+      const shadow =
+        isDefault && ap.baseShadow ? ap.baseShadow : shadowFromHex(c);
+      this.setting.lineColor = c;
+      this.setting.shadowColor = shadow;
+      // 同步 autoPalette 的当前值，保持「自动识别」高亮与切歌跟随
+      if (ap) {
+        this.setting.autoPalette = { ...ap, line: c, shadow };
+      }
+    },
+    /** 从当前封面提取主色调并应用；失败时保留现有配色并给出提示。 */
+    async applyAutoPalette() {
+      if (this.autoBusy) return;
+      if (!this.coverUrl) {
+        this._showAutoHint('当前没有可识别的封面');
+        return;
+      }
+      this.autoBusy = true;
+      try {
+        const palette = await extractCoverPalette(this.coverUrl);
+        if (!palette) {
+          this._showAutoHint('封面取色失败：图片源不支持读取');
+          return;
+        }
+        // 先记录提取结果（供高亮回显 / 切歌跟随），再应用到主/阴影色；
+        // baseShadow 保存原始配对，点选「主色/阴影色」格时可还原
+        this.setting.autoPalette = { ...palette, baseShadow: palette.shadow };
+        this.setting.lineColor = palette.line;
+        this.setting.shadowColor = palette.shadow;
+      } finally {
+        this.autoBusy = false;
+      }
+    },
+    _showAutoHint(msg) {
+      this.autoHint = msg;
+      clearTimeout(this._hintTimer);
+      this._hintTimer = setTimeout(() => {
+        this.autoHint = '';
+      }, 2600);
     },
   },
 };
@@ -887,9 +1031,89 @@ export default {
   height: 24px;
   border-radius: 50%;
   border: 1px solid var(--vp-border);
-  transition: transform 0.15s;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  transition: transform 0.15s, box-shadow 0.15s;
   &:hover {
     transform: scale(1.15);
+  }
+  &.active {
+    box-shadow: 0 0 0 2px var(--vp-bg), 0 0 0 3.5px var(--vp-accent);
+  }
+}
+/* 自动识别：彩虹渐变圈 + 星光标记，示意「按封面动态取色」 */
+.vis-panel .palette-chip.auto {
+  background: conic-gradient(
+    from 45deg,
+    #ff5f6d,
+    #ffc371,
+    #47e5bc,
+    #4f9dff,
+    #b76bff,
+    #ff5f6d
+  );
+  svg {
+    filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.45));
+  }
+  &:disabled {
+    cursor: wait;
+    transform: none;
+  }
+  &.busy svg {
+    animation: vp-spin 0.8s linear infinite;
+  }
+}
+@keyframes vp-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* 封面取色结果：两行两列 flex 网格，点选任意色作为主色 */
+.vis-panel .auto-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 6px 0 2px;
+}
+.vis-panel .auto-item {
+  /* 每项占半宽 → 4 项自然两行两列 */
+  flex: 1 1 calc(50% - 4px);
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: transparent;
+  border: 1px solid var(--vp-border);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: transform 0.15s, border-color 0.15s, box-shadow 0.15s;
+  &:hover {
+    transform: translateY(-1px);
+    border-color: var(--vp-accent);
+  }
+  &.active {
+    border-color: var(--vp-accent);
+    box-shadow: 0 0 0 1px var(--vp-accent);
+  }
+  .auto-swatch {
+    flex: none;
+    width: 22px;
+    height: 22px;
+    border-radius: 7px;
+    border: 1px solid var(--vp-border);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+  }
+  .auto-name {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--vp-fg-soft);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 }
 
