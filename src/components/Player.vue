@@ -173,6 +173,14 @@
           </div>
 
           <button-icon
+            v-if="desktopLyricsSupported"
+            class="desktop-lyrics-button"
+            :class="{ active: desktopLyricsActive }"
+            title="桌面歌词"
+            @click.native="toggleDesktopLyrics"
+            ><svg-icon icon-class="desktop-lyrics"
+          /></button-icon>
+          <button-icon
             class="lyrics-button"
             title="歌词"
             @click.native="toggleLyrics"
@@ -191,6 +199,12 @@ import '@/assets/css/slider.css';
 import ButtonIcon from '@/components/ButtonIcon.vue';
 import VueSlider from 'vue-slider-component';
 import { goToListSource, hasListSource } from '@/utils/playList';
+import {
+  isDesktopLyricsSupported,
+  isDesktopLyricsOpen,
+  onDesktopLyricsStateChange,
+  toggleDesktopLyrics as toggleDesktopLyricsAction,
+} from '@/utils/desktopLyrics';
 
 export default {
   name: 'Player',
@@ -201,6 +215,8 @@ export default {
   data() {
     return {
       mouseDownTarget: null,
+      desktopLyricsSupported: isDesktopLyricsSupported(),
+      desktopLyricsActive: isDesktopLyricsOpen(),
     };
   },
   computed: {
@@ -228,13 +244,23 @@ export default {
   mounted() {
     this.setupMediaControls();
     window.addEventListener('keydown', this.handleKeydown);
+    this.offDesktopLyricsState = onDesktopLyricsStateChange(open => {
+      this.desktopLyricsActive = open;
+    });
   },
   beforeDestroy() {
     window.removeEventListener('keydown', this.handleKeydown);
+    this.offDesktopLyricsState?.();
   },
   methods: {
     ...mapMutations(['toggleLyrics']),
     ...mapActions(['showToast', 'likeATrack']),
+    toggleDesktopLyrics() {
+      toggleDesktopLyricsAction().catch(err => {
+        console.warn('[desktopLyrics] toggle failed:', err);
+        this.showToast('当前浏览器不支持桌面歌词');
+      });
+    },
     handleClick(event) {
       if (event.target == this.mouseDownTarget) {
         this.toggleLyrics();

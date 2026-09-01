@@ -138,6 +138,11 @@ const routes = [
     name: 'lastfmCallback',
     component: () => import('@/views/lastfmCallback.vue'),
   },
+  {
+    path: '/desktop-lyrics',
+    name: 'desktopLyrics',
+    component: () => import('@/views/desktopLyrics.vue'),
+  },
 ];
 
 const router = new VueRouter({

@@ -20,6 +20,7 @@ import {
 import { createProtocol } from 'vue-cli-plugin-electron-builder/lib';
 import { startNeteaseMusicApi } from './electron/services';
 import { initIpcMain } from './electron/ipcMain.js';
+import { initDesktopLyrics } from './electron/desktopLyricsWindow';
 import { createMenu } from './electron/menu';
 import { createTray } from '@/electron/tray';
 import { createTouchBar } from './electron/touchBar';
@@ -395,6 +396,9 @@ class Background {
 
       // init ipcMain
       initIpcMain(this.window, this.store, this.trayEventEmitter);
+
+      // init desktop lyrics window manager
+      initDesktopLyrics(this.window, this.store);
 
       // set proxy
       const proxyRules = this.store.get('proxy');

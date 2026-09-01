@@ -219,6 +219,12 @@ export default class {
   }
 
   _init() {
+    // 桌面歌词窗口只展示歌词，不恢复音频，避免重复拉取音源/创建 howler
+    if (window.location.hash === '#/desktop-lyrics') {
+      this._loadSelfFromLocalStorage();
+      this._enabled = false;
+      return;
+    }
     this._loadSelfFromLocalStorage();
     this._howler?.volume(this.volume);
 

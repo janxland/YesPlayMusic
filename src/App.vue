@@ -4,28 +4,34 @@
     class="no-scrollbar"
     :class="{ 'user-select-none': userSelectNone }"
   >
-    <Scrollbar v-show="!showLyrics" ref="scrollbar" />
-    <transition name="slide-up">
-      <Player v-if="enablePlayer" v-show="showPlayer" ref="player" />
-    </transition>
-    <Navbar v-show="showNavbar" ref="navbar" />
-    <main
-      ref="main"
-      :style="{ overflow: enableScrolling ? 'auto' : 'hidden' }"
-      @scroll="handleScroll"
-    >
-      <keep-alive>
-        <router-view v-if="$route.meta.keepAlive"></router-view>
-      </keep-alive>
-      <router-view v-if="!$route.meta.keepAlive"></router-view>
-    </main>
+    <!-- 桌面歌词独立窗口：只渲染歌词视图，不挂载播放器/导航栏 -->
+    <template v-if="isDesktopLyricsWindow">
+      <router-view></router-view>
+    </template>
+    <template v-else>
+      <Scrollbar v-show="!showLyrics" ref="scrollbar" />
+      <transition name="slide-up">
+        <Player v-if="enablePlayer" v-show="showPlayer" ref="player" />
+      </transition>
+      <Navbar v-show="showNavbar" ref="navbar" />
+      <main
+        ref="main"
+        :style="{ overflow: enableScrolling ? 'auto' : 'hidden' }"
+        @scroll="handleScroll"
+      >
+        <keep-alive>
+          <router-view v-if="$route.meta.keepAlive"></router-view>
+        </keep-alive>
+        <router-view v-if="!$route.meta.keepAlive"></router-view>
+      </main>
 
-    <Toast />
-    <ModalAddTrackToPlaylist v-if="isAccountLoggedIn" />
-    <ModalNewPlaylist v-if="isAccountLoggedIn" />
-    <transition v-if="enablePlayer" name="slide-up">
-      <Lyrics v-show="showLyrics" />
-    </transition>
+      <Toast />
+      <ModalAddTrackToPlaylist v-if="isAccountLoggedIn" />
+      <ModalNewPlaylist v-if="isAccountLoggedIn" />
+      <transition v-if="enablePlayer" name="slide-up">
+        <Lyrics v-show="showLyrics" />
+      </transition>
+    </template>
   </div>
 </template>
 
@@ -41,6 +47,7 @@ import { isAccountLoggedIn, isLooseLoggedIn } from '@/utils/auth';
 import Lyrics from './views/lyrics.vue';
 import { mapState } from 'vuex';
 import { flexiSite } from '@/api/others';
+import { initDesktopLyricsSync } from '@/utils/desktopLyrics';
 export default {
   name: 'App',
   components: {
@@ -80,10 +87,17 @@ export default {
     showNavbar() {
       return this.$route.name !== 'lastfmCallback';
     },
+    isDesktopLyricsWindow() {
+      return this.$route.name === 'desktopLyrics';
+    },
   },
   created() {
     // 创建音频上下文
     if (this.isElectron) ipcRenderer(this);
+    // 桌面歌词：主窗口向歌词窗口同步播放状态（歌词窗口自身不需要）
+    if (this.isElectron && !this.isDesktopLyricsWindow) {
+      initDesktopLyricsSync();
+    }
     window.addEventListener('keydown', this.handleKeydown);
     this.fetchData();
 
