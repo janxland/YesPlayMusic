@@ -544,6 +544,20 @@ export class AudioVisual {
     n.isRound = Boolean(n.isRound);
     if (typeof n.lineColor !== 'string') n.lineColor = DEFAULTS.lineColor;
     if (typeof n.shadowColor !== 'string') n.shadowColor = DEFAULTS.shadowColor;
+    // 「自动识别」激活时下发 4 色色板：以当前主色为首循环轮转，
+    // 渲染器按元素（柱/光刺/粒子等）循环取色；非激活或数据缺失则不下发。
+    n.palette = null;
+    const ap = n.autoPalette;
+    if (ap && Array.isArray(ap.colors) && ap.colors.length >= 2) {
+      const eq = (a, b) =>
+        String(a || '').toLowerCase() === String(b || '').toLowerCase();
+      if (eq(n.lineColor, ap.line) && eq(n.shadowColor, ap.shadow)) {
+        const hexes = ap.colors.filter(c => typeof c === 'string');
+        let idx = hexes.findIndex(c => eq(c, n.lineColor));
+        if (idx < 0) idx = 0;
+        n.palette = hexes.slice(idx).concat(hexes.slice(0, idx));
+      }
+    }
     n.sensitivity = clamp(num(n.sensitivity, 1), 0.2, 3);
     n.vocalBoost = clamp(num(n.vocalBoost, 1), 0, 2);
     // 新增字段：层级 / 模式 / 边界

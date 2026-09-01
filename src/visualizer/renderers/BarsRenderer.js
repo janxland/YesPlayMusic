@@ -44,8 +44,17 @@ export class BarsRenderer extends BaseRenderer {
     ctx.translate(cx, cy);
     ctx.scale(pulse, pulse);
 
-    // 色相根据谱质心微调
+    // 色相根据谱质心微调；自动识别下发 4 色色板时，柱按序循环取色，
+    // 单色配置保持原逻辑（全体同色）
     const hueShift = (frame.centroid - 0.5) * 40;
+    const pal =
+      Array.isArray(opt.palette) && opt.palette.length ? opt.palette : null;
+    const palColors = pal
+      ? pal.map(hex => {
+          const base = shiftHue(hex, hueShift);
+          return [hexToRgb(base), hexToRgb(adjustLightness(base, 0.18))];
+        })
+      : null;
     const baseColor = shiftHue(opt.lineColor, hueShift);
     const topColor = adjustLightness(baseColor, 0.18);
     const baseRgb = hexToRgb(baseColor);
@@ -80,9 +89,13 @@ export class BarsRenderer extends BaseRenderer {
       const h = softMag * maxH + 2;
       const x = (i + 1) * step;
 
+      // 多色板：按柱序号循环取色；否则全体同色
+      const bRgb = palColors ? palColors[i % palColors.length][0] : baseRgb;
+      const tRgb = palColors ? palColors[i % palColors.length][1] : topRgb;
+
       // 主柱（左右镜像）
-      drawBar(ctx, +x, h, lineWidth, baseRgb, topRgb, opt.lineColorO);
-      drawBar(ctx, -x, h, lineWidth, baseRgb, topRgb, opt.lineColorO);
+      drawBar(ctx, +x, h, lineWidth, bRgb, tRgb, opt.lineColorO);
+      drawBar(ctx, -x, h, lineWidth, bRgb, tRgb, opt.lineColorO);
     }
 
     ctx.restore();

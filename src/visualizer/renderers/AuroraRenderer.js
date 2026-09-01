@@ -38,6 +38,10 @@ export class AuroraRenderer extends BaseRenderer {
     const c1 = baseColor;
     const c2 = shiftHue(baseColor, 35);
     const c3 = adjustLightness(baseColor, 0.22);
+    // 自动识别 4 色色板：每层渐变从色板不同位置起步（按层轮转），
+    // 三层极光呈现完整 4 色流动；单色配置保持原逻辑
+    const pal =
+      Array.isArray(opt.palette) && opt.palette.length ? opt.palette : null;
 
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
@@ -61,9 +65,19 @@ export class AuroraRenderer extends BaseRenderer {
       const alpha = (0.16 + frame.bass * 0.2) * (1 - l * 0.18);
 
       const grad = ctx.createLinearGradient(0, yOff - amp, W, yOff + amp);
-      grad.addColorStop(0, rgba(hexToRgb(c1), alpha));
-      grad.addColorStop(0.5, rgba(hexToRgb(c2), alpha * 1.15));
-      grad.addColorStop(1, rgba(hexToRgb(c3), alpha));
+      if (pal) {
+        // 层按序号轮转色板起点，把 4 色均匀铺进渐变（首尾同色循环）
+        const n = pal.length;
+        const stops = n + 1;
+        for (let s = 0; s < stops; s++) {
+          const hex = shiftHue(pal[(l + s) % n], hueShift);
+          grad.addColorStop(s / (stops - 1), rgba(hexToRgb(hex), alpha));
+        }
+      } else {
+        grad.addColorStop(0, rgba(hexToRgb(c1), alpha));
+        grad.addColorStop(0.5, rgba(hexToRgb(c2), alpha * 1.15));
+        grad.addColorStop(1, rgba(hexToRgb(c3), alpha));
+      }
       ctx.fillStyle = grad;
 
       ctx.beginPath();

@@ -42,6 +42,11 @@ export class WaveformRenderer extends BaseRenderer {
     const glow = adjustLightness(color, 0.2);
     const colorRgb = hexToRgb(color);
     const glowRgb = hexToRgb(glow);
+    // 自动识别 4 色色板：主波用横向多色渐变铺满全宽，
+    // 镜像波退回单色低透明，保留立体层次
+    const pal =
+      Array.isArray(opt.palette) && opt.palette.length ? opt.palette : null;
+    const mainStroke = pal ? paletteStroke(ctx, W, pal, hueShift) : null;
 
     ctx.save();
     ctx.lineCap = opt.isRound ? 'round' : 'butt';
@@ -58,9 +63,9 @@ export class WaveformRenderer extends BaseRenderer {
       pts.push(x, y);
     }
 
-    // 主波
+    // 主波（多色板时为横向 4 色渐变）
     ctx.lineWidth = Math.max(1.5, opt.lineWidth * 0.6);
-    ctx.strokeStyle = rgba(glowRgb, opt.lineColorO ?? 1);
+    ctx.strokeStyle = mainStroke || rgba(glowRgb, opt.lineColorO ?? 1);
     smoothStroke(ctx, pts);
 
     // 镜像波（向下、低透明度）
@@ -75,6 +80,17 @@ export class WaveformRenderer extends BaseRenderer {
 
     ctx.restore();
   }
+}
+
+/** 把色板铺成横向线性渐变（首尾同色循环，避免端点突变）。 */
+function paletteStroke(ctx, W, palette, hueShift) {
+  const g = ctx.createLinearGradient(0, 0, W, 0);
+  const seq = [...palette, palette[0]];
+  for (let i = 0; i < seq.length; i++) {
+    const hex = shiftHue(seq[i], hueShift);
+    g.addColorStop(i / (seq.length - 1), adjustLightness(hex, 0.2));
+  }
+  return g;
 }
 
 /** Catmull-Rom 经过点的三次贝塞尔平滑。pts: [x0,y0, x1,y1, ...] */

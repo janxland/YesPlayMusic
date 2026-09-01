@@ -39,6 +39,16 @@ export class ParticlesRenderer extends BaseRenderer {
     const glowColor = adjustLightness(baseColor, 0.25);
     const baseRgb = hexToRgb(baseColor);
     const glowRgb = hexToRgb(glowColor);
+    // 自动识别 4 色色板：粒子生成时按计数循环分配色板索引，
+    // 星云自然呈现多色混杂；单色配置保持原逻辑
+    const pal =
+      Array.isArray(opt.palette) && opt.palette.length ? opt.palette : null;
+    const palColors = pal
+      ? pal.map(hex => {
+          const c = shiftHue(hex, hueShift);
+          return [hexToRgb(c), hexToRgb(adjustLightness(c, 0.25))];
+        })
+      : null;
 
     // 节拍爆发
     if (frame.beat) {
@@ -71,7 +81,15 @@ export class ParticlesRenderer extends BaseRenderer {
       const t = p.age / p.life;
       const a = (1 - t) * p.alpha0;
       const r = p.size * (1 - t * 0.5);
-      const rgb = p.kind === 'burst' ? glowRgb : baseRgb;
+      // 多色板时取粒子自带的色板索引；否则按种类取基色/亮色
+      const pair = palColors ? palColors[p.ci % palColors.length] : null;
+      const rgb = pair
+        ? p.kind === 'burst'
+          ? pair[1]
+          : pair[0]
+        : p.kind === 'burst'
+        ? glowRgb
+        : baseRgb;
 
       const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, r);
       g.addColorStop(0, rgba(rgb, a));
@@ -104,6 +122,9 @@ export class ParticlesRenderer extends BaseRenderer {
     p.size = isBurst ? 4 + Math.random() * 7 : 1.5 + Math.random() * 3.5;
     p.alpha0 = isBurst ? 0.85 : 0.45;
     p.kind = kind;
+    // 色板索引：按生成计数循环，保证多色均匀分布（无 pal 时无副作用）
+    this._spawnSeq = (this._spawnSeq || 0) + 1;
+    p.ci = this._spawnSeq;
     this._alive.push(p);
   }
 
@@ -127,5 +148,6 @@ function emptyParticle() {
     size: 1,
     alpha0: 1,
     kind: 'ambient',
+    ci: 0,
   };
 }

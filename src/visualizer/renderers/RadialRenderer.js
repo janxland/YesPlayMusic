@@ -44,6 +44,15 @@ export class RadialRenderer extends BaseRenderer {
     const glowColor = adjustLightness(baseColor, 0.22);
     const baseRgb = hexToRgb(baseColor);
     const glowRgb = hexToRgb(glowColor);
+    // 自动识别 4 色色板：光刺按序循环取色，中心光球仍用主色保持视觉锚点
+    const pal =
+      Array.isArray(opt.palette) && opt.palette.length ? opt.palette : null;
+    const palPairs = pal
+      ? pal.map(hex => {
+          const c = shiftHue(hex, hueShift);
+          return [hexToRgb(adjustLightness(c, 0.22)), hexToRgb(c)];
+        })
+      : null;
 
     // ----- 中心脉冲光球 -----
     const baseRadius = Math.max(20, Number(opt.circleRadius) || 150);
@@ -90,9 +99,14 @@ export class RadialRenderer extends BaseRenderer {
       const x2 = cos * (innerR + len);
       const y2 = sin * (innerR + len);
 
+      // 多色板：按光刺序号循环取 [亮色, 基色] 对；否则全体同色
+      const pair = palPairs ? palPairs[i % palPairs.length] : null;
+      const gGlow = pair ? pair[0] : glowRgb;
+      const gBase = pair ? pair[1] : baseRgb;
+
       const g = ctx.createLinearGradient(x1, y1, x2, y2);
-      g.addColorStop(0, rgba(glowRgb, (opt.lineColorO ?? 1) * 0.95));
-      g.addColorStop(1, rgba(baseRgb, 0));
+      g.addColorStop(0, rgba(gGlow, (opt.lineColorO ?? 1) * 0.95));
+      g.addColorStop(1, rgba(gBase, 0));
       ctx.strokeStyle = g;
       ctx.beginPath();
       ctx.moveTo(x1, y1);
