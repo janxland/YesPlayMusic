@@ -6,8 +6,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link rel="icon" href="<%= BASE_URL %>favicon.ico" />
     <meta name="force-rendering" content="webkit" />
+    <!-- 封面图是首屏请求数的大头，先把 DNS/TCP/TLS 建好，省下每张图一次往返 -->
+    <link rel="dns-prefetch" href="https://music.126.net" />
+    <link rel="preconnect" href="https://music.126.net" crossorigin />
     <script
-      defer
+      async
       src="https://hm.baidu.com/hm.js?4897a1b613242bbdf2413af83d2341dc"
     ></script>
     <script>
@@ -45,6 +48,129 @@
         document.head.appendChild(trackingScript);
       }
     </script>
+    <!-- App Shell 样式：与 body 内同名容器配套，见文件末尾内联脚本说明 -->
+    <style>
+      .app-shell {
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+        display: flex;
+        gap: 24px;
+        padding: 84px 0 72px;
+        background: var(--color-body-bg, #fff);
+        transition: opacity 0.28s ease;
+      }
+      .app-shell--done {
+        opacity: 0;
+        pointer-events: none;
+      }
+      .app-shell__side {
+        flex: 0 0 200px;
+        padding: 0 12px;
+      }
+      .app-shell__main {
+        flex: 1;
+        min-width: 0;
+        padding-right: 30px;
+      }
+      .app-shell__title {
+        height: 34px;
+        width: 240px;
+        border-radius: 12px;
+      }
+      .app-shell__grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+        gap: 24px;
+        margin-top: 28px;
+      }
+      .app-shell__sk {
+        background-color: var(--color-secondary-bg, #f5f5f7);
+        background-image: linear-gradient(
+          100deg,
+          transparent 20%,
+          rgba(128, 128, 128, 0.12) 50%,
+          transparent 80%
+        );
+        background-size: 240px 100%;
+        background-repeat: no-repeat;
+        animation: app-shell-sweep 1.3s linear infinite;
+      }
+      .app-shell__nav {
+        height: 16px;
+        border-radius: 8px;
+      }
+      .app-shell__nav + .app-shell__nav {
+        margin-top: 18px;
+      }
+      .app-shell__side .app-shell__logo {
+        height: 34px;
+        width: 128px;
+        margin-bottom: 34px;
+        border-radius: 10px;
+      }
+      .app-shell__cover {
+        padding-top: 100%;
+        border-radius: 12px;
+      }
+      .app-shell__line {
+        height: 14px;
+        margin-top: 10px;
+        border-radius: 8px;
+      }
+      .app-shell__line--short {
+        width: 55%;
+      }
+      @keyframes app-shell-sweep {
+        from {
+          background-position: -240px 0;
+        }
+        to {
+          background-position: calc(100% + 240px) 0;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .app-shell__sk {
+          animation: none;
+        }
+      }
+      .app-boot-error {
+        position: fixed;
+        inset: 0;
+        z-index: 10000;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 14px;
+        padding: 24px;
+        text-align: center;
+        background: var(--color-body-bg, #fff);
+        color: var(--color-text, #000);
+        font-family: ui-sans-serif, system-ui, PingFang SC, Microsoft YaHei,
+          sans-serif;
+      }
+      .app-boot-error h2 {
+        margin: 0;
+        font-size: 18px;
+      }
+      .app-boot-error p {
+        margin: 0;
+        max-width: 420px;
+        line-height: 1.7;
+        font-size: 14px;
+        color: var(--color-secondary, #7a7a7b);
+      }
+      .app-boot-error button {
+        border: 0;
+        padding: 10px 26px;
+        border-radius: 999px;
+        background: var(--color-primary, #335eea);
+        color: #fff;
+        font-size: 14px;
+        cursor: pointer;
+      }
+    </style>
     <title> <%= htmlWebpackPlugin.options.title %> </title>
   </head>
 
@@ -56,10 +182,157 @@
         continue.</strong
       >
     </noscript>
+    <!-- 骨架屏挂在 #app 之外：Vue $mount('#app') 只会替换 #app 内部，
+         骨架得以独立淡出，避免「白屏 → 界面」的硬切换闪跳 -->
+    <div id="app-shell" class="app-shell" aria-hidden="true">
+      <div class="app-shell__side">
+        <div class="app-shell__sk app-shell__logo"></div>
+        <div class="app-shell__sk app-shell__nav"></div>
+        <div class="app-shell__sk app-shell__nav"></div>
+        <div class="app-shell__sk app-shell__nav"></div>
+        <div class="app-shell__sk app-shell__nav"></div>
+      </div>
+      <div class="app-shell__main">
+        <div class="app-shell__sk app-shell__title"></div>
+        <div class="app-shell__grid">
+          <div>
+            <div class="app-shell__sk app-shell__cover"></div>
+            <div class="app-shell__sk app-shell__line"></div>
+            <div class="app-shell__sk app-shell__line app-shell__line--short"></div>
+          </div>
+          <div>
+            <div class="app-shell__sk app-shell__cover"></div>
+            <div class="app-shell__sk app-shell__line"></div>
+            <div class="app-shell__sk app-shell__line app-shell__line--short"></div>
+          </div>
+          <div>
+            <div class="app-shell__sk app-shell__cover"></div>
+            <div class="app-shell__sk app-shell__line"></div>
+            <div class="app-shell__sk app-shell__line app-shell__line--short"></div>
+          </div>
+          <div>
+            <div class="app-shell__sk app-shell__cover"></div>
+            <div class="app-shell__sk app-shell__line"></div>
+            <div class="app-shell__sk app-shell__line app-shell__line--short"></div>
+          </div>
+          <div>
+            <div class="app-shell__sk app-shell__cover"></div>
+            <div class="app-shell__sk app-shell__line"></div>
+            <div class="app-shell__sk app-shell__line app-shell__line--short"></div>
+          </div>
+          <div>
+            <div class="app-shell__sk app-shell__cover"></div>
+            <div class="app-shell__sk app-shell__line"></div>
+            <div class="app-shell__sk app-shell__line app-shell__line--short"></div>
+          </div>
+        </div>
+      </div>
+    </div>
     <div id="app"></div>
-    <script
-      defer
-      src="https://cdn.bootcdn.net/ajax/libs/jsmediatags/3.9.5/jsmediatags.min.js"
-    ></script>
+    <script>
+      // 首屏引导：主题预判 → 挂载后淡出骨架 → 资源加载失败兜底。
+      // 必须内联，否则它自身就成了新的白屏来源；也刻意不碰任何构建产物。
+      (function () {
+        var root = document.documentElement;
+        var shell = document.getElementById('app-shell');
+        var settled = false;
+
+        // 1) 主题预判：深色模式用户不该先看到一整屏白再跳黑。
+        //    取值口径与 src/utils/common.js 的 settings.appearance 保持一致。
+        try {
+          var appearance =
+            JSON.parse(localStorage.getItem('settings') || '{}').appearance ||
+            'auto';
+          var dark =
+            appearance === 'dark' ||
+            (appearance !== 'light' &&
+              window.matchMedia('(prefers-color-scheme: dark)').matches);
+          root.setAttribute('data-theme', dark ? 'dark' : 'light');
+          root.style.backgroundColor = dark ? '#222222' : '#ffffff';
+        } catch (_) {
+          /* localStorage 不可用时维持默认浅色 */
+        }
+
+        // 2) 任一 <script>/<link> 404 或被拦截 → Vue 永不挂载 → 永久白屏。
+        //    与其让用户干等，不如早点给出可操作的提示。
+        window.addEventListener(
+          'error',
+          function (e) {
+            var tag = e.target && e.target.tagName;
+            if (tag !== 'SCRIPT' && tag !== 'LINK') return;
+            // 资源级失败意味着挂载不可能完成，短延时即收摊，不走 8s 兜底
+            setTimeout(function () {
+              if (!settled && !isMounted()) showBootError();
+            }, 1200);
+          },
+          true
+        );
+
+        function isMounted() {
+          // 必须实时查询：Vue 挂载后 #app 指向的是全新的节点，缓存下来的
+          // 旧引用永远停在 childElementCount === 0
+          const el = document.getElementById('app');
+          return !!el && el.childElementCount > 0;
+        }
+
+        function dismissShell() {
+          if (settled) return;
+          settled = true;
+          if (!shell) return;
+          shell.classList.add('app-shell--done');
+          setTimeout(function () {
+            shell.remove();
+          }, 320);
+        }
+
+        function showBootError() {
+          if (settled) return;
+          settled = true;
+          if (shell) shell.remove();
+
+          var box = document.createElement('div');
+          box.className = 'app-boot-error';
+          var title = document.createElement('h2');
+          title.textContent = '页面加载失败';
+          var desc = document.createElement('p');
+          desc.textContent =
+            '没能拉取到最新的站点资源，通常是网络波动或本地缓存了旧版本。点击下面的按钮重载即可。';
+          var retry = document.createElement('button');
+          retry.type = 'button';
+          retry.textContent = '重新加载';
+          retry.addEventListener('click', function () {
+            // 带一次性时间戳，让浏览器与 CDN 都回源取最新的 index.html
+            var base = location.href.replace(/[?&]_retry=\d+/, '');
+            location.replace(
+              base + (location.search ? '&' : '?') + '_retry=' + Date.now()
+            );
+          });
+          box.append(title, desc, retry);
+          document.body.appendChild(box);
+        }
+
+        // Vue2 的 $mount('#app') 是把 #app 元素本身**替换**成组件根节点，
+        // 而不是往它内部插子节点。所以观察 #app 的 childList 会永远收不到
+        // 通知（被观察的那个节点当时就被丢弃了）——骨架会卡在屏幕上不消失。
+        // 观察 body：元素的替换必然改动 body 的直接子节点。
+        if (window.MutationObserver) {
+          new MutationObserver(function (_, ob) {
+            if (isMounted()) {
+              ob.disconnect();
+              dismissShell();
+            }
+          }).observe(document.body, { childList: true });
+          if (isMounted()) dismissShell(); // 挂载发生在注册之前的极端情况
+        }
+
+        // 末道兜底：既没挂载成功、也没捕获到资源错误（例如脚本被运营商
+        // 静默挂起），8s 后同样给出提示，不留白屏
+        setTimeout(function () {
+          if (settled) return;
+          if (isMounted()) dismissShell();
+          else showBootError();
+        }, 8000);
+      })();
+    </script>
   </body>
 </html>

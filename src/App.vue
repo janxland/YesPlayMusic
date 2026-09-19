@@ -29,7 +29,7 @@
       <ModalAddTrackToPlaylist v-if="isAccountLoggedIn" />
       <ModalNewPlaylist v-if="isAccountLoggedIn" />
       <transition v-if="enablePlayer" name="slide-up">
-        <Lyrics v-show="showLyrics" />
+        <Lyrics v-if="lyricsMounted" v-show="showLyrics" />
       </transition>
     </template>
   </div>
@@ -44,10 +44,18 @@ import Player from './components/Player.vue';
 import Toast from './components/Toast.vue';
 import { ipcRenderer } from './electron/ipcRenderer';
 import { isAccountLoggedIn, isLooseLoggedIn } from '@/utils/auth';
-import Lyrics from './views/lyrics.vue';
+// 歌词页自带取色与歌词解析等只在打开歌词时才用得上的依赖，静态引入会把它们
+// 一并塞进首屏 index.js（首屏最贵的一段解析在低端机上就是白屏时长）。改为
+// 按 chunk 加载，并在浏览器空闲时预热 —— 用户点开时 chunk 已在内存里，
+// 既省首屏也不用等待。
+const Lyrics = () =>
+  import(/* webpackChunkName: "lyrics" */ './views/lyrics.vue');
 import { mapState } from 'vuex';
 import { flexiSite } from '@/api/others';
-import { initDesktopLyricsSync } from '@/utils/desktopLyrics';
+import {
+  initDesktopLyricsSync,
+  isDesktopLyricsView,
+} from '@/utils/desktopLyrics';
 export default {
   name: 'App',
   components: {
@@ -63,6 +71,8 @@ export default {
     return {
       isElectron: process.env.IS_ELECTRON, // true || undefined
       userSelectNone: false,
+      // 歌词页首次打开前不实例化；一旦打开就常驻，避免反复重建丢滚动状态
+      lyricsMounted: false,
     };
   },
   computed: {
@@ -88,8 +98,25 @@ export default {
       return this.$route.name !== 'lastfmCallback';
     },
     isDesktopLyricsWindow() {
-      return this.$route.name === 'desktopLyrics';
+      return isDesktopLyricsView();
     },
+  },
+  watch: {
+    showLyrics(opened) {
+      if (opened) this.lyricsMounted = true;
+    },
+  },
+  mounted() {
+    // 空闲预热：把歌词 chunk 提前拽下来，用户点开时不再有一次性下载延迟
+    const warmUp = () =>
+      import('./views/lyrics.vue').catch(() => {
+        /* 预热失败不影响按需加载 */
+      });
+    if (typeof window.requestIdleCallback === 'function') {
+      window.requestIdleCallback(warmUp);
+    } else {
+      setTimeout(warmUp, 3000);
+    }
   },
   created() {
     // 创建音频上下文

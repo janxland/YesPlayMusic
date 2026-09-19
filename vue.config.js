@@ -5,7 +5,10 @@ function resolve(dir) {
 }
 
 module.exports = {
-  productionSourceMap: true,
+  // 每版产物 ~3.9MB 里有一半是 sourcemap（实测 map 3.98MB vs 其它 3.90MB）。
+  // deploy 脚本本就不上传 .map，线上排障拿不到它，本地排障有 dev server，
+  // 徒增一倍构建时间与磁盘占用。
+  productionSourceMap: false,
   lintOnSave: false,
   publicPath:
     process.env.NODE_ENV === 'production'
@@ -33,6 +36,11 @@ module.exports = {
     themeColor: '#ffffff00',
     manifestOptions: {
       background_color: '#335eea',
+    },
+    // 预缓存清单默认会把**所有** js 都打进去（含异步路由块），一旦 Service Worker
+    // 生效，按需加载的跟弹页块会在首屏被强拉下来。显式排除，保证「点了才加载」。
+    workboxOptions: {
+      exclude: [/\.map$/, /^manifest.*\.js$/, /keyboard-live/],
     },
     // workboxOptions: {
     //   swSrc: "dev/sw.js",
@@ -79,12 +87,29 @@ module.exports = {
       .end();
 
     // LimitChunkCountPlugin 可以通过合并块来对块进行后期处理。用以解决 chunk 包太多的问题
+    //
+    // 注意：合并是「跨路由」的 —— maxChunks 过小会把按需加载的路由块一起并进
+    // 首屏/无关块。曾把 /keyboard-live（含整个 Web Bluetooth SDK）并进
+    // visualizer-panel，导致首页 prefetch 就把它下完了，按需加载名存实亡。
+    // 这里只做「碎块合并」（minChunkSize），不再限制总块数。
     config.plugin('chunkPlugin').use(webpack.optimize.LimitChunkCountPlugin, [
       {
-        maxChunks: 3,
+        maxChunks: 20,
         minChunkSize: 10_000,
       },
     ]);
+
+    // 关掉 vue-cli 默认的 prefetch。
+    // 默认行为是给**所有**异步块注入 <link rel=prefetch>，浏览器在首页空闲时就把
+    // 全部路由块（含跟弹页的整套 Web Bluetooth SDK）下完 —— 既违背「点了才加载」，
+    // 又让每个访客白掏数百 KB 的 CDN 下行流量。路由块改为「进入路由才请求」。
+    //
+    // 插件名随 vue-cli 分支变化：本项目管理着 pages，会走多页分支，名字是
+    // `prefetch-<pageName>`；单页分支才叫 `prefetch`。两个都删。
+    // 漏删由 scripts/check-lazy-chunks.mjs 在构建后兜底拦截。
+    ['prefetch', 'prefetch-index'].forEach(name => {
+      config.plugins.delete(name);
+    });
   },
   // 添加插件的配置
   pluginOptions: {
@@ -95,6 +120,12 @@ module.exports = {
       builderOptions: {
         productName: 'YesPlayMusic',
         copyright: 'Copyright © YesPlayMusic',
+        protocols: [
+          {
+            name: 'YesPlayMusic',
+            schemes: ['yesplaymusic'],
+          },
+        ],
         // compression: "maximum", // 机器好的可以打开，配置压缩，开启后会让 .AppImage 格式的客户端启动缓慢
         asar: true,
         publish: [

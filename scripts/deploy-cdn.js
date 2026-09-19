@@ -1,7 +1,6 @@
 // deploy-cdn.js - 部署 YesPlayMusic 到腾讯云 COS（OAuth→STS，不再需要真实密钥）
 
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const dotenv = require('dotenv');
 const COS = require('cos-nodejs-sdk-v5');
@@ -27,65 +26,8 @@ if (!envFile) {
   console.log(`已加载环境变量: ${envFile}`);
 }
 
-// ============================================================================
-// OAuth → STS（去隐私密钥）：读 ~/.roginx-cli/credentials.json（pnpm roginx-login 生成）
-// 链路: OAuth token → eorder-server /temp-credentials → 30min STS 临时密钥（收敛到 www/music/dist）
-// ============================================================================
-const OAUTH_BASE = process.env.ROGINX_OAUTH_BASE || 'https://edu.roginx.ink/api';
-const CLIENT_ID = 'roginx-cli';
-const CONFIG_NAME = process.env.COS_CONFIG_NAME || 'music';
-
-function readOAuthCredentials() {
-  const credPath = path.join(os.homedir(), '.roginx-cli', 'credentials.json');
-  if (!fs.existsSync(credPath)) {
-    throw new Error(
-      `未找到 OAuth 登录凭证: ${credPath}\n请先执行 pnpm roginx-login 完成浏览器 OAuth 登录`
-    );
-  }
-  return JSON.parse(fs.readFileSync(credPath, 'utf-8'));
-}
-
-async function refreshOAuthTokens(cred) {
-  const res = await fetch(`${OAUTH_BASE}/auth-center/oauth/token`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      grant_type: 'refresh_token',
-      refresh_token: cred.refreshToken,
-      client_id: CLIENT_ID,
-    }),
-  });
-  if (!res.ok) throw new Error(`OAuth 刷新失败: HTTP ${res.status}，请重新执行 pnpm roginx-login`);
-  const data = await res.json();
-  if (!data.accessToken) throw new Error(`OAuth 刷新失败: ${data.message || '未知错误'}`);
-  const updated = { ...cred, ...data };
-  fs.writeFileSync(path.join(os.homedir(), '.roginx-cli', 'credentials.json'), JSON.stringify(updated, null, 2));
-  console.log('🔄 OAuth token 已自动刷新');
-  return updated;
-}
-
-async function fetchTempCredentials(prefix) {
-  let cred = readOAuthCredentials();
-  let res = await fetch(
-    `${OAUTH_BASE}/cloud-storage/temp-credentials?configName=${encodeURIComponent(CONFIG_NAME)}&prefix=${encodeURIComponent(prefix)}`,
-    { headers: { Authorization: `Bearer ${cred.accessToken}` } }
-  );
-  if (res.status === 401) {
-    console.log('🔄 accessToken 过期，尝试自动刷新...');
-    cred = await refreshOAuthTokens(cred);
-    res = await fetch(
-      `${OAUTH_BASE}/cloud-storage/temp-credentials?configName=${encodeURIComponent(CONFIG_NAME)}&prefix=${encodeURIComponent(prefix)}`,
-      { headers: { Authorization: `Bearer ${cred.accessToken}` } }
-    );
-  }
-  if (!res.ok) throw new Error(`获取 STS 临时密钥失败: HTTP ${res.status}`);
-  const json = await res.json();
-  const d = json.data || json;
-  if (!d.secretId || !d.secretKey || !d.sessionToken) {
-    throw new Error(`STS 临时密钥返回不完整: ${json.message || ''}`);
-  }
-  return d; // { secretId, secretKey, sessionToken, bucket, region, prefix, ... }
-}
+// OAuth → STS 链路收敛在 scripts/cos-sts.js（与 upload-releases.js 共用）
+const { getTempCredentials: fetchTempCredentials } = require('./cos-sts');
 
 const cosConfig = {
   SecretId: process.env.COS_SECRET_ID,
@@ -115,7 +57,7 @@ async function initCOSWithSts() {
   if (cosConfig.useAnonymous) return; // 匿名模式不需要凭证
   if (cosConfig.SecretId && cosConfig.SecretKey) return; // 已有 .env 密钥（历史兼容）
 
-  console.log(`🔐 未检测到 COS_SECRET_ID/KEY，走 OAuth→STS 获取临时密钥（configName=${CONFIG_NAME}）...`);
+  console.log('🔐 未检测到 COS_SECRET_ID/KEY，走 OAuth→STS 获取临时密钥...');
   const cred = await fetchTempCredentials(cosBaseDir.replace(/\/$/, ''));
   cos = new COS({
     SecretId: cred.secretId,
@@ -150,6 +92,20 @@ const MIME_TYPES = {
 
 function getMimeType(filePath) {
   return MIME_TYPES[path.extname(filePath).toLowerCase()] || 'application/octet-stream';
+}
+
+/**
+ * Service Worker 与其 precache 清单必须每次回源。
+ *
+ * 它们的文件名不含 hash（service-worker.js / precache-manifest.*.js），
+ * 一旦被 `max-age=31536000` 强缓存，用户会在整整一年内拿着旧的路由表，
+ * 新版本发布后既看不到更新，也会拿旧 chunk 名去请求已删除的文件（报错）。
+ */
+const REVALIDATE_PATTERN = /(^|\/)index\.html$|service-worker\.js$|precache-manifest\..*\.js$/;
+function buildCacheControl(relativePath) {
+  return REVALIDATE_PATTERN.test(relativePath)
+    ? 'no-cache, no-store, must-revalidate'
+    : 'max-age=31536000, immutable';
 }
 
 function getAllFiles(dir) {
@@ -190,9 +146,7 @@ function uploadFile(filePath) {
         // Cache-Control 必须走 SDK 顶层 CacheControl 参数；放进 Headers 里
         // 不会被识别为对象元数据，对象会落到存储桶默认缓存策略（曾导致
         // index.html 被缓存 60 天、刷新不更新）。
-        CacheControl: relativePath.includes('index.html')
-          ? 'no-cache'
-          : 'max-age=31536000',
+        CacheControl: buildCacheControl(relativePath),
         Headers: {
           'x-cos-acl': 'public-read',
           'Access-Control-Allow-Origin': '*',
@@ -209,12 +163,28 @@ async function uploadAll(files) {
   let done = 0;
   const errors = [];
 
+  // COS 在高并发偶发 socket hang up。单个文件上传失败不重试的话，线上会
+  // 长期处于「新 index.html 指向未上传的 hash chunk」的混合态 —— 对用户就是
+  // 白屏 + 控制台 ChunkLoadError。这里做退避重试，把偶发抖动挡在部署阶段。
+  const MAX_ATTEMPTS = 3;
+  async function withRetry(file, relativePath) {
+    for (let attempt = 1; ; attempt++) {
+      try {
+        return await uploadFile(file);
+      } catch (err) {
+        if (attempt >= MAX_ATTEMPTS) throw err;
+        await new Promise(r => setTimeout(r, 300 * attempt));
+        console.warn(`重试第 ${attempt} 次: ${relativePath}`);
+      }
+    }
+  }
+
   async function worker() {
     while (index < files.length) {
       const file = files[index++];
       const relativePath = path.relative(distDir, file).replace(/\\/g, '/');
       try {
-        await uploadFile(file);
+        await withRetry(file, relativePath);
         done++;
         if (done % 20 === 0 || done === files.length) {
           console.log(`上传进度: ${done}/${files.length}`);

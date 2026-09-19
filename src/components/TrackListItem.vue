@@ -8,13 +8,11 @@
     @mouseover="hover = true"
     @mouseleave="hover = false"
   >
-    <img
+    <LazyImage
       v-if="!isAlbum"
       :src="imgUrl"
-      loading="lazy"
       :class="{ hover: focus }"
       referrerpolicy="no-referrer"
-      onerror="this.src=window.__YPM_COVER_FALLBACK__;this.onerror=null"
       @click.stop="goToAlbum"
     />
     <div v-if="showOrderNumber" class="no">
@@ -101,7 +99,7 @@ import ArtistsInLine from '@/components/ArtistsInLine.vue';
 import ExplicitSymbol from '@/components/ExplicitSymbol.vue';
 import { COVER_FALLBACK } from '@/utils/imageFallback';
 import { mapState } from 'vuex';
-import { isNil } from 'lodash';
+import isNil from 'lodash/isNil';
 
 export default {
   name: 'TrackListItem',

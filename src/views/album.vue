@@ -156,7 +156,11 @@ import locale from '@/locale';
 import { splitSoundtrackAlbumTitle, splitAlbumTitle } from '@/utils/common';
 import NProgress from 'nprogress';
 import { isAccountLoggedIn } from '@/utils/auth';
-import { groupBy, toPairs, sortBy } from 'lodash';
+// 按名导入 lodash 会把整个 lodash（~61KB）拖进共享 chunk。lodash 是 CJS，
+// webpack 摇不掉，必须走子路径按需引（与 utils/Player.js 的用法保持一致）。
+import groupBy from 'lodash/groupBy';
+import toPairs from 'lodash/toPairs';
+import sortBy from 'lodash/sortBy';
 
 import ExplicitSymbol from '@/components/ExplicitSymbol.vue';
 import ButtonTwoTone from '@/components/ButtonTwoTone.vue';
