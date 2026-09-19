@@ -137,7 +137,7 @@ export default {
       }
     },
     playTrack(id) {
-      this.player._replaceCurrentTrackByTrack(id, true);
+      this.player.playTrack(id);
     },
     formatTime(times) {
       let t = '';

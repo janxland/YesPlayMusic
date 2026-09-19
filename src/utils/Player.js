@@ -1,50 +1,46 @@
 /* eslint-disable */
-import { getAlbum } from '@/api/album';
-import { getArtist } from '@/api/artist';
 import { trackScrobble, trackUpdateNowPlaying } from '@/api/lastfm';
 import { fmTrash, personalFM } from '@/api/others';
-import { getPlaylistDetail, intelligencePlaylist } from '@/api/playlist';
+import { intelligencePlaylist } from '@/api/playlist';
+import { getLyric, getTrackDetail, scrobble } from '@/api/track';
 import {
-  getLyric,
-  unblock,
-  getMP3,
-  getTrackDetail,
-  scrobble,
-} from '@/api/track';
+  INDEX_IN_PLAY_NEXT,
+  PLAY_PAUSE_FADE_DURATION,
+  UNPLAYABLE_CONDITION,
+} from '@/player/constants';
+import { resolveAudioSource } from '@/player/audioSource';
+import { loadPlaylistSource } from '@/player/playlistSource';
 import store from '@/store';
-import { isAccountLoggedIn } from '@/utils/auth';
-import { cacheTrackSource, getTrackSource } from '@/utils/db';
-import { isCreateMpris, isCreateTray } from '@/utils/platform';
+import { isCreateMpris, isCreateTray, ipcRenderer } from '@/utils/platform';
 import { Howl, Howler } from 'howler';
 import shuffle from 'lodash/shuffle';
-import { decode as base642Buffer } from '@/utils/base64';
 
-const PLAY_PAUSE_FADE_DURATION = 200;
-
-const INDEX_IN_PLAY_NEXT = -1;
-/**
- * @readonly
- * @enum {string}
- */
-const UNPLAYABLE_CONDITION = {
-  PLAY_NEXT_TRACK: 'playNextTrack',
-  PLAY_PREV_TRACK: 'playPrevTrack',
-};
-
-const electron =
-  process.env.IS_ELECTRON === true ? window.require('electron') : null;
-const ipcRenderer =
-  process.env.IS_ELECTRON === true ? electron.ipcRenderer : null;
 const delay = ms =>
   new Promise(resolve => {
     setTimeout(() => {
       resolve('');
     }, ms);
   });
+
+/**
+ * 把与「听到声音」无关的工作推到空闲时段 —— 那几百毫秒里任何额外请求都会
+ * 挤占同一个 HTTP/1.1 连接池，直接推迟出声。
+ *
+ * @param {() => void} fn
+ */
+const runWhenIdle = fn =>
+  typeof window.requestIdleCallback === 'function'
+    ? window.requestIdleCallback(fn, { timeout: 2000 })
+    : setTimeout(fn, 800);
+// 播放进度每秒都在变，且已单独持久化到 localStorage.playerCurrentTrackTime
+// （流式 UI 也直接读 _progress）。把它留在 saveSelfToLocalStorage 里，等于
+// 每秒对含整份播放列表的 player 做一次 JSON.stringify + 同步写盘 —— 主线程
+// 周期性卡顿的来源之一。
 const excludeSaveKeys = [
   '_playing',
   '_personalFMLoading',
   '_personalFMNextLoading',
+  '_progress',
 ];
 
 function setTitle(track) {
@@ -91,13 +87,10 @@ export default class {
       id: 0,
     }; // 私人FM下一首歌曲信息（为了快速加载下一首）
 
-    /**
-     * The blob records for cleanup.
-     *
-     * @private
-     * @type {string[]}
-     */
-    this.createdBlobRecords = [];
+    // 换曲状态机。两个字段都要在构造函数里声明，Vue2 才会把它们纳入响应式
+    this._loading = false; // 是否在为当前曲目装载音源
+    this._loadToken = 0; // 每次换曲自增，用于丢弃过期异步结果
+    this._resourceLoadKey = null; // 正在装载的资源，避免重复点击叠加
 
     // howler (https://github.com/goldfire/howler.js)
     this._howler = null;
@@ -244,11 +237,16 @@ export default class {
       this._personalFMNextTrack.id === 0 ||
       this._personalFMTrack.id === this._personalFMNextTrack.id
     ) {
-      personalFM().then(result => {
-        this._personalFMTrack = result.data[0];
-        this._personalFMNextTrack = result.data[1];
-        return this._personalFMTrack;
-      });
+      // 未登录 / 接口降级时 data 会缺项甚至整个为空，直接取下标会在首页抛
+      // TypeError（控制台红、私人 FM 卡片永远空着）
+      personalFM()
+        .then(result => {
+          const [current, next] = result?.data ?? [];
+          if (!current) return;
+          this._personalFMTrack = current;
+          if (next) this._personalFMNextTrack = next;
+        })
+        .catch(() => {});
     }
   }
   _setPlaying(isPlaying) {
@@ -258,6 +256,9 @@ export default class {
     }
   }
   _setIntervals() {
+    // 清空旧句柄再起：本函数在每次初始化配置时都会被调用，原先裸调
+    // setInterval 会让定时器逐个叠加，播放时间越久每秒的写盘次数越多
+    clearInterval(this._progressTimer);
     // 同步播放进度
     // TODO: 如果 _progress 在别的地方被改变了，
     // 这个定时器会覆盖之前改变的值，是bug
@@ -311,7 +312,15 @@ export default class {
     this._shuffledList = shuffle(list);
     if (firstTrackID !== 'first') this._shuffledList.unshift(firstTrackID);
   }
-  async _scrobble(track, time, completed = false) {
+  /**
+   * scrobble 推迟到空闲时段 —— 它发生在切歌瞬间，恰好是新曲音源也要出发的
+   * 时候。sourceID 必须此刻快照，否则真正执行时已指向新的播放列表。
+   */
+  _scheduleScrobble(track, time, completed = false) {
+    const sourceID = this.playlistSource.id;
+    runWhenIdle(() => this._scrobble(track, time, completed, sourceID));
+  }
+  async _scrobble(track, time, completed = false, sourceID) {
     console.debug(
       `[debug][Player.js] scrobble track 👉 ${track.name} by ${track.ar[0].name} 👉 time:${time} completed: ${completed}`
     );
@@ -319,7 +328,7 @@ export default class {
     time = completed ? trackDuration : ~~time;
     scrobble({
       id: track.id,
-      sourceid: this.playlistSource.id,
+      sourceid: sourceID ?? this.playlistSource.id,
       time,
     });
     if (
@@ -338,6 +347,8 @@ export default class {
     }
   }
   _playAudioSource(source, autoplay = true) {
+    // 音源已拿到，UI 的「装载中」到此结束；后续只剩 <audio> 自身的缓冲
+    this._loading = false;
     Howler.unload();
     // 双轨策略 ——「播放永远成功，可视化尽力而为」：
     //
@@ -462,250 +473,122 @@ export default class {
     }
     this.setOutputDevice();
   }
-  _getAudioSourceBlobURL(data) {
-    // Create a new object URL.
-    const source = URL.createObjectURL(new Blob([data]));
-
-    // Clean up the previous object URLs since we've created a new one.
-    // Revoke object URLs can release the memory taken by a Blob,
-    // which occupied a large proportion of memory.
-    for (const url in this.createdBlobRecords) {
-      URL.revokeObjectURL(url);
-    }
-
-    // Then, we replace the createBlobRecords with new one with
-    // our newly created object URL.
-    this.createdBlobRecords = [source];
-
-    return source;
-  }
-  _getAudioSourceFromCache(id) {
-    return getTrackSource(id).then(t => {
-      if (!t) return null;
-      return this._getAudioSourceBlobURL(t.source);
-    });
-  }
-  _getAudioSourceFromNetease(track) {
-    if (true) {
-      // if (isAccountLoggedIn()) { //不需要只需要登录的情况（个人修改）
-      return getMP3(track.id)
-        .then(result => {
-          if (!result || !Array.isArray(result.data) || !result.data[0]) {
-            return null;
-          }
-          const item = result.data[0];
-          if (!item.url) return null;
-          if (item.freeTrialInfo !== null) return null; // 跳过只能试听的歌曲
-          const source = item.url.replace(/^http:/, 'https:');
-          if (store.state.settings.automaticallyCacheSongs) {
-            cacheTrackSource(track, source, item.br);
-          }
-          return source;
-        })
-        .catch(err => {
-          console.warn(
-            '[Player] getMP3 failed:',
-            err?.message || err,
-            'trackId=',
-            track.id
-          );
-          return null;
-        });
-    } else {
-      return new Promise(resolve => {
-        resolve(`https://music.163.com/song/media/outer/url?id=${track.id}`);
-      });
-    }
-  }
-  async _getAudioSourceFromUnblockMusic(track) {
-    console.debug(`[debug][Player.js] _getAudioSourceFromUnblockMusic`);
-    if (
-      process.env.IS_ELECTRON !== true ||
-      store.state.settings.enableUnblockNeteaseMusic === false
-    ) {
-      return unblock(track.id)
-        .then(result => result?.url ?? null)
-        .catch(err => {
-          console.warn('[Player] unblock failed:', err?.message || err);
-          return null;
-        });
-    }
-
-    /**
-     *
-     * @param {string=} searchMode
-     * @returns {import("@unblockneteasemusic/rust-napi").SearchMode}
-     */
-    const determineSearchMode = searchMode => {
-      /**
-       * FastFirst = 0
-       * OrderFirst = 1
-       */
-      switch (searchMode) {
-        case 'fast-first':
-          return 0;
-        case 'order-first':
-          return 1;
-        default:
-          return 0;
-      }
-    };
-
-    const retrieveSongInfo = await ipcRenderer.invoke(
-      'unblock-music',
-      store.state.settings.unmSource,
-      track,
-      {
-        enableFlac: store.state.settings.unmEnableFlac || null,
-        proxyUri: store.state.settings.unmProxyUri || null,
-        searchMode: determineSearchMode(store.state.settings.unmSearchMode),
-        config: {
-          'joox:cookie': store.state.settings.unmJooxCookie || null,
-          'qq:cookie': store.state.settings.unmQQCookie || null,
-          'ytdl:exe': store.state.settings.unmYtDlExe || null,
-        },
-      }
-    );
-
-    if (store.state.settings.automaticallyCacheSongs && retrieveSongInfo?.url) {
-      // 对于来自 bilibili 的音源
-      // retrieveSongInfo.url 是音频数据的base64编码
-      // 其他音源为实际url
-      const url =
-        retrieveSongInfo.source === 'bilibili'
-          ? `data:application/octet-stream;base64,${retrieveSongInfo.url}`
-          : retrieveSongInfo.url;
-      cacheTrackSource(track, url, 128000, `unm:${retrieveSongInfo.source}`);
-    }
-
-    if (!retrieveSongInfo) {
-      return null;
-    }
-
-    if (retrieveSongInfo.source !== 'bilibili') {
-      return retrieveSongInfo.url;
-    }
-
-    const buffer = base642Buffer(retrieveSongInfo.url);
-    return this._getAudioSourceBlobURL(buffer);
-  }
-  _getAudioSource(track, { allowUnblock = true } = {}) {
-    return this._getAudioSourceFromCache(String(track.id)).then(source => {
-      console.debug(
-        `[debug][Player.js] Get Cache 👉 ${track.name} ,url:${source}`
-      );
-      if (source) return source;
-      // 1) 先尝试网易云原始链接
-      return this._getAudioSourceFromNetease(track).then(neteaseSource => {
-        if (neteaseSource) {
-          console.debug(
-            `[debug][Player.js] Get Mp3 From NeteaseAPI 👉 ${track.name} ,url:${neteaseSource}`
-          );
-          // 仅在拿到有效 url 时才缓存，避免用 null 触发 axios.get(null) 重复失败请求
-          if (store.state.settings.automaticallyCacheSongs) {
-            cacheTrackSource(track, neteaseSource, 128000);
-          }
-          return neteaseSource;
-        }
-        // 2) 网易云无可用源；仅当真正要播放时才回退到 unblock
-        // 预缓存（下一首）不触发 unblock，避免对每首不可播曲目都尝试解锁
-        if (!allowUnblock) {
-          console.debug(
-            `[debug][Player.js] Netease no source, skip unblock (prefetch) 👉 ${track.name}`
-          );
-          return null;
-        }
-        console.debug(
-          `[debug][Player.js] Netease no source, fallback to UnblockMusic 👉 ${track.name}`
-        );
-        return this._getAudioSourceFromUnblockMusic(track);
-      });
-    });
-  }
+  /**
+   * 音源解析（缓存 → 网易云直链 → 解灰回源）已迁移到
+   * src/player/audioSource.js，本类只负责消费结果。
+   */
+  /**
+   * @param {number|object} id 曲目 id 或曲目对象
+   * @param {boolean=} autoplay
+   * @param {string=} ifUnplayableThen
+   * @param {object=} knownTrack 已拿到的曲目详情，传入可整条省掉 /song/detail
+   * @returns {Promise<boolean>}
+   */
   _replaceCurrentTrack(
     id,
     autoplay = true,
-    ifUnplayableThen = UNPLAYABLE_CONDITION.PLAY_NEXT_TRACK
+    ifUnplayableThen = UNPLAYABLE_CONDITION.PLAY_NEXT_TRACK,
+    knownTrack = null
   ) {
     if (autoplay && this._currentTrack.name) {
-      this._scrobble(this.currentTrack, this._howler?.seek());
+      this._scheduleScrobble(this.currentTrack, this._howler?.seek());
     }
-    if (id.constructor === Object)
-      return this._replaceCurrentTrackByTrack(id, (autoplay = true));
-    return getTrackDetail(id).then(data => {
-      const track = data?.songs?.[0];
-      if (!track) {
-        console.warn(
-          `[Player] getTrackDetail returned no songs for id=${id}`,
-          data
-        );
-        store.dispatch('showToast', '获取歌曲信息失败');
-        return false;
-      }
-      this._currentTrack = track;
-      this._updateMediaSessionMetaData(track);
-      return this._replaceCurrentTrackAudio(
-        track,
-        autoplay,
-        true,
-        ifUnplayableThen
-      );
-    });
+
+    // 每次换曲自增：详情与音源都是异步环节，回来时据此判断自己是否已被
+    // 更晚的操作取代，避免「点了 A 又切到 B」时旧结果盖掉 B
+    const token = ++this._loadToken;
+    this._loading = true;
+
+    return this._resolveTrack(id, knownTrack).then(track =>
+      this._applyTrack(track, { autoplay, ifUnplayableThen, token })
+    );
   }
-  _replaceCurrentTrackByTrack(track, autoplay = true) {
-    if (autoplay && this._currentTrack.name) {
-      this._scrobble(this.currentTrack, this._howler?.seek());
+
+  /**
+   * 取曲目详情：优先用已知的，其次允许直接传对象，最后才走接口。
+   *
+   * @returns {Promise<object|null>}
+   */
+  _resolveTrack(id, knownTrack) {
+    if (knownTrack) return Promise.resolve(knownTrack);
+    if (id !== null && typeof id === 'object') return Promise.resolve(id);
+    return getTrackDetail(id)
+      .then(data => data?.songs?.[0])
+      .catch(err => {
+        console.warn('[Player] getTrackDetail failed:', err?.message || err);
+        return null;
+      });
+  }
+
+  /** 落定曲目并起播；token 失配代表期间已经切过别的曲目，直接丢弃 */
+  _applyTrack(track, { autoplay, ifUnplayableThen, token }) {
+    if (token !== this._loadToken) return false;
+    if (!track) {
+      this._loading = false;
+      store.dispatch('showToast', '获取歌曲信息失败');
+      return false;
     }
     this._currentTrack = track;
-    if (track.url) {
-      let replaced = false;
-      if (track.id === this.currentTrackID) {
-        this._playAudioSource(track.url, autoplay);
-        replaced = true;
-      }
-      return replaced;
-    }
+    this._updateMediaSessionMetaData(track);
+    return this._replaceCurrentTrackAudio(
+      track,
+      autoplay,
+      true,
+      ifUnplayableThen,
+      token
+    );
   }
+
   /**
    * @returns 是否成功加载音频，并使用加载完成的音频替换了howler实例
    */
   _replaceCurrentTrackAudio(
     track,
     autoplay,
-    isCacheNextTrack,
-    ifUnplayableThen = UNPLAYABLE_CONDITION.PLAY_NEXT_TRACK
+    cacheNextTrack,
+    ifUnplayableThen = UNPLAYABLE_CONDITION.PLAY_NEXT_TRACK,
+    token = this._loadToken
   ) {
-    return this._getAudioSource(track).then(source => {
-      // 获取mp3url 代理
-      if (source) {
-        let replaced = false;
-        if (track.id === this.currentTrackID) {
-          this._playAudioSource(source, autoplay);
-          replaced = true;
-        }
-        if (isCacheNextTrack) {
-          this._cacheNextTrack();
-        }
-        return replaced;
-      } else {
+    return resolveAudioSource(track).then(source => {
+      // 音源是链路最后一跳，期间用户完全可能已经切到别的曲目
+      if (token !== this._loadToken) return false;
+      if (!source) {
+        this._loading = false;
         store.dispatch('showToast', `无法播放 ${track.name}`);
-        switch (ifUnplayableThen) {
-          case UNPLAYABLE_CONDITION.PLAY_NEXT_TRACK:
-            this._playNextTrack(this.isPersonalFM);
-            break;
-          case UNPLAYABLE_CONDITION.PLAY_PREV_TRACK:
-            this.playPrevTrack();
-            break;
-          default:
-            store.dispatch(
-              'showToast',
-              `undefined Unplayable condition: ${ifUnplayableThen}`
-            );
-            break;
-        }
+        this._skipUnplayable(ifUnplayableThen);
         return false;
       }
+      this._playAudioSource(source, autoplay);
+      if (cacheNextTrack) this._cacheNextTrackWhenIdle();
+      return true;
     });
+  }
+
+  _skipUnplayable(condition) {
+    if (condition === UNPLAYABLE_CONDITION.PLAY_PREV_TRACK) {
+      this.playPrevTrack();
+    } else if (condition === UNPLAYABLE_CONDITION.PLAY_NEXT_TRACK) {
+      this._playNextTrack(this.isPersonalFM);
+    } else {
+      store.dispatch(
+        'showToast',
+        `undefined Unplayable condition: ${condition}`
+      );
+    }
+  }
+
+  /**
+   * 预缓存下一首，排到当前曲目缓冲完成后。
+   *
+   * 以前它在音源落地的同一 tick 里同步触发，等于在用户等待出声的那几百毫秒
+   * 内先为下一首发出 /song/detail + /song/url，与首曲音频流争连接和带宽。
+   */
+  _cacheNextTrackWhenIdle() {
+    const prefetch = () => runWhenIdle(() => this._cacheNextTrack());
+    // 挂 'load' 而非 'play'：它标志当前曲已缓冲到可持续播放，此时抢占带宽
+    // 是安全的；而 'play' 在自动播放被拦截时不会到来，会让预缓存整个丢失
+    if (this._howler) this._howler.once('load', prefetch);
+    else prefetch();
   }
   _cacheNextTrack() {
     let nextTrackID = this._isPersonalFM
@@ -713,13 +596,15 @@ export default class {
       : this._getNextTrack()[0];
     if (!nextTrackID) return;
     if (this._personalFMTrack.id == nextTrackID) return;
-    getTrackDetail(nextTrackID).then(data => {
-      const track = data?.songs?.[0];
-      if (!track) return;
-      // 预缓存只走网易云源，不触发 unblock。
-      // unblock 仅在用户实际播放该曲目且网易云无源时才尝试，失败再切下一首。
-      this._getAudioSource(track, { allowUnblock: false });
-    });
+    getTrackDetail(nextTrackID)
+      .then(data => {
+        const track = data?.songs?.[0];
+        if (!track) return;
+        // 预缓存只走网易云源，不触发 unblock。
+        // unblock 仅在用户实际播放该曲目且网易云无源时才尝试，失败再切下一首。
+        resolveAudioSource(track, { allowUnblock: false });
+      })
+      .catch(() => {});
   }
   _loadSelfFromLocalStorage() {
     let player = JSON.parse(localStorage.getItem('player'));
@@ -1050,14 +935,22 @@ export default class {
       console.warn('[Player] setSinkId threw:', err?.message || err);
     }
   }
+  /**
+   * @param {number[]} trackIDs
+   * @param {number|string} playlistSourceID
+   * @param {string} playlistSourceType
+   * @param {number|string=} autoPlayTrackID 曲目 id，'first' 表示播第一首
+   * @param {Map<number, object>=} trackIndex 详情接口附带的完整曲目对象，
+   *   首曲命中时可跳过 /song/detail
+   */
   replacePlaylist(
     trackIDs,
     playlistSourceID,
     playlistSourceType,
-    autoPlayTrackID = 'first'
+    autoPlayTrackID = 'first',
+    trackIndex
   ) {
     this._isPersonalFM = false;
-    console.log(trackIDs);
     this.list = trackIDs;
     this.current = 0;
     this._playlistSource = {
@@ -1065,70 +958,60 @@ export default class {
       id: playlistSourceID,
     };
     if (this.shuffle) this._shuffleTheList(autoPlayTrackID);
-    if (autoPlayTrackID === 'first') {
-      this._replaceCurrentTrack(this.list[0]);
-    } else {
-      this.current = this.list.indexOf(autoPlayTrackID);
-      this._replaceCurrentTrack(autoPlayTrackID);
-    }
+
+    const targetID =
+      autoPlayTrackID === 'first' ? this.list[0] : autoPlayTrackID;
+    const index = this.list.indexOf(targetID);
+    if (index >= 0) this.current = index;
+
+    this._replaceCurrentTrack(
+      targetID,
+      true,
+      UNPLAYABLE_CONDITION.PLAY_NEXT_TRACK,
+      trackIndex?.get(targetID)
+    );
   }
   playAlbumByID(id, trackID = 'first') {
-    const inflightKey = `album:${id}|${trackID}`;
-    if (this._playPlaylistInflight === inflightKey) return;
-    this._playPlaylistInflight = inflightKey;
-    getAlbum(id)
-      .then(data => {
-        let trackIDs = data.songs.map(t => t.id);
-        this.replacePlaylist(trackIDs, id, 'album', trackID);
-      })
-      .catch(err => {
-        console.warn('[Player] playAlbumByID failed:', err?.message || err);
-      })
-      .finally(() => {
-        if (this._playPlaylistInflight === inflightKey) {
-          this._playPlaylistInflight = null;
-        }
-      });
+    this._playResource('album', id, trackID);
   }
   playPlaylistByID(id, trackID = 'first', noCache = false) {
-    console.debug(
-      `[debug][Player.js] playPlaylistByID 👉 id:${id} trackID:${trackID} noCache:${noCache}`
-    );
-    // 连点同一歌单 / 切换前一次还没回数据时再点别的歌单，避免叠加请求。
-    const inflightKey = `${id}|${trackID}`;
-    if (this._playPlaylistInflight === inflightKey) return;
-    this._playPlaylistInflight = inflightKey;
-    getPlaylistDetail(id, noCache)
-      .then(data => {
-        let trackIDs = data.playlist.trackIds.map(t => t.id);
-        this.replacePlaylist(trackIDs, id, 'playlist', trackID);
-      })
-      .catch(err => {
-        console.warn('[Player] playPlaylistByID failed:', err?.message || err);
-      })
-      .finally(() => {
-        if (this._playPlaylistInflight === inflightKey) {
-          this._playPlaylistInflight = null;
-        }
-      });
+    this._playResource('playlist', id, trackID, { noCache });
   }
   playArtistByID(id, trackID = 'first') {
-    const inflightKey = `artist:${id}|${trackID}`;
-    if (this._playPlaylistInflight === inflightKey) return;
-    this._playPlaylistInflight = inflightKey;
-    getArtist(id)
-      .then(data => {
-        let trackIDs = data.hotSongs.map(t => t.id);
-        this.replacePlaylist(trackIDs, id, 'artist', trackID);
+    this._playResource('artist', id, trackID);
+  }
+  /**
+   * 资源播放的唯一入口：装载列表 → 落队 → 起播首曲。
+   * 去重主要由 playlistSource 按 `type:id` 负责，这里挡住完全重复的触发。
+   */
+  _playResource(type, id, trackID = 'first', { noCache = false } = {}) {
+    const key = `${type}:${id}|${trackID}`;
+    if (this._resourceLoadKey === key) return;
+    this._resourceLoadKey = key;
+
+    loadPlaylistSource(type, id, { noCache })
+      .then(({ trackIDs, trackIndex }) => {
+        this.replacePlaylist(trackIDs, id, type, trackID, trackIndex);
       })
       .catch(err => {
-        console.warn('[Player] playArtistByID failed:', err?.message || err);
+        console.warn(
+          `[Player] ${type} ${id} load failed:`,
+          err?.message || err
+        );
+        store.dispatch('showToast', '播放列表加载失败');
       })
       .finally(() => {
-        if (this._playPlaylistInflight === inflightKey) {
-          this._playPlaylistInflight = null;
-        }
+        if (this._resourceLoadKey === key) this._resourceLoadKey = null;
       });
+  }
+  /**
+   * 播放指定曲目，不改变播放队列的来源。
+   *
+   * @param {number|object} trackOrID 曲目 id 或已拿到的曲目对象
+   * @returns {Promise<boolean>}
+   */
+  playTrack(trackOrID) {
+    return this._replaceCurrentTrack(trackOrID);
   }
   playTrackOnListByID(id, listName = 'default') {
     if (listName === 'default') {
@@ -1137,16 +1020,21 @@ export default class {
     this._replaceCurrentTrack(id);
   }
   playIntelligenceListById(id, trackID = 'first', noCache = false) {
-    getPlaylistDetail(id, noCache).then(data => {
-      const randomId = Math.floor(
-        Math.random() * (data.playlist.trackIds.length + 1)
-      );
-      const songId = data.playlist.trackIds[randomId].id;
-      intelligencePlaylist({ id: songId, pid: id }).then(result => {
-        let trackIDs = result.data.map(t => t.id);
-        console.log('playIntelligenceListById');
-        this.replacePlaylist(trackIDs, id, 'playlist', trackID);
-      });
+    loadPlaylistSource('playlist', id, { noCache }).then(({ trackIDs }) => {
+      if (trackIDs.length === 0) return;
+      // 心动模式从当前歌单随机挑一首作为「心动起点」
+      const seedID = trackIDs[Math.floor(Math.random() * trackIDs.length)];
+      intelligencePlaylist({ id: seedID, pid: id })
+        .then(result => {
+          const ids = result.data.map(t => t.id);
+          this.replacePlaylist(ids, id, 'playlist', trackID);
+        })
+        .catch(err => {
+          console.warn(
+            '[Player] intelligence playlist failed:',
+            err?.message || err
+          );
+        });
     });
   }
   addTrackToPlayNext(trackID, playNow = false) {
@@ -1209,36 +1097,64 @@ export default class {
   removeTrackFromQueue(index) {
     this._playNextList.splice(index, 1);
   }
+  /**
+   * jsmediatags 只在「加载本地音乐」这一条路径上被用到。
+   *
+   * 原先由 index.html 以 <script defer> 无条件引入：首屏每个访客都要付这
+   * 49KB 下载，还要额外与 cdn.bootcdn.net 建一次连接，却极少有人点这个按钮。
+   * 改为用时注入，CDN 地址保持不变，加载失败只丢标签读取、不影响播放。
+   */
+  _loadJsMediaTags() {
+    if (window.jsmediatags) return Promise.resolve(window.jsmediatags);
+    if (this._jsMediaTagsPromise) return this._jsMediaTagsPromise;
+    this._jsMediaTagsPromise = new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src =
+        'https://cdn.bootcdn.net/ajax/libs/jsmediatags/3.9.5/jsmediatags.min.js';
+      script.async = true;
+      script.onload = () => resolve(window.jsmediatags);
+      script.onerror = () => reject(new Error('jsmediatags 加载失败'));
+      document.head.appendChild(script);
+    });
+    return this._jsMediaTagsPromise;
+  }
+  _readLocalTag(file) {
+    this._loadJsMediaTags()
+      .then(jsmediatags =>
+        jsmediatags.read(file, {
+          onSuccess: tag => {
+            console.log(tag); // 音乐名称E
+          },
+          onError: error => {
+            console.log(':(', error.type, error.info);
+            console.log(file.name.split('.')[0]);
+          },
+        })
+      )
+      .catch(() => {});
+  }
   loadLocalMusic() {
-    /* eslint-disable */
     const fileInput = document.createElement('input');
     fileInput.type = 'file';
     fileInput.style.display = 'none';
-    let that = this;
     fileInput.addEventListener(
       'change',
-      function (event) {
-        const file = event.target.files[0];
-        if (file) {
-          const reader = new FileReader();
-          reader.onload = function (event) {
-            const arrayBuffer = event.target.result;
-            const blob = new Blob([arrayBuffer]);
-            const url = URL.createObjectURL(blob);
-            jsmediatags.read(file, {
-              onSuccess: function (tag) {
-                console.log(tag); // 音乐名称E
-              },
-              onError: function (error) {
-                console.log(':(', error.type, error.info);
-                console.log(file.name.split('.')[0]);
-              },
-            });
-            that._playAudioSource(url, true);
-          };
-
-          reader.readAsArrayBuffer(file);
-        }
+      event => {
+        // 选完就销毁：原先 fileInput 从不 remove，每选一次文件 DOM 里就多一个孤儿节点
+        fileInput.remove();
+        const file = event.target.files && event.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = ev => {
+          const url = URL.createObjectURL(new Blob([ev.target.result]));
+          // 上一首本地歌的 blob URL 在切源后已无人引用，此时释放才不会断流
+          // （原先从不 revoke，每加载一个本地文件都永久泄漏一份全曲大小的 blob）
+          if (this._localObjectUrl) URL.revokeObjectURL(this._localObjectUrl);
+          this._localObjectUrl = url;
+          this._readLocalTag(file);
+          this._playAudioSource(url, true);
+        };
+        reader.readAsArrayBuffer(file);
       },
       false
     );
