@@ -142,12 +142,10 @@
 
     <div v-if="isLikeSongsPage" class="user-info">
       <h1>
-        <img
+        <LazyImage
           class="avatar"
           :src="data.user.avatarUrl | resizeImage"
           referrerpolicy="no-referrer"
-          onerror="if(!this.dataset.fallback){this.dataset.fallback=1;this.src=window.__YPM_COVER_FALLBACK__}else{this.onerror=null}"
-          loading="lazy"
         />
         {{ data.user.nickname }}{{ $t('library.sLikedSongs') }}
       </h1>
@@ -351,6 +349,17 @@ export default {
       },
     },
   },
+  // 从 /playlist/A 跳到 /playlist/B 时组件被复用，不会重走 created。缺了
+  // 这个钩子，页面会一直停在上一个歌单的内容上，观感就是「跳转后加载不出来」。
+  beforeRouteUpdate(to, from, next) {
+    this.show = false;
+    this.tracks = [];
+    if (to.name === 'likedSongs') {
+      this.loadData(this.data.likedSongPlaylistID, next);
+    } else {
+      this.loadData(to.params.id, next);
+    }
+  },
   data() {
     return {
       show: false,
@@ -416,11 +425,14 @@ export default {
     } else {
       this.loadData(this.$route.params.id);
     }
-    setTimeout(() => {
+    // 句柄留存：原先这个 1s 定时器在离开页面后仍会触发 NProgress.start()，
+    // 让下一个路由的顶部进度条凭空闪一下
+    this._nprogressTimer = setTimeout(() => {
       if (!this.show) NProgress.start();
     }, 1000);
   },
   beforeDestroy() {
+    clearTimeout(this._nprogressTimer);
     if (this.id) cancelRequestsByTag(`playlist:${this.id}`);
     NProgress.done();
   },
@@ -511,17 +523,26 @@ export default {
           return t;
         }
       });
+      // 并发锁 + 兜底：按钮原本既无 disabled 也无 in-flight 判断，连点会把
+      // 同一批 trackIds 请求多次；请求一失败 loadingMore 就永远停在 true，
+      // 按钮转圈不止且再也无法重试。
+      if (this._loadingMore) return;
+      this._loadingMore = true;
       trackIDs = trackIDs.map(t => t.id);
-      getTrackDetail(trackIDs.join(',')).then(data => {
-        this.tracks.push(...data.songs);
-        this.lastLoadedTrackIndex += trackIDs.length;
-        this.loadingMore = false;
-        if (this.lastLoadedTrackIndex + 1 === this.playlist.trackIds.length) {
-          this.hasMore = false;
-        } else {
-          this.hasMore = true;
-        }
-      });
+      getTrackDetail(trackIDs.join(','))
+        .then(data => {
+          this.tracks.push(...(data?.songs ?? []));
+          this.lastLoadedTrackIndex += trackIDs.length;
+          this.hasMore =
+            this.lastLoadedTrackIndex + 1 < this.playlist.trackIds.length;
+        })
+        .catch(() => {
+          this.showToast('加载更多歌曲失败，请重试');
+        })
+        .finally(() => {
+          this._loadingMore = false;
+          this.loadingMore = false;
+        });
     },
     openMenu(e) {
       this.$refs.playlistMenu.openMenu(e);

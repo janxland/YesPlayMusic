@@ -139,8 +139,8 @@ export function getCloudLyric(songId, userId) {
     });
   };
 
-  fetchLatest();
-
+  // 原先这里先裸执行一次 fetchLatest()（返回值被丢弃），随后再走缓存分支。
+  // 于是每首云盘歌都必定打两次网络请求，第二次几乎立刻触发。
   return getLyricFromCache(songId).then(result => {
     return result ?? fetchLatest();
   });

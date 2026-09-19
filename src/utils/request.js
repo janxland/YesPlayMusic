@@ -69,7 +69,10 @@ export function cancelRequestsByTag(tag) {
   set.forEach(c => {
     try {
       c.abort();
-    } catch (_) {}
+    } catch (_) {
+      // 已 settle 的请求再 abort 会抛，属预期行为
+      void 0;
+    }
   });
   tagControllers.delete(tag);
 }
@@ -196,6 +199,11 @@ service.interceptors.response.use(
         router.push({ name: 'login' });
       }
     }
+
+    // 之前这里没有返回值，等于把 404/500/网络失败统一「翻译」成 undefined
+    // 交还调用方：要么在下一行读属性时抛 TypeError，要么被静默忽略——加载
+    // 失败没有任何提示，页面就停在 loading 态。错误必须继续往下抛。
+    return Promise.reject(error);
   }
 );
 
