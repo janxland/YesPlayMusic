@@ -3,12 +3,10 @@
     <div class="container">
       <div v-if="showUserInfo" class="user">
         <div class="left">
-          <img
+          <LazyImage
             class="avatar"
             :src="data.user.avatarUrl"
             referrerpolicy="no-referrer"
-            onerror="if(!this.dataset.fallback){this.dataset.fallback=1;this.src=window.__YPM_COVER_FALLBACK__}else{this.onerror=null}"
-            loading="lazy"
           />
           <div class="info">
             <div class="nickname">{{ data.user.nickname }}</div>
@@ -80,6 +78,19 @@
             <option value="forest">
               {{ $t('settings.themeColor.forest') }}
             </option>
+          </select>
+        </div>
+      </div>
+      <div class="item">
+        <div class="left">
+          <div class="title"> 图片加载效果 </div>
+        </div>
+        <div class="right">
+          <select v-model="imageLoadEffect">
+            <option value="blur">模糊渐显</option>
+            <option value="glass">毛玻璃</option>
+            <option value="fade">淡入</option>
+            <option value="none">关闭</option>
           </select>
         </div>
       </div>
@@ -991,6 +1002,17 @@ export default {
             ? document.body?.getAttribute('data-theme') || 'light'
             : this.settings.appearance;
         changeThemeColor(value, resolvedAppearance);
+      },
+    },
+    imageLoadEffect: {
+      get() {
+        return this.settings.imageLoadEffect ?? 'blur';
+      },
+      set(value) {
+        this.$store.commit('updateSettings', {
+          key: 'imageLoadEffect',
+          value,
+        });
       },
     },
     fontFamilyName: {

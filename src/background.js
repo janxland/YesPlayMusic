@@ -20,7 +20,10 @@ import {
 import { createProtocol } from 'vue-cli-plugin-electron-builder/lib';
 import { startNeteaseMusicApi } from './electron/services';
 import { initIpcMain } from './electron/ipcMain.js';
-import { initDesktopLyrics } from './electron/desktopLyricsWindow';
+import {
+  initDesktopLyrics,
+  ensureLyricsWindow,
+} from './electron/desktopLyricsWindow';
 import { createMenu } from './electron/menu';
 import { createTray } from '@/electron/tray';
 import { createTouchBar } from './electron/touchBar';
@@ -105,6 +108,9 @@ class Background {
     // Make sure the app is singleton.
     if (!app.requestSingleInstanceLock()) return app.quit();
 
+    // register URL scheme yesplaymusic:// so web pages can open the client
+    this.registerProtocolClient();
+
     // start netease music api
     this.neteaseMusicAPI = startNeteaseMusicApi();
 
@@ -169,6 +175,55 @@ class Background {
         });
     });
     this.expressApp = expressApp.listen(27232, '127.0.0.1');
+  }
+
+  registerProtocolClient() {
+    // 开发模式不注册，避免把系统协议关联到 Electron 调试壳
+    if (isDevelopment) return;
+    const ok = app.setAsDefaultProtocolClient('yesplaymusic');
+    log(`register protocol "yesplaymusic://" -> ${ok}`);
+  }
+
+  // 唤醒主窗的唯一入口（activate / 协议唤起共用）：
+  // 1) ready 前的事件（mac 冷启动 open-url 早于 ready）只登记不行动，
+  //    窗口由 ready 流程统一创建，否则 createWindow 抛
+  //    "Cannot create BrowserWindow before app is ready"；
+  // 2) 引用失效（窗口已销毁）时重建，否则 show() 抛 "Object has been destroyed"，
+  //    表现为"应用在后台但 Dock 点了没反应"的僵尸态；
+  // 3) 坐标可能落在已拔掉的外接屏上，show 了也"看不见"，离屏时拉回主屏居中。
+  showMainWindow() {
+    if (!app.isReady()) return;
+    if (!this.window || this.window.isDestroyed()) {
+      this.createWindow();
+      return;
+    }
+    this.window.show();
+    if (this.window.isMinimized()) this.window.restore();
+    const b = this.window.getBounds();
+    const margin = 60; // 至少留一个角可点，否则视为离屏
+    const onScreen = screen
+      .getAllDisplays()
+      .some(
+        d =>
+          b.x + margin < d.bounds.x + d.bounds.width &&
+          b.x + b.width - margin > d.bounds.x &&
+          b.y + margin < d.bounds.y + d.bounds.height &&
+          b.y + b.height - margin > d.bounds.y
+      );
+    if (!onScreen) this.window.center();
+    this.window.focus();
+  }
+
+  handleProtocolURL(url) {
+    log(`protocol url received: ${url}`);
+    if (!app.isReady()) {
+      this.pendingProtocolURL = url; // ready 后统一消费
+      return;
+    }
+    this.showMainWindow();
+    if (url && url.includes('desktop-lyrics')) {
+      ensureLyricsWindow();
+    }
   }
 
   createWindow() {
@@ -324,6 +379,12 @@ class Background {
       }
     });
 
+    this.window.on('closed', () => {
+      // 引用必须清空，否则 activate/协议唤起拿着死引用 show() 直接抛错
+      log('main window closed');
+      this.window = null;
+    });
+
     this.window.on('resized', () => {
       this.store.set('window', this.window.getBounds());
     });
@@ -400,6 +461,13 @@ class Background {
       // init desktop lyrics window manager
       initDesktopLyrics(this.window, this.store);
 
+      // 冷启动协议唤起：Win/Linux 的 URL 在 argv；mac 的 open-url 早于 ready，
+      // 已被 handleProtocolURL 暂存到 pendingProtocolURL
+      const coldStartURL =
+        process.argv.find(arg => arg.startsWith('yesplaymusic://')) ||
+        this.pendingProtocolURL;
+      if (coldStartURL) this.handleProtocolURL(coldStartURL);
+
       // set proxy
       const proxyRules = this.store.get('proxy');
       if (proxyRules) {
@@ -448,15 +516,19 @@ class Background {
       }
     });
 
+    // macOS：协议唤起走 open-url 事件
+    if (isMac) {
+      app.on('open-url', (e, url) => {
+        e.preventDefault();
+        this.handleProtocolURL(url);
+      });
+    }
+
     app.on('activate', () => {
       // On macOS it's common to re-create a window in the app when the
       // dock icon is clicked and there are no other windows open.
       log('app activate event');
-      if (this.window === null) {
-        this.createWindow();
-      } else {
-        this.window.show();
-      }
+      this.showMainWindow();
     });
 
     app.on('window-all-closed', () => {
@@ -479,14 +551,10 @@ class Background {
     });
 
     if (!isMac) {
-      app.on('second-instance', (e, cl, wd) => {
-        if (this.window) {
-          this.window.show();
-          if (this.window.isMinimized()) {
-            this.window.restore();
-          }
-          this.window.focus();
-        }
+      app.on('second-instance', (e, cl) => {
+        this.showMainWindow();
+        const url = (cl || []).find(arg => arg.startsWith('yesplaymusic://'));
+        if (url) this.handleProtocolURL(url);
       });
     }
   }

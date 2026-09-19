@@ -1,6 +1,6 @@
 {
   "name": "yesplaymusic",
-  "version": "0.4.10",
+  "version": "0.4.12",
   "private": true,
   "description": "A third party music player for Netease Music",
   "author": "qier222<qier222@outlook.com>",
@@ -8,7 +8,7 @@
     "serve": "cross-env NODE_OPTIONS=--openssl-legacy-provider vue-cli-service serve",
     "build": "cross-env NODE_OPTIONS=--openssl-legacy-provider vue-cli-service build",
     "lint": "vue-cli-service lint",
-    "deploy:cdn": "cross-env NODE_OPTIONS=--openssl-legacy-provider npm run build && node scripts/deploy-cdn.js",
+    "deploy:cdn": "cross-env NODE_OPTIONS=--openssl-legacy-provider npm run build && node scripts/check-lazy-chunks.mjs && node scripts/deploy-cdn.js",
     "roginx-login": "node scripts/roginx-login.js",
     "electron:build": "cross-env NODE_OPTIONS=--openssl-legacy-provider vue-cli-service electron:build -p never",
     "electron:build-all": "cross-env NODE_OPTIONS=--openssl-legacy-provider vue-cli-service electron:build -p never -mwl",
@@ -36,8 +36,11 @@
     "node": "18 || 20"
   },
   "dependencies": {
+    "@ep-ble-sdk/adapter-web": "file:/Users/Admin1/Desktop/project/janxland/project-list/ep-ble-sdk/packages/adapter-web",
+    "@ep-ble-sdk/core": "file:/Users/Admin1/Desktop/project/janxland/project-list/ep-ble-sdk/packages/core",
     "@neteaseapireborn/api": "^4.29.7",
     "@unblockneteasemusic/rust-napi": "^0.4.0",
+    "NeteaseCloudMusicApi": "^4.8.7",
     "axios": "^0.26.1",
     "browser-id3-writer": "^6.1.0",
     "change-case": "^4.1.2",
@@ -72,7 +75,6 @@
     "md5": "^2.3.0",
     "mpris-service": "^2.1.2",
     "music-metadata": "^7.5.3",
-    "NeteaseCloudMusicApi": "^4.8.7",
     "node-vibrant": "^3.2.1-alpha.1",
     "nprogress": "^0.2.0",
     "pac-proxy-agent": "^4.1.0",

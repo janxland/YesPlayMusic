@@ -14,6 +14,7 @@ let localStorage = {
     appearance: 'auto',
     fontFamilyName: '思源黑体中文',
     themeColor: 'default',
+    imageLoadEffect: 'blur',
     musicQuality: 320000,
     lyricFontSize: 28,
     outputDevice: 'default',

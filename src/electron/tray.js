@@ -133,6 +133,7 @@ class YPMTrayLinuxImpl {
 
   handleEvents() {
     this.tray.on('click', () => {
+      if (!this.win || this.win.isDestroyed()) return;
       this.win.show();
     });
 
@@ -192,6 +193,8 @@ class YPMTrayWindowsImpl {
 
   handleEvents() {
     this.tray.on('click', () => {
+      // mac 也走这个实现（createTray 里 isLinux 为 false 的分支）
+      if (!this.win || this.win.isDestroyed()) return;
       this.win.show();
     });
 

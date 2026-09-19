@@ -7,6 +7,7 @@ export default {
     home: 'Anasayfa',
     explore: 'Keşfet',
     library: 'Kitaplık',
+    keyboardLive: 'Birlikte Çal',
     search: 'Ara',
     github: 'GitHub Repo',
   },

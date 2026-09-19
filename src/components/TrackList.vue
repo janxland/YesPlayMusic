@@ -2,11 +2,9 @@
   <div class="track-list no-scrollbar">
     <ContextMenu ref="menu">
       <div v-show="type !== 'cloudDisk'" class="item-info">
-        <img
+        <LazyImage
           :src="rightClickedTrackComputed.al.picUrl | resizeImage(224)"
           referrerpolicy="no-referrer"
-          onerror="if(!this.dataset.fallback){this.dataset.fallback=1;this.src=window.__YPM_COVER_FALLBACK__}else{this.onerror=null}"
-          loading="lazy"
         />
         <div class="info">
           <div class="title">{{ rightClickedTrackComputed.name }}</div>

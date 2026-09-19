@@ -2,11 +2,9 @@
   <div v-show="show" class="artist-page">
     <div class="artist-info">
       <div class="head">
-        <img
+        <LazyImage
           :src="artist.img1v1Url | resizeImage(1024)"
           referrerpolicy="no-referrer"
-          onerror="if(!this.dataset.fallback){this.dataset.fallback=1;this.src=window.__YPM_COVER_FALLBACK__}else{this.onerror=null}"
-          loading="lazy"
         />
       </div>
       <div>
@@ -80,12 +78,7 @@
             @mouseleave="mvHover = false"
             @click="goToMv(latestMV.id)"
           >
-            <img
-              :src="latestMV.coverUrl"
-              referrerpolicy="no-referrer"
-              onerror="if(!this.dataset.fallback){this.dataset.fallback=1;this.src=window.__YPM_COVER_FALLBACK__}else{this.onerror=null}"
-              loading="lazy"
-            />
+            <LazyImage :src="latestMV.coverUrl" referrerpolicy="no-referrer" />
             <transition name="fade">
               <div
                 v-show="mvHover"

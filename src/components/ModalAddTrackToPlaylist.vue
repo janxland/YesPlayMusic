@@ -17,11 +17,9 @@
         class="playlist"
         @click="addTrackToPlaylist(playlist.id)"
       >
-        <img
+        <LazyImage
           :src="playlist.coverImgUrl | resizeImage(224)"
           referrerpolicy="no-referrer"
-          onerror="if(!this.dataset.fallback){this.dataset.fallback=1;this.src=window.__YPM_COVER_FALLBACK__}else{this.onerror=null}"
-          loading="lazy"
         />
         <div class="info">
           <div class="title">{{ playlist.name }}</div>

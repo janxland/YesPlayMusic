@@ -1,11 +1,6 @@
 <template>
   <div class="daily-recommend-card" @click="goToDailyTracks">
-    <img
-      :src="coverUrl"
-      referrerpolicy="no-referrer"
-      onerror="if(!this.dataset.fallback){this.dataset.fallback=1;this.src=window.__YPM_COVER_FALLBACK__}else{this.onerror=null}"
-      loading="lazy"
-    />
+    <LazyImage :src="coverUrl" referrerpolicy="no-referrer" />
     <div class="container">
       <div class="title-box">
         <div class="title">

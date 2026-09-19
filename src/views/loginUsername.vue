@@ -31,11 +31,7 @@
             :class="{ active: user.nickname === activeUser.nickname }"
             @click="activeUser = user"
           >
-            <img
-              class="head"
-              :src="user.avatarUrl | resizeImage"
-              loading="lazy"
-            />
+            <LazyImage class="head" :src="user.avatarUrl | resizeImage" />
             <div class="nickname">
               {{ user.nickname }}
             </div>

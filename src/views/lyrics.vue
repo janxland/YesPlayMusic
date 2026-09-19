@@ -38,7 +38,7 @@
           </div>
           <div class="cover">
             <div class="cover-container">
-              <img :src="imageUrl" loading="lazy" />
+              <LazyImage :src="imageUrl" />
               <div
                 class="shadow"
                 :style="{ backgroundImage: `url(${imageUrl})` }"

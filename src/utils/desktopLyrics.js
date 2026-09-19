@@ -31,6 +31,12 @@ export function isDesktopLyricsOpen() {
   return open;
 }
 
+// 歌词窗口身份的唯一可信判据：hash 在页面脚本执行第一行起就是终值，
+// 而 $route.name 在 created() 时可能尚未解析（hash 模式启动时序坑）
+export function isDesktopLyricsView() {
+  return window.location.hash.startsWith('#/desktop-lyrics');
+}
+
 export function onDesktopLyricsStateChange(cb) {
   stateListeners.push(cb);
   return () => {
@@ -60,6 +66,7 @@ let electronInited = false;
 
 export function initDesktopLyricsSync() {
   if (!isElectron || electronInited) return;
+  if (isDesktopLyricsView()) return; // 歌词窗口只收状态，绝不成为发送者
   electronInited = true;
   const { ipcRenderer } = window.require('electron');
 
@@ -69,11 +76,25 @@ export function initDesktopLyricsSync() {
     ipcRenderer.send('desktopLyrics:sync', {
       trackId: player.currentTrackID,
       trackName: track.name,
-      artistName: (track.ar || []).map(ar => ar.name).join('/'),
       progress: player.seek(null, false) ?? 0,
       playing: player.playing,
+      repeatMode: player.repeatMode,
     });
   };
+  // 歌词窗工具栏的播控指令（主进程转发回主窗口执行）
+  const handleControl = (event, cmd) => {
+    const p = store.state.player;
+    if (!p || !p.enabled) return;
+    if (cmd === 'prev') p.playPrevTrack();
+    else if (cmd === 'next')
+      p.isPersonalFM ? p.playNextFMTrack() : p.playNextTrack();
+    else if (cmd === 'playPause') p.playOrPause();
+    else if (cmd === 'stop') {
+      if (p.playing) p.pause();
+      p.seek(0, false);
+    } else if (cmd === 'mode') p.switchRepeatMode();
+  };
+  ipcRenderer.on('desktopLyrics:control', handleControl);
   const start = () => {
     if (electronSyncTimer) return;
     sendState();
@@ -100,19 +121,27 @@ export function initDesktopLyricsSync() {
 // ---- Web：歌词数据 ----
 let lyricLines = [];
 let lyricTrackId = 0;
+// 歌词加载状态：loading=请求中，ok=有词，none=无词/纯音乐（与桌面歌词窗口同语义，
+// 否则纯音乐会永远卡在"正在获取歌词…"）
+// 并发/过期请求靠 resolve 时的 trackId 校验丢弃，不用 fetching 锁，
+// 避免快速切歌时新歌词永远加载不上
+let lyricState = 'idle';
 
-// 并发/过期请求靠 resolve 时的 trackId 校验丢弃，
-// 不用 fetching 锁，避免快速切歌时新歌词永远加载不上
 function fetchLyrics(trackId) {
   if (!trackId) return;
+  lyricState = 'loading';
   getLyric(trackId)
     .then(data => {
       if (lyricTrackId !== trackId) return; // 已切歌，丢弃过期结果
       const { lyric } = lyricParser(data || {});
       lyricLines = lyric.filter(l => l.content && l.content.trim());
+      lyricState = lyricLines.length > 0 ? 'ok' : 'none';
     })
     .catch(() => {
-      if (lyricTrackId === trackId) lyricLines = [];
+      if (lyricTrackId === trackId) {
+        lyricLines = [];
+        lyricState = 'none';
+      }
     });
 }
 
@@ -121,6 +150,11 @@ function getHighlightIndex(progress) {
     const next = lyricLines[index + 1];
     return progress >= l.time && (next ? progress < next.time : true);
   });
+}
+
+function placeholderText(trackName) {
+  if (!trackName) return '未在播放';
+  return lyricState === 'loading' ? '正在获取歌词…' : '♪ ♪ ♪';
 }
 
 // ---- Web：Document Picture-in-Picture ----
@@ -199,7 +233,7 @@ function webTick() {
 
   if (lyricLines.length === 0) {
     if (ui.meta.textContent !== metaText) ui.meta.textContent = metaText;
-    const placeholder = track.name ? '正在获取歌词…' : '未在播放';
+    const placeholder = placeholderText(track.name);
     if (ui.current.textContent !== placeholder) {
       ui.current.textContent = placeholder;
       ui.next.textContent = '';
@@ -278,7 +312,7 @@ function drawCanvas() {
 
   const player = store.state.player;
   const track = player.currentTrack || {};
-  let currentText = track.name ? '正在获取歌词…' : '未在播放';
+  let currentText = placeholderText(track.name);
   let nextText = '';
   if (lyricLines.length > 0) {
     const progress = player.seek(null, false) ?? 0;

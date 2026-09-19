@@ -46,3 +46,6 @@ devenv.local.nix
 # OAuth 凭证（严禁提交）
 .roginx-cli/
 credentials.json
+
+# WorkBuddy 本地工作区（会话记忆、验证截图等临时产物）
+.workbuddy/

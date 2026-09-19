@@ -25,13 +25,21 @@
     <div class="controls no-scrollbar">
       <div class="playing">
         <div class="container" @click.stop>
-          <img
-            :src="currentTrack.al && currentTrack.al.picUrl | resizeImage(224)"
-            loading="lazy"
-            referrerpolicy="no-referrer"
-            onerror="this.src=window.__YPM_COVER_FALLBACK__;this.onerror=null"
-            @click="goToAlbum"
-          />
+          <div class="cover-wrap">
+            <LazyImage
+              :src="
+                currentTrack.al && currentTrack.al.picUrl | resizeImage(224)
+              "
+              referrerpolicy="no-referrer"
+              @click="goToAlbum"
+            />
+            <span
+              v-if="player.loading"
+              class="cover-spinner"
+              role="status"
+              aria-label="正在加载音频"
+            ></span>
+          </div>
           <div class="track-info" :title="audioSource">
             <div
               :class="['name', { 'has-list': hasList() }]"
@@ -181,6 +189,13 @@
             ><svg-icon icon-class="desktop-lyrics"
           /></button-icon>
           <button-icon
+            v-if="!isElectron"
+            class="open-client-button"
+            title="用桌面客户端打开（支持透明桌面歌词）"
+            @click.native="openDesktopClient"
+            ><svg-icon icon-class="monitor"
+          /></button-icon>
+          <button-icon
             class="lyrics-button"
             title="歌词"
             @click.native="toggleLyrics"
@@ -215,6 +230,7 @@ export default {
   data() {
     return {
       mouseDownTarget: null,
+      isElectron: process.env.IS_ELECTRON === true,
       desktopLyricsSupported: isDesktopLyricsSupported(),
       desktopLyricsActive: isDesktopLyricsOpen(),
     };
@@ -260,6 +276,15 @@ export default {
         console.warn('[desktopLyrics] toggle failed:', err);
         this.showToast('当前浏览器不支持桌面歌词');
       });
+    },
+    openDesktopClient() {
+      // 未安装客户端时自定义协议静默失败：页面保持可见且握有焦点 → 引导去下载页
+      window.open('yesplaymusic://desktop-lyrics', '_blank');
+      setTimeout(() => {
+        if (!document.hidden && document.hasFocus()) {
+          this.$router.push('/download');
+        }
+      }, 2000);
     },
     handleClick(event) {
       if (event.target == this.mouseDownTarget) {
@@ -443,6 +468,32 @@ export default {
     cursor: pointer;
     user-select: none;
   }
+  .cover-wrap {
+    position: relative;
+    display: flex;
+  }
+  .cover-spinner {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    border-radius: 5px;
+    background: rgba(0, 0, 0, 0.45);
+    &::after {
+      content: '';
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 16px;
+      height: 16px;
+      margin: -8px 0 0 -8px;
+      border: 2px solid rgba(255, 255, 255, 0.35);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: cover-spin 0.7s linear infinite;
+    }
+  }
   .track-info {
     height: 46px;
     margin-left: 12px;
@@ -546,6 +597,12 @@ export default {
   }
   &:active {
     transform: unset;
+  }
+}
+
+@keyframes cover-spin {
+  to {
+    transform: rotate(360deg);
   }
 }
 </style>

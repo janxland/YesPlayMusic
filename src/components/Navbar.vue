@@ -25,6 +25,11 @@
           :class="{ active: $route.name === 'library' }"
           >{{ $t('nav.library') }}</router-link
         >
+        <router-link
+          to="/keyboard-live"
+          :class="{ active: $route.name === 'keyboardLive' }"
+          >{{ $t('nav.keyboardLive') }}</router-link
+        >
       </div>
       <div class="right-part">
         <div class="search-box">
@@ -46,12 +51,10 @@
             </a>
           </div>
         </div>
-        <img
+        <LazyImage
           class="avatar"
           :src="avatarUrl"
           referrerpolicy="no-referrer"
-          onerror="this.src=window.__YPM_COVER_FALLBACK__;this.onerror=null"
-          loading="lazy"
           @click="showUserProfileMenu"
         />
       </div>

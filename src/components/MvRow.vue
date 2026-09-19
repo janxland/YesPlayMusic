@@ -7,12 +7,7 @@
         @mouseleave="hoverVideoID = 0"
         @click="goToMv(getID(mv))"
       >
-        <img
-          :src="getUrl(mv)"
-          referrerpolicy="no-referrer"
-          onerror="if(!this.dataset.fallback){this.dataset.fallback=1;this.src=window.__YPM_COVER_FALLBACK__}else{this.onerror=null}"
-          loading="lazy"
-        />
+        <LazyImage :src="getUrl(mv)" referrerpolicy="no-referrer" />
         <transition name="fade">
           <div
             v-show="hoverVideoID === getID(mv)"

@@ -11,17 +11,17 @@
         <button
           v-show="focus"
           class="play-button"
+          :class="{ pending: isPendingSource }"
           :style="playButtonStyles"
+          :aria-label="isPendingSource ? '正在准备播放' : '播放'"
           @click.stop="clickCoverToPlayFun ? clickCoverToPlayFun(id) : play()"
           ><svg-icon icon-class="play" />
         </button>
       </div>
-      <img
+      <LazyImage
         :src="imageUrl"
         referrerpolicy="no-referrer"
-        onerror="if(!this.dataset.fallback){this.dataset.fallback=1;this.src=window.__YPM_COVER_FALLBACK__}else{this.onerror=null}"
         :style="imageStyles"
-        loading="lazy"
       />
       <transition v-if="coverHover || alwaysShowShadow" name="fade">
         <div
@@ -56,6 +56,14 @@ export default {
     };
   },
   computed: {
+    /**
+     * 本张封面正在装载音源。以前点击后 UI 完全静止，三跳串行要走一秒多，
+     * 用户只能以为没点上。按当前播放列表来源去重到具体那一张。
+     */
+    isPendingSource() {
+      const player = this.$store.state.player;
+      return player.loading && player.playlistSource?.id === this.id;
+    },
     imageStyles() {
       let styles = {};
       if (this.fixedSize !== 0) {
@@ -80,11 +88,8 @@ export default {
   },
   methods: {
     play() {
-      // 防止快速连点：800ms 内重复点击同一封面直接忽略，避免触发多次
-      // playPlaylistByID -> /playlist/detail -> /song/url 的请求链
-      const now = Date.now();
-      if (this._lastPlayClickAt && now - this._lastPlayClickAt < 800) return;
-      this._lastPlayClickAt = now;
+      // 重复点击由 _playResource 的 key 与 playlistSource 的 inflight 两道防线
+      // 挡住，这里不再做时间节流 —— 那会让正常的二次点击失效
       const player = this.$store.state.player;
       const playActions = {
         album: player.playAlbumByID,
@@ -162,6 +167,26 @@ img {
   }
   &:active {
     transform: scale(0.94);
+  }
+  &.pending {
+    .svg-icon {
+      display: none;
+    }
+    &::after {
+      content: '';
+      width: 42%;
+      height: 42%;
+      border: 2px solid rgba(255, 255, 255, 0.35);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: cover-spin 0.7s linear infinite;
+    }
+  }
+}
+
+@keyframes cover-spin {
+  to {
+    transform: rotate(360deg);
   }
 }
 

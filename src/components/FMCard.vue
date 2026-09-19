@@ -7,12 +7,10 @@
       onerror="this.onerror=null"
       loading="lazy"
     />
-    <img
+    <LazyImage
       class="cover"
       :src="track.album && track.album.picUrl | resizeImage(512)"
       referrerpolicy="no-referrer"
-      onerror="if(!this.dataset.fallback){this.dataset.fallback=1;this.src=window.__YPM_COVER_FALLBACK__}else{this.onerror=null}"
-      loading="lazy"
       @click="goToAlbum"
     />
     <div class="right-part">

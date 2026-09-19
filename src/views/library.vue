@@ -1,12 +1,10 @@
 <template>
   <div v-show="show" ref="library">
     <h1>
-      <img
+      <LazyImage
         class="avatar"
         :src="data.user.avatarUrl | resizeImage"
         referrerpolicy="no-referrer"
-        onerror="if(!this.dataset.fallback){this.dataset.fallback=1;this.src=window.__YPM_COVER_FALLBACK__}else{this.onerror=null}"
-        loading="lazy"
       />{{ data.user.nickname }}{{ $t('library.sLibrary') }}
     </h1>
     <div class="section-one">

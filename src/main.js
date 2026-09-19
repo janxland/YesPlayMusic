@@ -7,6 +7,7 @@ import store from './store';
 import i18n from '@/locale';
 import '@/assets/icons';
 import '@/utils/filters';
+import LazyImage from '@/components/LazyImage.vue';
 import './registerServiceWorker';
 import { dailyTask } from '@/utils/common';
 import '@/assets/css/global.scss';
@@ -37,6 +38,7 @@ Vue.use(
   router
 );
 Vue.config.productionTip = false;
+Vue.component('LazyImage', LazyImage);
 NProgress.configure({ showSpinner: false, trickleSpeed: 100 });
 dailyTask();
 

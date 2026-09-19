@@ -1,7 +1,7 @@
 <template>
   <div class="linux-titlebar">
     <div class="logo">
-      <img src="img/logos/yesplaymusic-white24x24.png" />
+      <img src="@/assets/img/logos/yesplaymusic-white24x24.png" />
     </div>
     <div class="title">{{ title }}</div>
     <div class="controls">

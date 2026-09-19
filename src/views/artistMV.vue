@@ -1,12 +1,10 @@
 <template>
   <div v-show="show">
     <h1>
-      <img
+      <LazyImage
         class="avatar"
         :src="artist.img1v1Url | resizeImage(1024)"
         referrerpolicy="no-referrer"
-        onerror="if(!this.dataset.fallback){this.dataset.fallback=1;this.src=window.__YPM_COVER_FALLBACK__}else{this.onerror=null}"
-        loading="lazy"
       />{{ artist.name }}'s Music Videos
     </h1>
     <MvRow :mvs="mvs" subtitle="publishTime" />
