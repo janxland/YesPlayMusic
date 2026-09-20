@@ -32,6 +32,24 @@
       })();
     </script>
     <script>
+      // 第三方 RUM（Cloudflare Web Analytics 等 web-vitals 系脚本）在 LCP/软导航条目缺失时
+      // 读 startTime 崩溃，与应用无关且无法修复，只屏蔽这一条签名，其余错误照常上报
+      (function () {
+        window.addEventListener(
+          'error',
+          function (e) {
+            var msg = (e && e.message) || '';
+            if (msg.indexOf('startTime') === -1) return;
+            var stack = (e && e.error && e.error.stack) || '';
+            if (stack.indexOf('reportAllChanges') === -1) return;
+            e.preventDefault();
+            e.stopImmediatePropagation();
+          },
+          true
+        );
+      })();
+    </script>
+    <script>
       // 只在 *.roginx.ink 域名下加载埋点脚本，避免本地开发环境加载
       if (
         window.location.hostname.endsWith('.roginx.ink') ||

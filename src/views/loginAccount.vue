@@ -51,7 +51,7 @@
             </div>
           </div>
         </div>
-        <div v-show="mode !== 'qrCode'" class="input-box">
+        <div v-show="mode === 'phone' || mode === 'email'" class="input-box">
           <div class="container" :class="{ active: inputFocus === 'password' }">
             <svg-icon icon-class="lock" />
             <div class="inputs">
@@ -78,6 +78,28 @@
             {{ qrCodeInformation }}
           </div>
         </div>
+
+        <div v-show="mode === 'cookie'" class="cookie-mode">
+          <p class="cookie-hint">
+            在浏览器登录
+            <a
+              href="https://music.163.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              >music.163.com</a
+            >，打开开发者工具
+            <code>Application → Cookies → music.163.com</code>， 复制
+            <code>MUSIC_U</code> 的值粘贴到下方（也可直接粘贴整行 Cookie）。
+          </p>
+          <textarea
+            v-model="cookieInput"
+            class="cookie-input"
+            rows="4"
+            spellcheck="false"
+            placeholder="MUSIC_U=... 或整串 Cookie"
+            @keydown.enter.ctrl="login"
+          ></textarea>
+        </div>
       </div>
       <div v-show="mode !== 'qrCode'" class="confirm">
         <button v-show="!processing" @click="login">
@@ -102,7 +124,7 @@
           二维码登录
         </a>
         <span v-show="mode !== 'qrCode'">|</span>
-        <a v-show="mode !== 'qrCode'" @click="cookieLogin('qrCode')">
+        <a v-show="mode !== 'cookie'" @click="changeMode('cookie')">
           Cookie登录
         </a>
       </div>
@@ -120,7 +142,14 @@ import QRCode from 'qrcode';
 import md5 from 'crypto-js/md5';
 import NProgress from 'nprogress';
 import { mapMutations } from 'vuex';
-import { setCookies } from '@/utils/auth';
+import {
+  setCookies,
+  parseCookieJar,
+  writeCookieJar,
+  cookieHeaderOf,
+  doLogout,
+} from '@/utils/auth';
+import { userAccount } from '@/api/user';
 import nativeAlert from '@/utils/nativeAlert';
 import {
   loginWithPhone,
@@ -145,6 +174,7 @@ export default {
       qrCodeSvg: '',
       qrCodeCheckInterval: null,
       qrCodeInformation: '打开网易云音乐APP扫码登录',
+      cookieInput: '',
     };
   },
   computed: {
@@ -188,30 +218,54 @@ export default {
       }
       return true;
     },
-    cookieLogin() {
-      const musicU = prompt('请输入您的 MUSIC_U 值：');
-      if (musicU) {
-        const expiresDate = new Date();
-        expiresDate.setTime(
-          expiresDate.getTime() + 100 * 365 * 24 * 60 * 60 * 1000
-        );
-        const expires = `expires=${expiresDate.toUTCString()}`;
-        setCookies(
-          `MUSIC_U=${encodeURIComponent(
-            musicU
-          )}; ${expires}; path=/; Secure; SameSite=Lax`
-        );
-        this.updateData({ key: 'loginMode', value: 'account' });
-        this.$store.dispatch('fetchUserProfile').then(() => {
-          this.$store.dispatch('fetchLikedPlaylist').then(() => {
-            this.$router.push({ path: '/library' });
-          });
-        });
-      } else {
-        alert('MUSIC_U 值不能为空！');
+    // 扫码与密码登录均已被网易云风控拦截，Cookie 导入是当前唯一可行的登录路径。
+    // 写入后必须真实回源校验，否则会留下「看似登录、实则取不到数据」的假态。
+    loginWithCookie() {
+      const jar = parseCookieJar(this.cookieInput);
+      if (!jar.MUSIC_U) {
+        nativeAlert('未识别到 MUSIC_U，请粘贴完整 Cookie 或 MUSIC_U 的值');
+        return;
       }
+
+      this.processing = true;
+      writeCookieJar(jar);
+      this.updateData({ key: 'loginMode', value: 'account' });
+
+      userAccount()
+        .then(result => {
+          if (result.code !== 200 || !result.profile) {
+            throw new Error(
+              result.message ?? result.msg ?? `接口返回 code=${result.code}`
+            );
+          }
+          this.updateData({ key: 'user', value: result.profile });
+          // 机会性同步：把凭据交给后端供首页取歌使用；失败不影响播放器登录闭环
+          this.syncCredential(cookieHeaderOf(jar));
+          return this.$store.dispatch('fetchLikedPlaylist');
+        })
+        .then(() => {
+          this.$router.push({ path: '/library' });
+        })
+        .catch(error => {
+          this.processing = false;
+          doLogout();
+          nativeAlert(`Cookie 无效或已过期\n${error.message ?? error}`);
+        });
+    },
+    syncCredential(cookie) {
+      fetch('/api/netease/credential', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cookie }),
+      }).catch(() => {
+        // 同步是机会性的：失败时播放器登录态仍然有效
+      });
     },
     login() {
+      if (this.mode === 'cookie') {
+        this.loginWithCookie();
+        return;
+      }
       if (this.mode === 'phone') {
         this.processing = this.validatePhone();
         if (!this.processing) return;
@@ -364,6 +418,52 @@ export default {
   display: flex;
   align-items: center;
   flex-direction: column;
+}
+
+.cookie-mode {
+  width: 300px;
+  margin-bottom: 16px;
+  text-align: left;
+}
+
+.cookie-hint {
+  margin: 0 0 12px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--color-text);
+  opacity: 0.7;
+
+  a {
+    color: var(--color-primary);
+    text-decoration: underline;
+  }
+
+  code {
+    padding: 1px 4px;
+    border-radius: 4px;
+    font-size: 11px;
+    background: var(--color-secondary-bg);
+  }
+}
+
+.cookie-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border: none;
+  border-radius: 8px;
+  outline: none;
+  resize: vertical;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--color-text);
+  background: var(--color-secondary-bg);
+
+  &::placeholder {
+    color: var(--color-text);
+    opacity: 0.35;
+  }
 }
 
 .input-box {
