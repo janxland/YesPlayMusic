@@ -191,7 +191,7 @@ import {
 import { getTrackDetail } from '@/api/track';
 import locale from '@/locale';
 import { isAccountLoggedIn } from '@/utils/auth';
-import NProgress from 'nprogress';
+import { loadWithProgress, loadOptional } from '@/utils/pageLoad';
 
 import ButtonTwoTone from '@/components/ButtonTwoTone.vue';
 import ContextMenu from '@/components/ContextMenu.vue';
@@ -273,37 +273,43 @@ export default {
     ...mapMutations(['appendTrackToPlayerList']),
     ...mapActions(['playFirstTrackOnList', 'playTrackOnListByID', 'showToast']),
     loadData(id, next = undefined) {
-      setTimeout(() => {
-        if (!this.show) NProgress.start();
-      }, 1000);
       this.show = false;
       this.$parent.$refs.main.scrollTo({ top: 0 });
-      getArtist(id).then(data => {
-        this.artist = data.artist;
-        this.setPopularTracks(data.hotSongs);
-        if (next !== undefined) next();
-        NProgress.done();
-        this.show = true;
-      });
-      getArtistAlbum({ id: id, limit: 200 }).then(data => {
-        this.albumsData = data.hotAlbums;
-        this.latestRelease = data.hotAlbums[0];
-      });
-      artistMv({ id }).then(data => {
-        this.mvs = data.mvs;
-        this.hasMoreMV = data.hasMore;
-      });
+      loadWithProgress(
+        getArtist(id).then(data => {
+          this.artist = data.artist;
+          this.setPopularTracks(data.hotSongs);
+          if (next !== undefined) next();
+          this.show = true;
+        })
+      );
+      loadOptional(
+        getArtistAlbum({ id: id, limit: 200 }).then(data => {
+          this.albumsData = data.hotAlbums;
+          this.latestRelease = data.hotAlbums[0];
+        })
+      );
+      loadOptional(
+        artistMv({ id }).then(data => {
+          this.mvs = data.mvs;
+          this.hasMoreMV = data.hasMore;
+        })
+      );
       if (isAccountLoggedIn()) {
-        similarArtists(id).then(data => {
-          this.similarArtists = data.artists;
-        });
+        loadOptional(
+          similarArtists(id).then(data => {
+            this.similarArtists = data.artists;
+          })
+        );
       }
     },
     setPopularTracks(hotSongs) {
       const trackIDs = hotSongs.map(t => t.id);
-      getTrackDetail(trackIDs.join(',')).then(data => {
-        this.popularTracks = data.songs;
-      });
+      loadOptional(
+        getTrackDetail(trackIDs.join(',')).then(data => {
+          this.popularTracks = data.songs;
+        })
+      );
     },
     goToAlbum(id) {
       this.$router.push({

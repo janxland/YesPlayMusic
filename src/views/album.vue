@@ -154,7 +154,7 @@ import { getAlbum, albumDynamicDetail, likeAAlbum } from '@/api/album';
 import { getPlaylistDetail } from '@/api/playlist';
 import locale from '@/locale';
 import { splitSoundtrackAlbumTitle, splitAlbumTitle } from '@/utils/common';
-import NProgress from 'nprogress';
+import { loadWithProgress, loadOptional } from '@/utils/pageLoad';
 import { isAccountLoggedIn } from '@/utils/auth';
 // 按名导入 lodash 会把整个 lodash（~61KB）拖进共享 chunk。lodash 是 CJS，
 // webpack 摇不掉，必须走子路径按需引（与 utils/Player.js 的用法保持一致）。
@@ -302,30 +302,36 @@ export default {
       }
     },
     loadData(id) {
-      setTimeout(() => {
-        if (!this.show) NProgress.start();
-      }, 1000);
-      getAlbum(id).then(data => {
-        this.album = data.album;
-        this.tracks = data.songs;
-        this.formatTitle();
-        NProgress.done();
-        this.show = true;
-
-        // to get explicit mark
-        let trackIDs = this.tracks.map(t => t.id);
-        getTrackDetail(trackIDs.join(',')).then(data => {
+      loadWithProgress(
+        getAlbum(id).then(data => {
+          this.album = data.album;
           this.tracks = data.songs;
-        });
+          this.formatTitle();
+          this.show = true;
 
-        // get more album by this artist
-        getArtistAlbum({ id: this.album.artist.id, limit: 100 }).then(data => {
-          this.moreAlbums = data.hotAlbums;
-        });
-      });
-      albumDynamicDetail(id).then(data => {
-        this.dynamicDetail = data;
-      });
+          // to get explicit mark
+          let trackIDs = this.tracks.map(t => t.id);
+          loadOptional(
+            getTrackDetail(trackIDs.join(',')).then(data => {
+              this.tracks = data.songs;
+            })
+          );
+
+          // get more album by this artist
+          loadOptional(
+            getArtistAlbum({ id: this.album.artist.id, limit: 100 }).then(
+              data => {
+                this.moreAlbums = data.hotAlbums;
+              }
+            )
+          );
+        })
+      );
+      loadOptional(
+        albumDynamicDetail(id).then(data => {
+          this.dynamicDetail = data;
+        })
+      );
     },
     toggleFullDescription() {
       this.showFullDescription = !this.showFullDescription;

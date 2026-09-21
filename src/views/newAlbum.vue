@@ -16,7 +16,7 @@
 
 <script>
 import { newAlbums } from '@/api/album';
-import NProgress from 'nprogress';
+import { loadWithProgress } from '@/utils/pageLoad';
 
 import CoverRow from '@/components/CoverRow.vue';
 
@@ -30,13 +30,14 @@ export default {
     };
   },
   created() {
-    newAlbums({
-      area: 'EA',
-      limit: 100,
-    }).then(data => {
-      this.albums = data.albums;
-      NProgress.done();
-    });
+    loadWithProgress(
+      newAlbums({
+        area: 'EA',
+        limit: 100,
+      }).then(data => {
+        this.albums = data.albums;
+      })
+    );
   },
 };
 </script>

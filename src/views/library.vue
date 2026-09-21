@@ -219,7 +219,7 @@ import { randomNum, dailyTask } from '@/utils/common';
 import { isAccountLoggedIn } from '@/utils/auth';
 import { uploadSong } from '@/api/user';
 import { getLyric } from '@/api/track';
-import NProgress from 'nprogress';
+import { loadWithProgress, loadOptional } from '@/utils/pageLoad';
 import locale from '@/locale';
 
 import ContextMenu from '@/components/ContextMenu.vue';
@@ -302,9 +302,6 @@ export default {
     },
   },
   created() {
-    setTimeout(() => {
-      if (!this.show) NProgress.start();
-    }, 1000);
     this.loadData();
   },
   activated() {
@@ -316,25 +313,34 @@ export default {
     ...mapActions(['showToast']),
     ...mapMutations(['updateModal', 'updateData']),
     loadData() {
+      // 「我喜欢的音乐」前 12 首是本页主内容：失败要提示，不能白屏干等
       if (this.liked.songsWithDetails.length > 0) {
-        NProgress.done();
+        // 已有缓存先渲染，后台静默刷新
         this.show = true;
-        this.$store.dispatch('fetchLikedSongsWithDetails');
+        loadOptional(this.$store.dispatch('fetchLikedSongsWithDetails'));
         this.getRandomLyric();
       } else {
-        this.$store.dispatch('fetchLikedSongsWithDetails').then(() => {
-          NProgress.done();
-          this.show = true;
-          this.getRandomLyric();
-        });
+        loadWithProgress(
+          this.$store.dispatch('fetchLikedSongsWithDetails').then(() => {
+            this.show = true;
+            this.getRandomLyric();
+          }),
+          {
+            onError: () => {
+              this.show = true;
+            },
+          }
+        );
       }
-      this.$store.dispatch('fetchLikedSongs');
-      this.$store.dispatch('fetchLikedPlaylist');
-      this.$store.dispatch('fetchLikedAlbums');
-      this.$store.dispatch('fetchLikedArtists');
-      this.$store.dispatch('fetchLikedMVs');
-      this.$store.dispatch('fetchCloudDisk');
-      this.$store.dispatch('fetchPlayHistory');
+      [
+        'fetchLikedSongs',
+        'fetchLikedPlaylist',
+        'fetchLikedAlbums',
+        'fetchLikedArtists',
+        'fetchLikedMVs',
+        'fetchCloudDisk',
+        'fetchPlayHistory',
+      ].forEach(name => loadOptional(this.$store.dispatch(name)));
     },
     playLikedSongs() {
       this.$store.state.player.playPlaylistByID(

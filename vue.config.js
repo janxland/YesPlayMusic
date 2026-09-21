@@ -39,8 +39,13 @@ module.exports = {
     },
     // 预缓存清单默认会把**所有** js 都打进去（含异步路由块），一旦 Service Worker
     // 生效，按需加载的跟弹页块会在首屏被强拉下来。显式排除，保证「点了才加载」。
+    // skipWaiting/clientsClaim：新版 SW 装上即刻接管，配合 registerServiceWorker
+    // 的 updated() 提示，用户点「刷新应用」才真正换页 —— 没有这两个开关，
+    // 提示后刷新一次仍跑旧 SW（要刷两次才生效）。
     workboxOptions: {
       exclude: [/\.map$/, /^manifest.*\.js$/, /keyboard-live/],
+      skipWaiting: true,
+      clientsClaim: true,
     },
     // workboxOptions: {
     //   swSrc: "dev/sw.js",

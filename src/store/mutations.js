@@ -61,6 +61,9 @@ export default {
   updateToast(state, toast) {
     state.toast = toast;
   },
+  updateSwNeedsRefresh(state, value) {
+    state.swNeedsRefresh = value;
+  },
   updateModal(state, { modalName, key, value }) {
     state.modals[modalName][key] = value;
     if (key === 'show') {

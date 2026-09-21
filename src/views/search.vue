@@ -84,7 +84,7 @@
 import { mapActions } from 'vuex';
 import { getTrackDetail } from '@/api/track';
 import { search } from '@/api/others';
-import NProgress from 'nprogress';
+import { loadWithProgress, loadOptional } from '@/utils/pageLoad';
 // import { get } from '@/utils/metingAPI';
 import TrackList from '@/components/TrackList.vue';
 import MvRow from '@/components/MvRow.vue';
@@ -161,48 +161,50 @@ export default {
           return { result: result.result, type };
         })
         .catch(err => {
-          showToast(err.response.data.msg || err.response.data.message);
+          // 网络级失败（超时/断网）没有 err.response，旧写法在此处直接
+          // TypeError，让整个结果区永久隐藏
+          showToast(
+            err?.response?.data?.msg ?? '该类型搜索失败，请检查网络后重试'
+          );
         });
     },
     getData() {
-      setTimeout(() => {
-        if (!this.show) NProgress.start();
-      }, 1000);
       this.show = false;
 
       const requestAll = requests => {
         const keywords = this.keywords;
-        Promise.all(requests).then(results => {
-          if (keywords != this.keywords) return;
-          results.map(result => {
-            const searchType = result.type;
-            if (result.result === undefined) return;
-            result = result.result;
-            switch (searchType) {
-              case 'all':
-                this.result = result;
-                break;
-              case 'musicVideos':
-                this.musicVideos = result.mvs ?? [];
-                break;
-              case 'artists':
-                this.artists = result.artists ?? [];
-                break;
-              case 'albums':
-                this.albums = result.albums ?? [];
-                break;
-              case 'tracks':
-                this.tracks = result.songs ?? [];
-                this.getTracksDetail();
-                break;
-              case 'playlists':
-                this.playlists = result.playlists ?? [];
-                break;
-            }
-          });
-          NProgress.done();
-          this.show = true;
-        });
+        loadWithProgress(
+          Promise.all(requests).then(results => {
+            if (keywords != this.keywords) return;
+            results.forEach(result => {
+              // 单个类型失败时 search() 的 catch 返回 undefined，跳过即可
+              if (!result || result.result === undefined) return;
+              const { type: searchType, result: data } = result;
+              switch (searchType) {
+                case 'all':
+                  this.result = data;
+                  break;
+                case 'musicVideos':
+                  this.musicVideos = data.mvs ?? [];
+                  break;
+                case 'artists':
+                  this.artists = data.artists ?? [];
+                  break;
+                case 'albums':
+                  this.albums = data.albums ?? [];
+                  break;
+                case 'tracks':
+                  this.tracks = data.songs ?? [];
+                  this.getTracksDetail();
+                  break;
+                case 'playlists':
+                  this.playlists = data.playlists ?? [];
+                  break;
+              }
+            });
+            this.show = true;
+          })
+        );
       };
 
       const requests = [
@@ -218,9 +220,11 @@ export default {
     getTracksDetail() {
       const trackIDs = this.tracks.map(t => t.id);
       if (trackIDs.length === 0) return;
-      getTrackDetail(trackIDs.join(',')).then(result => {
-        this.tracks = result.songs;
-      });
+      loadOptional(
+        getTrackDetail(trackIDs.join(',')).then(result => {
+          this.tracks = result.songs;
+        })
+      );
     },
   },
 };

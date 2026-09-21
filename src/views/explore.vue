@@ -65,7 +65,7 @@
 
 <script>
 import { mapState, mapMutations } from 'vuex';
-import NProgress from 'nprogress';
+import { loadWithProgress } from '@/utils/pageLoad';
 import { topPlaylist, highQualityPlaylist, toplists } from '@/api/playlist';
 import { playlistCategories } from '@/utils/staticData';
 import { getRecommendPlayList } from '@/utils/playList';
@@ -119,9 +119,6 @@ export default {
   methods: {
     ...mapMutations(['togglePlaylistCategory']),
     loadData() {
-      setTimeout(() => {
-        if (!this.show) NProgress.start();
-      }, 1000);
       const queryCategory = this.$route.query.category;
       if (queryCategory === undefined) {
         this.playlists = [];
@@ -158,8 +155,15 @@ export default {
       }
       this.loadingMore = false;
       this.showLoadMoreButton = true;
-      NProgress.done();
       this.show = true;
+    },
+    // 失败时也要交出页面（分类栏可点、可重试），并把「加载更多」的忙态放回去
+    onLoadFailed() {
+      this.loadingMore = false;
+      this.show = true;
+    },
+    pageLoad(promise) {
+      return loadWithProgress(promise, { onError: () => this.onLoadFailed() });
     },
     getPlaylist() {
       this.loadingMore = true;
@@ -176,41 +180,49 @@ export default {
     },
     getRecommendPlayList() {
       const token = this.reqToken;
-      getRecommendPlayList(100, true).then(list => {
-        if (token !== this.reqToken) return;
-        this.playlists = [];
-        this.updatePlaylist(list, token);
-      });
+      this.pageLoad(
+        getRecommendPlayList(100, true).then(list => {
+          if (token !== this.reqToken) return;
+          this.playlists = [];
+          this.updatePlaylist(list, token);
+        })
+      );
     },
     getHighQualityPlaylist() {
       const token = this.reqToken;
       let playlists = this.playlists;
       let before =
         playlists.length !== 0 ? playlists[playlists.length - 1].updateTime : 0;
-      highQualityPlaylist({ limit: 50, before }).then(data => {
-        if (token !== this.reqToken) return;
-        this.updatePlaylist(data.playlists, token);
-        this.hasMore = data.more;
-      });
+      this.pageLoad(
+        highQualityPlaylist({ limit: 50, before }).then(data => {
+          if (token !== this.reqToken) return;
+          this.updatePlaylist(data.playlists, token);
+          this.hasMore = data.more;
+        })
+      );
     },
     getTopLists() {
       const token = this.reqToken;
-      toplists().then(data => {
-        if (token !== this.reqToken) return;
-        this.playlists = [];
-        this.updatePlaylist(data.list, token);
-      });
+      this.pageLoad(
+        toplists().then(data => {
+          if (token !== this.reqToken) return;
+          this.playlists = [];
+          this.updatePlaylist(data.list, token);
+        })
+      );
     },
     getTopPlayList() {
       const token = this.reqToken;
-      topPlaylist({
-        cat: this.activeCategory,
-        offset: this.playlists.length,
-      }).then(data => {
-        if (token !== this.reqToken) return;
-        this.updatePlaylist(data.playlists, token);
-        this.hasMore = data.more;
-      });
+      this.pageLoad(
+        topPlaylist({
+          cat: this.activeCategory,
+          offset: this.playlists.length,
+        }).then(data => {
+          if (token !== this.reqToken) return;
+          this.updatePlaylist(data.playlists, token);
+          this.hasMore = data.more;
+        })
+      );
     },
     getCatsByBigCat(name) {
       return playlistCategories.filter(c => c.bigCat === name);

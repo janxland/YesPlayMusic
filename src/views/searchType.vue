@@ -44,7 +44,7 @@ import { getTrackDetail } from '@/api/track';
 import { search } from '@/api/others';
 import locale from '@/locale';
 import { camelCase } from 'change-case';
-import NProgress from 'nprogress';
+import { loadWithProgress, loadOptional } from '@/utils/pageLoad';
 
 import TrackList from '@/components/TrackList.vue';
 import MvRow from '@/components/MvRow.vue';
@@ -91,47 +91,53 @@ export default {
         artists: 100,
         playlists: 1000,
       };
-      return search({
-        keywords: this.keywords,
-        type: typeTable[this.type],
-        offset: this.result.length,
-      }).then(result => {
-        result = result.result;
-        this.hasMore = result.hasMore ?? true;
-        switch (this.type) {
-          case 'musicVideos':
-            this.result.push(...result.mvs);
-            if (result.mvCount <= this.result.length) {
-              this.hasMore = false;
-            }
-            break;
-          case 'artists':
-            this.result.push(...result.artists);
-            break;
-          case 'albums':
-            this.result.push(...result.albums);
-            if (result.albumCount <= this.result.length) {
-              this.hasMore = false;
-            }
-            break;
-          case 'tracks':
-            this.result.push(...result.songs);
-            this.getTracksDetail();
-            break;
-          case 'playlists':
-            this.result.push(...result.playlists);
-            break;
-        }
-        NProgress.done();
-        this.show = true;
-      });
+      return loadWithProgress(
+        search({
+          keywords: this.keywords,
+          type: typeTable[this.type],
+          offset: this.result.length,
+        }).then(result => {
+          result = result.result;
+          this.hasMore = result.hasMore ?? true;
+          switch (this.type) {
+            case 'musicVideos':
+              this.result.push(...result.mvs);
+              if (result.mvCount <= this.result.length) {
+                this.hasMore = false;
+              }
+              break;
+            case 'artists':
+              this.result.push(...result.artists);
+              // artists 接口不给总数，靠「空页」判定到底，否则按钮永不出户
+              if (result.artists.length === 0) this.hasMore = false;
+              break;
+            case 'albums':
+              this.result.push(...result.albums);
+              if (result.albumCount <= this.result.length) {
+                this.hasMore = false;
+              }
+              break;
+            case 'tracks':
+              this.result.push(...result.songs);
+              this.getTracksDetail();
+              break;
+            case 'playlists':
+              this.result.push(...result.playlists);
+              if (result.playlists.length === 0) this.hasMore = false;
+              break;
+          }
+          this.show = true;
+        })
+      );
     },
     getTracksDetail() {
       const trackIDs = this.result.map(t => t.id);
       if (trackIDs.length === 0) return;
-      getTrackDetail(trackIDs.join(',')).then(result => {
-        this.result = result.songs;
-      });
+      loadOptional(
+        getTrackDetail(trackIDs.join(',')).then(result => {
+          this.result = result.songs;
+        })
+      );
     },
   },
 };

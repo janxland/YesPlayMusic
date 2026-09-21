@@ -74,7 +74,7 @@ import { toplistOfArtists } from '@/api/artist';
 import { newAlbums } from '@/api/album';
 import { byAppleMusic } from '@/utils/staticData';
 import { getRecommendPlayList } from '@/utils/playList';
-import NProgress from 'nprogress';
+import { loadWithProgress, loadOptional } from '@/utils/pageLoad';
 import { mapState } from 'vuex';
 import CoverRow from '@/components/CoverRow.vue';
 import FMCard from '@/components/FMCard.vue';
@@ -110,20 +110,20 @@ export default {
   },
   methods: {
     loadData() {
-      setTimeout(() => {
-        if (!this.show) NProgress.start();
-      }, 1000);
-      getRecommendPlayList(10, false).then(items => {
-        this.recommendPlaylist.items = items;
-        NProgress.done();
-        this.show = true;
-      });
-      newAlbums({
-        area: this.settings.musicLanguage ?? 'ALL',
-        limit: 10,
-      }).then(data => {
-        this.newReleasesAlbum.items = data.albums;
-      });
+      loadWithProgress(
+        getRecommendPlayList(10, false).then(items => {
+          this.recommendPlaylist.items = items;
+          this.show = true;
+        })
+      );
+      loadOptional(
+        newAlbums({
+          area: this.settings.musicLanguage ?? 'ALL',
+          limit: 10,
+        }).then(data => {
+          this.newReleasesAlbum.items = data.albums;
+        })
+      );
 
       const toplistOfArtistsAreaTable = {
         all: null,
@@ -132,24 +132,28 @@ export default {
         jp: 4,
         kr: 3,
       };
-      toplistOfArtists(
-        toplistOfArtistsAreaTable[this.settings.musicLanguage ?? 'all']
-      ).then(data => {
-        let indexs = [];
-        while (indexs.length < 6) {
-          let tmp = ~~(Math.random() * 100);
-          if (!indexs.includes(tmp)) indexs.push(tmp);
-        }
-        this.recommendArtists.indexs = indexs;
-        this.recommendArtists.items = data.list.artists.filter((l, index) =>
-          indexs.includes(index)
-        );
-      });
-      toplists().then(data => {
-        this.topList.items = data.list.filter(l =>
-          this.topList.ids.includes(l.id)
-        );
-      });
+      loadOptional(
+        toplistOfArtists(
+          toplistOfArtistsAreaTable[this.settings.musicLanguage ?? 'all']
+        ).then(data => {
+          let indexs = [];
+          while (indexs.length < 6) {
+            let tmp = ~~(Math.random() * 100);
+            if (!indexs.includes(tmp)) indexs.push(tmp);
+          }
+          this.recommendArtists.indexs = indexs;
+          this.recommendArtists.items = data.list.artists.filter((l, index) =>
+            indexs.includes(index)
+          );
+        })
+      );
+      loadOptional(
+        toplists().then(data => {
+          this.topList.items = data.list.filter(l =>
+            this.topList.ids.includes(l.id)
+          );
+        })
+      );
       this.$refs.DailyTracksCard.loadDailyTracks();
     },
   },

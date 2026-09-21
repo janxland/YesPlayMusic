@@ -26,6 +26,7 @@
       </main>
 
       <Toast />
+      <SwUpdatePrompt />
       <ModalAddTrackToPlaylist v-if="isAccountLoggedIn" />
       <ModalNewPlaylist v-if="isAccountLoggedIn" />
       <transition v-if="enablePlayer" name="slide-up">
@@ -42,6 +43,7 @@ import Scrollbar from './components/Scrollbar.vue';
 import Navbar from './components/Navbar.vue';
 import Player from './components/Player.vue';
 import Toast from './components/Toast.vue';
+import SwUpdatePrompt from './components/SwUpdatePrompt.vue';
 import { ipcRenderer } from './electron/ipcRenderer';
 import { isAccountLoggedIn, isLooseLoggedIn } from '@/utils/auth';
 // 歌词页自带取色与歌词解析等只在打开歌词时才用得上的依赖，静态引入会把它们
@@ -62,6 +64,7 @@ export default {
     Navbar,
     Player,
     Toast,
+    SwUpdatePrompt,
     ModalAddTrackToPlaylist,
     ModalNewPlaylist,
     Lyrics,

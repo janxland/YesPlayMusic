@@ -36,6 +36,8 @@ export default {
     text: '',
     timer: null,
   },
+  // Service Worker 已装上新版本、等待用户点「刷新应用」时置 true
+  swNeedsRefresh: false,
   modals: {
     addTrackToPlaylistModal: {
       show: false,

@@ -60,7 +60,7 @@
 <script>
 import { mvDetail, mvUrl, simiMv, likeAMV } from '@/api/mv';
 import { isAccountLoggedIn } from '@/utils/auth';
-import NProgress from 'nprogress';
+import { loadWithProgress, loadOptional } from '@/utils/pageLoad';
 import locale from '@/locale';
 
 import ButtonIcon from '@/components/ButtonIcon.vue';
@@ -117,25 +117,30 @@ export default {
   methods: {
     ...mapActions(['showToast']),
     getData(id) {
-      mvDetail(id).then(data => {
-        this.mv = data;
-        let requests = data.data.brs.map(br => {
-          return mvUrl({ id, r: br.br });
-        });
-        Promise.all(requests).then(results => {
-          this.videoSources = results.map(result => {
-            return {
-              src: result.data.url.replace(/^http:/, 'https:'),
-              type: 'video/mp4',
-              size: result.data.r,
-            };
-          });
-          NProgress.done();
-        });
-      });
-      simiMv(id).then(data => {
-        this.simiMvs = data.mvs;
-      });
+      loadWithProgress(
+        mvDetail(id)
+          .then(data => {
+            this.mv = data;
+            const requests = data.data.brs.map(br => {
+              return mvUrl({ id, r: br.br });
+            });
+            return Promise.all(requests);
+          })
+          .then(results => {
+            this.videoSources = results.map(result => {
+              return {
+                src: result.data.url.replace(/^http:/, 'https:'),
+                type: 'video/mp4',
+                size: result.data.r,
+              };
+            });
+          })
+      );
+      loadOptional(
+        simiMv(id).then(data => {
+          this.simiMvs = data.mvs;
+        })
+      );
     },
     likeMV() {
       if (!isAccountLoggedIn()) {
