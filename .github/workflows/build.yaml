@@ -117,21 +117,36 @@ jobs:
             exit 1
           fi
           ls -la dist_electron/
+          # 匿名排障：产物清单转成 notice 注解（upload 匹配 0 文件时静默成功，需暴露真实产物名）
+          files=$(ls dist_electron/ | tr '\n' ' ' | sed 's/%/%25/g')
+          echo "::notice::dist_electron files: ${files:-EMPTY}"
 
-      - uses: actions/upload-artifact@v4
+      - name: Upload macOS artifacts
+        if: runner.os == 'macOS'
+        uses: actions/upload-artifact@v4
         with:
           name: YesPlayMusic-mac
-          path: dist_electron/*-universal.dmg
-          if-no-files-found: ignore
+          path: |
+            dist_electron/*.dmg
+            !dist_electron/*.blockmap
+          if-no-files-found: warn
 
-      - uses: actions/upload-artifact@v4
+      - name: Upload Windows artifacts
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
         with:
           name: YesPlayMusic-win
-          path: dist_electron/*Setup*.exe
-          if-no-files-found: ignore
+          path: |
+            dist_electron/*.exe
+            !dist_electron/*.blockmap
+          if-no-files-found: warn
 
-      - uses: actions/upload-artifact@v4
+      - name: Upload Linux artifacts
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
         with:
           name: YesPlayMusic-linux
-          path: dist_electron/*.AppImage
-          if-no-files-found: ignore
+          path: |
+            dist_electron/*.AppImage
+            dist_electron/*.deb
+          if-no-files-found: warn
