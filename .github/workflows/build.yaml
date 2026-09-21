@@ -117,6 +117,13 @@ jobs:
           fi
           tail -n 3 /tmp/electron-extract.log
 
+      # 诊断用（定位后删）：vue-cli-plugin-electron-builder 的 catch(e) 吞掉真实异常，
+      # CI 上 "Vue CLI build failed" 看不到原因。这里把泛化消息改成打印 e.stack。
+      - name: 'Temp: unswallow plugin build error'
+        shell: bash
+        run: |
+          node -e 'const fs=require("fs");const p="node_modules/vue-cli-plugin-electron-builder/index.js";let s=fs.readFileSync(p,"utf8");const lit=String.fromCharCode(39)+"Vue CLI build failed. Please resolve any issues with your build and try again."+String.fromCharCode(39);if(!s.includes(lit)){console.error("patch target not found");process.exit(1)}s=s.replace(lit,String.fromCharCode(39)+"Vue CLI build failed: "+String.fromCharCode(39)+"+(e&&e.stack||String(e))");fs.writeFileSync(p,s);console.log("patched ok")'
+
       # 不用 samuelmeuli/action-electron-builder：v1.6.0 无 skip_install 输入，
       # 会在 pnpm 装好的依赖上再跑一次自己的 npm/yarn install（macos exit 127、
       # ubuntu/windows exit 1 都出在这里），且失败日志只有 admin 能看。
