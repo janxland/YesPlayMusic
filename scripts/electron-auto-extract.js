@@ -117,15 +117,24 @@ function getArtifactName(version, platform, arch) {
   return `electron-v${version}-${platform}-${arch}.zip`;
 }
 
-function getExecutableName(platform) {
-  return platform === 'win32' ? 'electron.exe' : 'electron';
+// 相对 dist 的可执行路径，与 electron 官方 path.txt 语义一致
+// （index.js 是 path.join(__dirname, 'dist', path.txt 内容)）。
+// macOS 的可执行文件藏在 Electron.app 包里，叫 Electron（大写 E）。
+function getExecutableRelPath(platform) {
+  if (platform === 'win32') {
+    return path.join('electron.exe');
+  }
+  if (platform === 'darwin') {
+    return path.join('Electron.app', 'Contents', 'MacOS', 'Electron');
+  }
+  return path.join('electron');
 }
 
 function isElectronInstalled(electronPath, platform) {
   const executable = path.join(
     electronPath,
     'dist',
-    getExecutableName(platform)
+    getExecutableRelPath(platform)
   );
   return fs.existsSync(executable);
 }
@@ -249,20 +258,19 @@ async function extractZip(zipPath, distPath) {
 }
 
 function writePathFile(electronPath, platform) {
-  const executable = path.join(
-    electronPath,
-    'dist',
-    getExecutableName(platform)
+  fs.writeFileSync(
+    path.join(electronPath, 'path.txt'),
+    getExecutableRelPath(platform)
   );
-  fs.writeFileSync(path.join(electronPath, 'path.txt'), executable);
 }
 
 function setExecutablePermissions(distPath, platform) {
-  if (platform !== 'win32') {
-    const executable = path.join(distPath, 'electron');
-    if (fs.existsSync(executable)) {
-      fs.chmodSync(executable, 0o755);
-    }
+  if (platform === 'win32') {
+    return;
+  }
+  const executable = path.join(distPath, getExecutableRelPath(platform));
+  if (fs.existsSync(executable)) {
+    fs.chmodSync(executable, 0o755);
   }
 }
 
