@@ -240,18 +240,19 @@
             ref="lyricsContainer"
             class="lyrics-container"
             :style="lyricFontSize"
+            @wheel="userBrowsing"
+            @pointerdown="userBrowsing"
           >
             <div id="line-1" class="line"></div>
             <div
               v-for="(line, index) in lyricToShow"
-              :id="`line${index}`"
               :key="index"
               class="line"
               :class="{
                 highlight: highlightLyricIndex === index,
               }"
-              @click="clickLyricLine(line.time)"
-              @dblclick="clickLyricLine(line.time, true)"
+              @click="clickLyricLine(index)"
+              @dblclick="clickLyricLine(index, true)"
             >
               <div class="content">
                 <span
@@ -313,7 +314,12 @@ import VueSlider from 'vue-slider-component';
 import ContextMenu from '@/components/ContextMenu.vue';
 import { formatTrackTime } from '@/utils/common';
 import { getLyric, getCloudLyric } from '@/api/track';
-import { lyricParser, copyLyric, parseLyric } from '@/utils/lyrics';
+import {
+  lyricParser,
+  copyLyric,
+  parseLyric,
+  findActiveLyricIndex,
+} from '@/utils/lyrics';
 import ButtonIcon from '@/components/ButtonIcon.vue';
 import Visualization from '@/components/Visualization';
 import * as Vibrant from 'node-vibrant/dist/vibrant.worker.min.js';
@@ -332,13 +338,11 @@ export default {
   },
   data() {
     return {
-      lyricsInterval: null,
       lyric: [],
       tlyric: [],
       romalyric: [],
       lyricType: 'translation', // or 'romaPronunciation'
       highlightLyricIndex: -1,
-      minimize: true,
       background: '',
       date: this.formatTime(new Date()),
       isFullscreen: !!document.fullscreenElement,
@@ -372,67 +376,16 @@ export default {
         ? this.lyricWithTranslation
         : this.lyricWithRomaPronunciation;
     },
+    // 高亮定位与渲染必须用同一份时间轴：先前是对未过滤的 this.lyric 求下标、
+    // 再把下标套到过滤后的 lyricToShow 上，一旦两者行数不同就会点不亮/跳错行。
+    lyricTimes() {
+      return this.lyricToShow.map(({ time }) => time);
+    },
     lyricWithTranslation() {
-      let ret = [];
-      // 空内容的去除
-      const lyricFiltered = this.lyric.filter(({ content }) =>
-        Boolean(content)
-      );
-      // content统一转换数组形式
-      if (lyricFiltered.length) {
-        lyricFiltered.forEach(l => {
-          const { rawTime, time, content } = l;
-          const lyricItem = { time, content, contents: [content] };
-          const sameTimeTLyric = this.tlyric.find(
-            ({ rawTime: tLyricRawTime }) => tLyricRawTime === rawTime
-          );
-          if (sameTimeTLyric) {
-            const { content: tLyricContent } = sameTimeTLyric;
-            if (content) {
-              lyricItem.contents.push(tLyricContent);
-            }
-          }
-          ret.push(lyricItem);
-        });
-      } else {
-        ret = lyricFiltered.map(({ time, content }) => ({
-          time,
-          content,
-          contents: [content],
-        }));
-      }
-      return ret;
+      return this.mergeSecondaryLyric(this.tlyric);
     },
     lyricWithRomaPronunciation() {
-      let ret = [];
-      // 空内容的去除
-      const lyricFiltered = this.lyric.filter(({ content }) =>
-        Boolean(content)
-      );
-      // content统一转换数组形式
-      if (lyricFiltered.length) {
-        lyricFiltered.forEach(l => {
-          const { rawTime, time, content } = l;
-          const lyricItem = { time, content, contents: [content] };
-          const sameTimeRomaLyric = this.romalyric.find(
-            ({ rawTime: tLyricRawTime }) => tLyricRawTime === rawTime
-          );
-          if (sameTimeRomaLyric) {
-            const { content: romaLyricContent } = sameTimeRomaLyric;
-            if (content) {
-              lyricItem.contents.push(romaLyricContent);
-            }
-          }
-          ret.push(lyricItem);
-        });
-      } else {
-        ret = lyricFiltered.map(({ time, content }) => ({
-          time,
-          content,
-          contents: [content],
-        }));
-      }
-      return ret;
+      return this.mergeSecondaryLyric(this.romalyric);
     },
     lyricFontSize() {
       const scale = this.$store.state.visualSet.lyricsScale || 1;
@@ -449,6 +402,15 @@ export default {
     },
     noLyric() {
       return this.lyric.length == 0;
+    },
+    // 歌词页可见且有歌词可滚动时才需要逐帧定位；组件是 v-show 常驻的，
+    // 关掉页面后继续轮询纯属浪费。
+    lyricPageOpen() {
+      return this.showLyrics && !this.noLyric;
+    },
+    // 「纯音乐，请欣赏」这类占位行不支持点击跳转
+    isPureMusicLyric() {
+      return this.lyric.some(({ content }) => content === '纯音乐，请欣赏');
     },
     artist() {
       return this.currentTrack?.ar
@@ -467,18 +429,30 @@ export default {
       this.getLyric();
       this.getCoverColor();
     },
-    showLyrics(show) {
-      if (show) {
-        this.setLyricsInterval();
-        this.$store.commit('enableScrolling', false);
-      } else {
-        clearInterval(this.lyricsInterval);
-        this.$store.commit('enableScrolling', true);
-      }
+    // immediate 是必须的：组件由 <Lyrics v-if="lyricsMounted"> 按需创建，
+    // 创建时 showLyrics 已经是 true，非 immediate 的 watcher 永不触发，
+    // 于是首次打开歌词页时定位循环根本没启动（歌词「失活」、不跟随不跳转）。
+    showLyrics: {
+      handler(show) {
+        this.$store.commit('enableScrolling', !show);
+      },
+      immediate: true,
     },
-    // 字号缩放会改变各行 offsetTop，需把高亮行重新钉回容器中心
-    '$store.state.visualSet.lyricsScale'() {
-      this.$nextTick(() => this.centerHighlightLine());
+    lyricPageOpen: {
+      handler(open) {
+        if (open) this.startLyricSync();
+        else this.stopLyricSync();
+      },
+      immediate: true,
+    },
+    // 换歌 / 切换译文行 / 换字号都会改变行数与行高：几何缓存作废，
+    // 高亮下标归 -1，让下一帧重新定位并把正确的行滚回中心。
+    lyricToShow() {
+      this.invalidateLyricGeometry();
+      this.highlightLyricIndex = -1;
+    },
+    lyricFontSize() {
+      this.invalidateLyricGeometry();
     },
   },
   created() {
@@ -495,17 +469,24 @@ export default {
       this.isFullscreen = !!document.fullscreenElement;
     });
   },
+  mounted() {
+    // 容器尺寸变化（窗口缩放、全屏、窄屏断点隐藏左侧封面）同时改变行高与居中
+    // 基线；RO 只在尺寸真的变了时回调，比每帧回读布局便宜。
+    this._resizeObserver = new ResizeObserver(() =>
+      this.invalidateLyricGeometry()
+    );
+    this._resizeObserver.observe(this.$refs.lyricsContainer);
+  },
   beforeDestroy: function () {
     if (this.timer) {
       clearInterval(this.timer);
     }
-  },
-  destroyed() {
-    clearInterval(this.lyricsInterval);
+    this.stopLyricSync();
+    this._resizeObserver?.disconnect();
   },
   methods: {
     ...mapMutations(['toggleLyrics', 'updateModal']),
-    ...mapActions(['likeATrack']),
+    ...mapActions(['likeATrack', 'showToast']),
     initDate() {
       var _this = this;
       clearInterval(this.timer);
@@ -564,6 +545,14 @@ export default {
     },
     getLyric() {
       if (!this.currentTrack.id) return;
+      // 请求发出前先清空：旧实现直到响应回来都还挂着上一首的歌词，
+      // 切歌瞬间新歌进度会在旧词时间轴上滚动（穿帮），且失败后旧词永久残留
+      this.lyric = [];
+      this.tlyric = [];
+      this.romalyric = [];
+      const onFail = () => {
+        this.$store.dispatch('showToast', '歌词加载失败');
+      };
       if (
         this.currentTrack.pc !== null &&
         this.currentTrack.cd === null &&
@@ -573,57 +562,58 @@ export default {
         return getCloudLyric(
           this.currentTrack.id,
           this.$store.state.data.user?.userId
-        ).then(data => {
-          this.tlyric = [];
-          this.romalyric = [];
-          this.lyric = data?.lrc?.length > 0 ? parseLyric(data.lrc) : [];
-          this.lyricType = 'translation';
-          return true;
-        });
+        )
+          .then(data => {
+            this.lyric = data?.lrc?.length > 0 ? parseLyric(data.lrc) : [];
+            this.lyricType = 'translation';
+            return true;
+          })
+          .catch(onFail);
       }
-      return getLyric(this.currentTrack.id).then(data => {
-        if (!data?.lrc?.lyric) {
-          this.lyric = [];
-          this.tlyric = [];
-          this.romalyric = [];
-          return false;
-        } else {
+      return getLyric(this.currentTrack.id)
+        .then(data => {
+          if (!data?.lrc?.lyric) {
+            this.lyric = [];
+            this.tlyric = [];
+            this.romalyric = [];
+            return false;
+          }
           let { lyric, tlyric, romalyric } = lyricParser(data);
           lyric = lyric.filter(
             l => !/^作(词|曲)\s*(:|：)\s*无$/.exec(l.content)
           );
-          let includeAM =
+          const includeAM =
             lyric.length <= 10 &&
             lyric.map(l => l.content).includes('纯音乐，请欣赏');
           if (includeAM) {
-            let reg = /^作(词|曲)\s*(:|：)\s*/;
-            let author = this.currentTrack?.ar[0]?.name;
+            const reg = /^作(词|曲)\s*(:|：)\s*/;
+            const author = this.currentTrack?.ar[0]?.name;
             lyric = lyric.filter(l => {
-              let regExpArr = l.content.match(reg);
+              const regExpArr = l.content.match(reg);
               return (
                 !regExpArr || l.content.replace(regExpArr[0], '') !== author
               );
             });
           }
+          // 只剩「纯音乐，请欣赏」一行 → 按无歌词处理
           if (lyric.length === 1 && includeAM) {
             this.lyric = [];
             this.tlyric = [];
             this.romalyric = [];
             return false;
-          } else {
-            this.lyric = lyric;
-            this.tlyric = tlyric;
-            this.romalyric = romalyric;
-            if (tlyric.length * romalyric.length > 0) {
-              this.lyricType = 'translation';
-            } else {
-              this.lyricType =
-                lyric.length > 0 ? 'translation' : 'romaPronunciation';
-            }
-            return true;
           }
-        }
-      });
+          this.lyric = lyric;
+          this.tlyric = tlyric;
+          this.romalyric = romalyric;
+          this.lyricType =
+            tlyric.length && romalyric.length
+              ? 'translation'
+              : lyric.length
+              ? 'translation'
+              : 'romaPronunciation';
+          return true;
+        })
+        .catch(onFail);
     },
     switchLyricType() {
       this.lyricType =
@@ -632,17 +622,18 @@ export default {
     formatTrackTime(value) {
       return formatTrackTime(value);
     },
-    clickLyricLine(value, startPlay = false) {
-      // TODO: 双击选择还会选中文字，考虑搞个右键菜单复制歌词
-      let jumpFlag = false;
-      this.lyric.filter(function (item) {
-        if (item.content == '纯音乐，请欣赏') {
-          jumpFlag = true;
-        }
-      });
-      if (window.getSelection().toString().length === 0 && !jumpFlag) {
-        this.player.seek(value);
-      }
+    clickLyricLine(index, startPlay = false) {
+      // 歌词文字本身是 user-select: none，页面上残留的旧选区（比如事先选中过歌名）
+      // 不该把跳转一起挡掉 —— 清掉选区，「点哪句跳到哪句」无条件成立
+      window.getSelection()?.removeAllRanges();
+      const line = this.lyricToShow[index];
+      if (!line || this.isPureMusicLyric) return;
+      // 点行是「我要看这句」：撤销此前 pointerdown 申请的让位窗口
+      this._userScrollUntil = 0;
+      this.player.seek(line.time);
+      // 乐观落点：点击的那一行立刻高亮并居中，不等下一帧回读播放进度
+      this.highlightLyricIndex = index;
+      this._scrolledTo = this.centerHighlightLine() ? index : null;
       if (startPlay === true) {
         this.player.play();
       }
@@ -662,33 +653,101 @@ export default {
         }
       }
     },
-    setLyricsInterval() {
-      this.lyricsInterval = setInterval(() => {
-        const progress = this.player.seek(null, false) ?? 0;
-        let oldHighlightLyricIndex = this.highlightLyricIndex;
-        this.highlightLyricIndex = this.lyric.findIndex((l, index) => {
-          const nextLyric = this.lyric[index + 1];
-          return (
-            progress >= l.time && (nextLyric ? progress < nextLyric.time : true)
-          );
-        });
-        if (oldHighlightLyricIndex !== this.highlightLyricIndex) {
-          this.centerHighlightLine();
+    /**
+     * 主歌词按 rawTime 合并副歌词（译文/音译）。
+     * 旧实现对每行都做一遍全量 find —— O(主行数 × 副行数)；换 Map 后两趟线性搞定。
+     * 同时保证渲染出来的行数与高亮定位所用的时间轴完全同源。
+     */
+    mergeSecondaryLyric(subLyrics) {
+      const contentByRawTime = new Map();
+      for (const { rawTime, content } of subLyrics) {
+        if (!contentByRawTime.has(rawTime)) {
+          contentByRawTime.set(rawTime, content);
         }
-      }, 50);
+      }
+      const merged = [];
+      for (const line of this.lyric) {
+        if (!line.content) continue;
+        const contents = [line.content];
+        const subContent = contentByRawTime.get(line.rawTime);
+        if (subContent) contents.push(subContent);
+        merged.push({ time: line.time, content: line.content, contents });
+      }
+      return merged;
     },
-    /** 把当前高亮行平滑滚动到歌词容器的垂直中心。 */
-    centerHighlightLine() {
-      const el = document.getElementById(`line${this.highlightLyricIndex}`);
+    invalidateLyricGeometry() {
+      this._lineRows = null;
+      this._scrolledTo = null;
+    },
+    /**
+     * 用户滚轮/拖滚动条浏览歌词时申请「让位窗口」：期间换行只切高亮、不抢
+     * 滚动条（旧实现往前看几句，下一句时间点就被拽回中央）。窗口结束后
+     * 由 syncHighlightIndex 的补居中把当前行带回中心。
+     */
+    userBrowsing() {
+      this._userScrollUntil = Date.now() + 5000;
+    },
+    startLyricSync() {
+      if (this._lyricRaf) return;
+      // 关闭期间 v-show 会把容器 scrollTop 归零，重开必须重新定位居中一次
+      this.invalidateLyricGeometry();
+      const tick = () => {
+        this._lyricRaf = requestAnimationFrame(tick);
+        this.syncHighlightIndex();
+      };
+      this._lyricRaf = requestAnimationFrame(tick);
+    },
+    stopLyricSync() {
+      if (!this._lyricRaf) return;
+      cancelAnimationFrame(this._lyricRaf);
+      this._lyricRaf = 0;
+    },
+    syncHighlightIndex() {
+      const progress = this.player.seek(null, false) ?? 0;
+      const index = findActiveLyricIndex(this.lyricTimes, progress);
+      // 未换行且已滚到位 → 立即返回：稳定播放期每帧零 DOM 访问、零回流
+      if (index === this.highlightLyricIndex && index === this._scrolledTo) {
+        return;
+      }
+      this.highlightLyricIndex = index;
+      if (Date.now() < (this._userScrollUntil ?? 0)) {
+        // 让位期内只切高亮；置空 _scrolledTo 使窗口结束后下一帧补回居中
+        this._scrolledTo = null;
+        return;
+      }
+      if (this.centerHighlightLine()) this._scrolledTo = index;
+    },
+    /**
+     * 一次性批量读取全部行的几何并缓存。循环内只读不写，故整趟测量只触发一次
+     * 强制布局；此后每次换行都只是「读缓存 + 写 scrollTop」。
+     * @returns {boolean} 是否测到可用几何（未挂载或被 v-show 隐藏时为 false）
+     */
+    measureLines() {
       const container = this.$refs.lyricsContainer;
+      if (!container) return false;
+      const viewportHeight = container.clientHeight;
+      if (viewportHeight === 0) return false;
+      const rows = [];
+      for (const el of container.querySelectorAll('.line')) {
+        rows.push({ top: el.offsetTop, height: el.offsetHeight });
+      }
+      this._lineRows = rows;
+      this._lyricsViewportHeight = viewportHeight;
+      return true;
+    },
+    /** 把高亮行滚到容器垂直中心。@returns {boolean} 是否已滚到位 */
+    centerHighlightLine() {
       // 手动 scrollTo 而非 scrollIntoView：只滚动歌词容器本身，
       // 避免连带祖先/页面一起滚导致定位漂移。
-      if (el && container) {
-        container.scrollTo({
-          top: el.offsetTop - container.clientHeight / 2 + el.clientHeight / 2,
-          behavior: 'smooth',
-        });
-      }
+      if (!this._lineRows && !this.measureLines()) return false;
+      // rows[0] 是模板里的占位行 #line-1，歌词行整体后移一位
+      const row = this._lineRows[this.highlightLyricIndex + 1];
+      if (!row) return false;
+      this.$refs.lyricsContainer.scrollTo({
+        top: row.top - (this._lyricsViewportHeight - row.height) / 2,
+        behavior: 'smooth',
+      });
+      return true;
     },
     moveToFMTrash() {
       this.player.moveToFMTrash();

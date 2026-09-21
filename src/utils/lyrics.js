@@ -78,6 +78,27 @@ export function parseLyric(lrc) {
 }
 
 /**
+ * 在升序歌词时间轴里二分定位播放进度对应的行（最后一个 <= progress 的
+ * 下标，重复时刻取最后一条；早于第一行返回 -1）。定时器每帧都问一次
+ * 「现在是第几行」，O(log n) 让开销与歌词行数几乎无关。
+ */
+export function findActiveLyricIndex(times, progress) {
+  let low = 0;
+  let high = times.length - 1;
+  let hit = -1;
+  while (low <= high) {
+    const mid = (low + high) >> 1;
+    if (times[mid] <= progress) {
+      hit = mid;
+      low = mid + 1;
+    } else {
+      high = mid - 1;
+    }
+  }
+  return hit;
+}
+
+/**
  * @param {string} content
  * @returns {string}
  */

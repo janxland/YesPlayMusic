@@ -101,10 +101,23 @@ export function doLogout() {
   logout();
   removeCookie('MUSIC_U');
   removeCookie('__csrf');
+  // 整串导入时每条 Cookie 都镜像过 cookie-*，只删两条会残留其余凭据
+  Object.keys(localStorage)
+    .filter(k => k.startsWith('cookie-'))
+    .forEach(k => localStorage.removeItem(k));
   // 更新状态仓库中的用户信息
   store.commit('updateData', { key: 'user', value: {} });
   // 更新状态仓库中的登录状态
   store.commit('updateData', { key: 'loginMode', value: null });
   // 更新状态仓库中的喜欢列表
   store.commit('updateData', { key: 'likedSongPlaylistID', value: undefined });
+  // 停掉声音并清空上一账号的缓存：旧实现退出后 liked / 歌单 / 听歌足迹
+  // 留在内存里，换账号时会短暂串台（「我的喜欢怎么是别人的」）
+  store.state.player.pause();
+  for (const [name, value] of Object.entries(store.state.liked)) {
+    store.commit('updateLikedXXX', {
+      name,
+      data: Array.isArray(value) ? [] : { weekData: [], allData: [] },
+    });
+  }
 }

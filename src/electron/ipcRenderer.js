@@ -2,6 +2,17 @@ import store from '@/store';
 
 const player = store.state.player;
 
+// 菜单 accelerator 在主进程层先于页面拦截按键，输入框里的
+// 「跳行首/行尾」会变成切歌，故播放控制通道在编辑文本时让位。
+const isEditingText = () => {
+  const el = document.activeElement;
+  return (
+    el.tagName === 'INPUT' ||
+    el.tagName === 'TEXTAREA' ||
+    el.isContentEditable === true
+  );
+};
+
 export function ipcRenderer(vueInstance) {
   const self = vueInstance;
   // 添加专有的类名
@@ -31,39 +42,25 @@ export function ipcRenderer(vueInstance) {
     self.$refs.navbar.inputFocus = true;
   });
 
-  ipcRenderer.on('play', () => {
-    player.playOrPause();
-  });
+  // 失焦时 activeElement 会停留在上次聚焦的输入框，仅限本窗口持有焦点
+  // 才让位，否则误伤共用这批通道的托盘/媒体键/Mpris。
+  const onMedia = (channel, fn) =>
+    ipcRenderer.on(channel, () => {
+      if (!(document.hasFocus() && isEditingText())) fn();
+    });
 
-  ipcRenderer.on('next', () => {
-    if (player.isPersonalFM) {
-      player.playNextFMTrack();
-    } else {
-      player.playNextTrack();
-    }
+  onMedia('play', () => player.playOrPause());
+  onMedia('next', () =>
+    player.isPersonalFM ? player.playNextFMTrack() : player.playNextTrack()
+  );
+  onMedia('previous', () => player.playPrevTrack());
+  onMedia('increaseVolume', () => {
+    player.volume = Math.min(player.volume + 0.1, 1);
   });
-
-  ipcRenderer.on('previous', () => {
-    player.playPrevTrack();
+  onMedia('decreaseVolume', () => {
+    player.volume = Math.max(player.volume - 0.1, 0);
   });
-
-  ipcRenderer.on('increaseVolume', () => {
-    if (player.volume + 0.1 >= 1) {
-      return (player.volume = 1);
-    }
-    player.volume += 0.1;
-  });
-
-  ipcRenderer.on('decreaseVolume', () => {
-    if (player.volume - 0.1 <= 0) {
-      return (player.volume = 0);
-    }
-    player.volume -= 0.1;
-  });
-
-  ipcRenderer.on('like', () => {
-    store.dispatch('likeATrack', player.currentTrack.id);
-  });
+  onMedia('like', () => store.dispatch('likeATrack', player.currentTrack.id));
 
   ipcRenderer.on('repeat', () => {
     player.switchRepeatMode();

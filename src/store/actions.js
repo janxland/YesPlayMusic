@@ -37,26 +37,23 @@ export default {
       dispatch('showToast', '此操作需要登录网易云账号');
       return;
     }
-    let like = true;
-    if (state.liked.songs.includes(id)) like = false;
-    likeATrack({ id, like })
+    const wasLiked = state.liked.songs.includes(id);
+    const apply = liked =>
+      commit('updateLikedXXX', {
+        name: 'songs',
+        data: liked
+          ? [...state.liked.songs, id]
+          : state.liked.songs.filter(d => d !== id),
+      });
+    // 乐观更新：点击即刻翻转红心，失败回滚；原先 push 的是同一数组引用，
+    // 依赖 songs 的组件可能根本不重渲染
+    apply(!wasLiked);
+    likeATrack({ id, like: !wasLiked })
       .then(() => {
-        if (like === false) {
-          commit('updateLikedXXX', {
-            name: 'songs',
-            data: state.liked.songs.filter(d => d !== id),
-          });
-        } else {
-          let newLikeSongs = state.liked.songs;
-          newLikeSongs.push(id);
-          commit('updateLikedXXX', {
-            name: 'songs',
-            data: newLikeSongs,
-          });
-        }
         dispatch('fetchLikedSongsWithDetails');
       })
       .catch(() => {
+        apply(wasLiked);
         dispatch('showToast', '操作失败，专辑下架或版权锁定');
       });
   },

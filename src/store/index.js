@@ -54,15 +54,28 @@ window
   });
 
 let player = new Player();
+// 落盘/IPC 拖尾合并（setter 先行生效，声音仍实时跟手）：旧实现音量
+// 滑动的每次 mousemove 都 stringify 整个 player + 同步写盘 + 数条 IPC
+let _playerSyncTimer = null;
+const flushPlayerSync = target => {
+  if (_playerSyncTimer === null) return;
+  _playerSyncTimer = null;
+  target.saveSelfToLocalStorage();
+  target.sendSelfToIpcMain();
+};
 player = new Proxy(player, {
   set(target, prop, val) {
-    // console.log({ prop, val });
     target[prop] = val;
     if (prop === '_howler') return true;
-    target.saveSelfToLocalStorage();
-    target.sendSelfToIpcMain();
+    clearTimeout(_playerSyncTimer);
+    _playerSyncTimer = setTimeout(() => flushPlayerSync(target), 300);
     return true;
   },
+});
+// 关窗前落盘最后一次变更
+window.addEventListener('pagehide', () => {
+  clearTimeout(_playerSyncTimer);
+  flushPlayerSync(player);
 });
 store.state.player = player;
 

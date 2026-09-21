@@ -1,4 +1,5 @@
 import router from '@/router';
+import store from '@/store';
 import { doLogout, getCookie } from '@/utils/auth';
 import axios from 'axios';
 
@@ -191,12 +192,19 @@ service.interceptors.response.use(
       data.code === 301 &&
       data.msg === '需要登录'
     ) {
-      console.warn('Token has expired. Logout now!');
-      doLogout();
-      if (process.env.IS_ELECTRON === true) {
-        router.push({ name: 'loginAccount' });
-      } else {
-        router.push({ name: 'login' });
+      // 并发请求可能同时撞上过期会话，只处理第一次：
+      // 否则会连发多个 toast / router.push（NavigationDuplicated 刷屏）
+      if (!service._expiredNotified) {
+        service._expiredNotified = true;
+        setTimeout(() => (service._expiredNotified = false), 3000);
+        console.warn('Token has expired. Logout now!');
+        store.dispatch('showToast', '登录已过期，请重新登录');
+        doLogout();
+        if (process.env.IS_ELECTRON === true) {
+          router.push({ name: 'loginAccount' });
+        } else {
+          router.push({ name: 'login' });
+        }
       }
     }
 

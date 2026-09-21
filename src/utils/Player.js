@@ -202,10 +202,15 @@ export default class {
   set progress(value) {
     if (this._howler) {
       this._howler.seek(value);
+      // 与 seek() 同理：立刻回写，否则进度条按 getter 旧值回弹，最长 1s 后才追上
+      this._progress = value;
       if (isCreateMpris) {
-        ipcRenderer?.send('seeked', this._howler.seek());
+        ipcRenderer?.send('seeked', value);
       }
     }
+  }
+  get loading() {
+    return this._loading;
   }
   get isCurrentTrackLiked() {
     return store.state.liked.songs.includes(this.currentTrack.id);
@@ -259,11 +264,10 @@ export default class {
     // 清空旧句柄再起：本函数在每次初始化配置时都会被调用，原先裸调
     // setInterval 会让定时器逐个叠加，播放时间越久每秒的写盘次数越多
     clearInterval(this._progressTimer);
-    // 同步播放进度
-    // TODO: 如果 _progress 在别的地方被改变了，
-    // 这个定时器会覆盖之前改变的值，是bug
-    setInterval(() => {
-      if (this._howler === null) return;
+    // 同步播放进度。seek()/progress setter 都会即时回写 _progress，
+    // 本定时器只负责播放期间推进产生的增量。
+    this._progressTimer = setInterval(() => {
+      if (this._howler === null || !this._playing) return;
       this._progress = this._howler.seek();
       localStorage.setItem('playerCurrentTrackTime', this._progress);
       if (isCreateMpris) {
@@ -687,13 +691,20 @@ export default class {
       return ipcRenderer?.send('metadata', metadata);
     }
 
+    // 监听器只注册一次 + metadata 走「最新待发送」槽位：旧实现每次换曲都
+    // ipcRenderer.on(...)，监听器线性累积，会把历史曲目元数据全重发一遍
+    this._pendingMprisMetadata = metadata;
+    if (!this._mprisListenerAttached) {
+      this._mprisListenerAttached = true;
+      ipcRenderer?.on('saveLyricFinished', () => {
+        if (this._pendingMprisMetadata) {
+          ipcRenderer?.send('metadata', this._pendingMprisMetadata);
+        }
+      });
+    }
     ipcRenderer.send('sendLyrics', {
       track,
       lyrics: lyricContent.lrc.lyric,
-    });
-
-    ipcRenderer.on('saveLyricFinished', () => {
-      ipcRenderer?.send('metadata', metadata);
     });
   }
   _updateMediaSessionPositionState() {
@@ -899,7 +910,12 @@ export default class {
       ipcRenderer?.send('seeked', time);
     }
     if (time !== null) {
-      this._howler?.seek(time);
+      if (this._howler) {
+        this._howler.seek(time);
+        // _progress 平时只由 1s 定时器回写：不立刻同步的话，跳转后进度条与时间
+        // 仍停在旧位置（最多滞后 1s），看起来就像「没跳到指定位置」
+        this._progress = time;
+      }
       if (this._playing)
         this._playDiscordPresence(this._currentTrack, this.seek(null, false));
     }
