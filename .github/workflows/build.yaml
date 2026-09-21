@@ -102,27 +102,37 @@ jobs:
             @unblockneteasemusic/rust-napi-linux-x64-gnu@${{ steps.get_unm_version.outputs.unmver }}
         shell: bash
 
-      - name: Build/release Electron app
-        uses: samuelmeuli/action-electron-builder@v1.6.0
+      # 不用 samuelmeuli/action-electron-builder：v1.6.0 无 skip_install 输入，
+      # 会在 pnpm 装好的依赖上再跑一次自己的 npm/yarn install（macos exit 127、
+      # ubuntu/windows exit 1 都出在这里），且失败日志只有 admin 能看。
+      # 直接调 vue-cli-service electron:build，失败时把日志尾部转成 ::error:: 注解。
+      - name: Build Electron app
+        shell: bash
         env:
-          # vue-cli/webpack4 构建需要 legacy provider（仅此步骤，Node 16 支持该 flag）
+          # vue-cli/webpack4 构建需要 legacy provider（Node 18 支持该 flag）
           NODE_OPTIONS: --openssl-legacy-provider
           VUE_APP_NETEASE_API_URL: /api
           VUE_APP_ELECTRON_API_URL: /api
           VUE_APP_ELECTRON_API_URL_DEV: http://127.0.0.1:10754
           VUE_APP_LASTFM_API_KEY: 09c55292403d961aa517ff7f5e8a3d9c
           VUE_APP_LASTFM_API_SHARED_SECRET: 307c9fda32b3904e53654baff215cb67
-        with:
-          # GitHub token, automatically provided to the action
-          # (No need to define this secret in the repo settings)
-          github_token: ${{ secrets.github_token }}
-
-          # If the commit is tagged with a version (e.g. "v1.0.0"),
-          # release the app after building
-          release: ${{ startsWith(github.ref, 'refs/tags/v') }}
-
-          use_vue_cli: true
-          skip_install: true
+          # electron-builder GitHub publisher 认 GH_TOKEN（仅打 tag 发版时用）
+          GH_TOKEN: ${{ secrets.github_token }}
+        run: |
+          set -eo pipefail
+          # 与旧 action 的 release 参数同语义：tag 触发才 --publish always
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then PUB=always; else PUB=never; fi
+          echo "publish=${PUB}"
+          if ! pnpm exec vue-cli-service electron:build --publish "${PUB}" 2>&1 | tee /tmp/electron-build.log; then
+            tail -n 60 /tmp/electron-build.log
+            # 真实报错（electron-builder 的 ⨯ 行）可能在日志任意位置，尾部 8 行只有 node 堆栈，
+            # 所以把 error 特征行连同前一行上下文一起注解出来。
+            err=$(grep -B1 -m 12 -E '⨯|ERROR|Error:|error Command|failed (with|task)' /tmp/electron-build.log \
+              | head -n 30 | tr '\n' ' ' | tr '"' "'" | sed 's/%/%25/g; s/\r/%0D/g')
+            echo "::error::electron build failed (publish=${PUB}): ${err}"
+            exit 1
+          fi
+          ls -la dist_electron/
 
       - uses: actions/upload-artifact@v4
         with:
