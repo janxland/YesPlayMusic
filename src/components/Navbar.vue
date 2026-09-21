@@ -1,6 +1,11 @@
 <template>
   <div class="navView">
-    <nav :class="{ 'has-custom-titlebar': hasCustomTitlebar }">
+    <nav
+      :class="{
+        'has-custom-titlebar': hasCustomTitlebar,
+        'search-active': inputFocus,
+      }"
+    >
       <Win32Titlebar v-if="enableWin32Titlebar" />
       <LinuxTitlebar v-if="enableLinuxTitlebar" />
       <div class="navigation-buttons">
@@ -33,7 +38,11 @@
       </div>
       <div class="right-part">
         <div class="search-box">
-          <div class="container" :class="{ active: inputFocus }">
+          <div
+            class="container"
+            :class="{ active: inputFocus }"
+            @click="focusSearch"
+          >
             <a><svg-icon icon-class="search" /></a>
             <div class="input">
               <input
@@ -157,8 +166,13 @@ export default {
       if (where === 'back') this.$router.go(-1);
       else this.$router.go(1);
     },
+    focusSearch() {
+      this.inputFocus = true;
+      this.$nextTick(() => this.$refs.searchInput.focus());
+    },
     doSearch() {
       if (!this.keywords) return;
+      this.$refs.searchInput.blur();
       if (
         this.$route.name === 'search' &&
         this.$route.params.keywords === this.keywords
@@ -270,30 +284,6 @@ nav.has-custom-titlebar {
   }
 }
 @media (max-width: 1000px) {
-  .navigation-buttons {
-    flex: unset;
-  }
-}
-@media (max-width: 576px) {
-  .search-box .container {
-    width: 140px !important;
-  }
-  nav {
-    padding: {
-      right: 10px;
-      left: 10px;
-    }
-  }
-  .navigation-links {
-    a {
-      padding: 0 !important;
-      margin: 0 auto !important;
-      font-size: 14px !important;
-    }
-  }
-  .navigation-buttons {
-    display: none;
-  }
   .navigation-buttons {
     flex: unset;
   }
@@ -416,6 +406,59 @@ nav.has-custom-titlebar {
   .search-button {
     display: none;
     -webkit-app-region: no-drag;
+  }
+}
+
+@media (max-width: 576px) {
+  nav {
+    padding: 0 12px;
+  }
+  .navigation-buttons {
+    display: none;
+  }
+  .navigation-links {
+    justify-content: flex-start;
+    min-width: 0;
+    a {
+      flex: none;
+      font-size: 15px;
+      padding: 6px 7px;
+      margin: 0 3px;
+      white-space: nowrap;
+    }
+  }
+  .right-part {
+    flex: none;
+    .avatar {
+      margin-left: 6px;
+    }
+  }
+  .search-box .container {
+    width: 34px;
+    justify-content: center;
+    transition: width 0.25s ease;
+    .input,
+    > a:last-of-type {
+      display: none;
+    }
+    &.active {
+      width: 100%;
+      justify-content: flex-start;
+      .input {
+        display: flex;
+        flex: 1;
+      }
+    }
+  }
+  nav.search-active {
+    .navigation-links,
+    .right-part .avatar {
+      display: none;
+    }
+    .right-part,
+    .search-box {
+      flex: 1;
+    }
   }
 }
 </style>

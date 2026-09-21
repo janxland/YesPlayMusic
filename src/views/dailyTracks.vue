@@ -15,7 +15,7 @@
 
 <script>
 import { mapMutations, mapState } from 'vuex';
-import NProgress from 'nprogress';
+import { loadWithProgress } from '@/utils/pageLoad';
 import { dailyRecommendTracks } from '@/api/playlist';
 
 import TrackList from '@/components/TrackList.vue';
@@ -35,9 +35,6 @@ export default {
   },
   created() {
     if (this.dailyTracks.length === 0) {
-      setTimeout(() => {
-        if (!this.show) NProgress.start();
-      }, 1000);
       this.loadDailyTracks();
     } else {
       this.show = true;
@@ -47,11 +44,12 @@ export default {
   methods: {
     ...mapMutations(['updateDailyTracks']),
     loadDailyTracks() {
-      dailyRecommendTracks().then(result => {
-        this.updateDailyTracks(result.data.dailySongs);
-        NProgress.done();
-        this.show = true;
-      });
+      loadWithProgress(
+        dailyRecommendTracks().then(result => {
+          this.updateDailyTracks(result.data.dailySongs);
+          this.show = true;
+        })
+      );
     },
   },
 };
@@ -59,8 +57,8 @@ export default {
 
 <style lang="scss" scoped>
 .special-playlist {
-  margin-top: 192px;
-  margin-bottom: 128px;
+  margin-top: clamp(64px, 21vw, 192px);
+  margin-bottom: clamp(40px, 14vw, 128px);
   border-radius: 1.25em;
   text-align: center;
 
@@ -85,7 +83,7 @@ export default {
   }
 
   .title {
-    font-size: 84px;
+    font-size: clamp(40px, 11vw, 84px);
     line-height: 1.05;
     font-weight: 700;
     text-transform: uppercase;
@@ -108,9 +106,9 @@ export default {
     }
   }
   .subtitle {
-    font-size: 18px;
+    font-size: clamp(13px, 4vw, 18px);
     letter-spacing: 1px;
-    margin: 28px 0 54px 0;
+    margin: clamp(16px, 6vw, 28px) 0 clamp(28px, 12vw, 54px) 0;
     animation-duration: 0.8s;
     animation-name: letterSpacing1;
     text-transform: uppercase;

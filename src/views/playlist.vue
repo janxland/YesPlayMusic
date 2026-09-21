@@ -225,6 +225,7 @@
 <script>
 import { mapMutations, mapActions, mapState } from 'vuex';
 import NProgress from 'nprogress';
+import { loadWithProgress } from '@/utils/pageLoad';
 import {
   getPlaylistDetail,
   subscribePlaylist,
@@ -425,14 +426,8 @@ export default {
     } else {
       this.loadData(this.$route.params.id);
     }
-    // 句柄留存：原先这个 1s 定时器在离开页面后仍会触发 NProgress.start()，
-    // 让下一个路由的顶部进度条凭空闪一下
-    this._nprogressTimer = setTimeout(() => {
-      if (!this.show) NProgress.start();
-    }, 1000);
   },
   beforeDestroy() {
-    clearTimeout(this._nprogressTimer);
     if (this.id) cancelRequestsByTag(`playlist:${this.id}`);
     NProgress.done();
   },
@@ -497,22 +492,34 @@ export default {
       this.id = id;
       // 默认走缓存（带 30s 内存缓存 + 后端 apicache）；只有 server 跨平台时才打时间戳
       const noCache = !!this.$route.query.server;
-      getPlaylistDetail(this.id, noCache, this.$route.query.server || undefined)
-        .then(data => {
-          this.playlist = data.playlist;
-          this.tracks = data.playlist.tracks;
-          NProgress.done();
-          if (next !== undefined) next();
-          this.show = true;
-          this.lastLoadedTrackIndex = data.playlist.tracks.length - 1;
-          return data;
-        })
-        .then(() => {
-          if (this.playlist.trackCount > this.tracks.length) {
-            this.loadingMore = true;
-            this.loadMore();
-          }
-        });
+      loadWithProgress(
+        getPlaylistDetail(
+          this.id,
+          noCache,
+          this.$route.query.server || undefined
+        )
+          .then(data => {
+            this.playlist = data.playlist;
+            this.tracks = data.playlist.tracks;
+            if (next !== undefined) next();
+            this.show = true;
+            this.lastLoadedTrackIndex = data.playlist.tracks.length - 1;
+            return data;
+          })
+          .then(() => {
+            if (this.playlist.trackCount > this.tracks.length) {
+              this.loadingMore = true;
+              this.loadMore();
+            }
+          }),
+        {
+          onError: () => {
+            // 失败也要交出页面壳（返回可点、导航在位），并复位忙态
+            this.show = true;
+            this.loadingMore = false;
+          },
+        }
+      );
     },
     loadMore(loadNum = 100) {
       let trackIDs = this.playlist.trackIds.filter((t, index) => {
@@ -670,8 +677,8 @@ export default {
 }
 
 .special-playlist {
-  margin-top: 192px;
-  margin-bottom: 128px;
+  margin-top: clamp(64px, 21vw, 192px);
+  margin-bottom: clamp(40px, 14vw, 128px);
   border-radius: 1.25em;
   text-align: center;
 
@@ -696,10 +703,11 @@ export default {
   }
 
   .title {
-    font-size: 84px;
+    font-size: clamp(40px, 11vw, 84px);
     line-height: 1.05;
     font-weight: 700;
     text-transform: uppercase;
+    word-break: break-word;
 
     letter-spacing: 4px;
     animation-duration: 0.8s;
@@ -719,9 +727,9 @@ export default {
     }
   }
   .subtitle {
-    font-size: 18px;
+    font-size: clamp(13px, 4vw, 18px);
     letter-spacing: 1px;
-    margin: 28px 0 54px 0;
+    margin: clamp(16px, 6vw, 28px) 0 clamp(28px, 12vw, 54px) 0;
     animation-duration: 0.8s;
     animation-name: letterSpacing1;
     text-transform: uppercase;

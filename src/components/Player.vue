@@ -77,16 +77,15 @@
               ></svg-icon>
             </button-icon>
           </div>
+          <button-icon class="secondary-control" @click.native="Download">
+            <svg-icon icon-class="download" />
+          </button-icon>
           <button-icon
-            style="display: inline-block; vertical-align: middle"
-            @click.native="Download"
-            ><svg-icon icon-class="download"
-          /></button-icon>
-          <button-icon
-            style="display: inline-block; vertical-align: middle"
+            class="secondary-control"
             @click.native="player.loadLocalMusic()"
-            ><svg-icon icon-class="upload"
-          /></button-icon>
+          >
+            <svg-icon icon-class="upload" />
+          </button-icon>
         </div>
         <div class="blank"></div>
       </div>
@@ -115,6 +114,7 @@
         <div class="blank"></div>
         <div class="container" @click.stop>
           <button-icon
+            class="secondary-control"
             :title="$t('player.nextUp')"
             :class="{
               active: $route.name === 'next',
@@ -124,6 +124,7 @@
             ><svg-icon icon-class="list"
           /></button-icon>
           <button-icon
+            class="secondary-control"
             :class="{
               active: player.repeatMode !== 'off',
               disabled: player.isPersonalFM,
@@ -145,6 +146,7 @@
             />
           </button-icon>
           <button-icon
+            class="secondary-control"
             :class="{ active: player.shuffle, disabled: player.isPersonalFM }"
             :title="$t('player.shuffle')"
             @click.native="switchShuffle"
@@ -152,12 +154,13 @@
           /></button-icon>
           <button-icon
             v-if="settings.enableReversedMode"
+            class="secondary-control"
             :class="{ active: player.reversed, disabled: player.isPersonalFM }"
             :title="$t('player.reversed')"
             @click.native="switchReversed"
             ><svg-icon icon-class="sort-up"
           /></button-icon>
-          <div class="volume-control">
+          <div class="volume-control secondary-control">
             <button-icon :title="$t('player.mute')" @click.native="mute">
               <svg-icon v-show="volume > 0.5" icon-class="volume" />
               <svg-icon v-show="volume === 0" icon-class="volume-mute" />
@@ -182,7 +185,7 @@
 
           <button-icon
             v-if="desktopLyricsSupported"
-            class="desktop-lyrics-button"
+            class="desktop-lyrics-button secondary-control"
             :class="{ active: desktopLyricsActive }"
             title="桌面歌词"
             @click.native="toggleDesktopLyrics"
@@ -190,11 +193,69 @@
           /></button-icon>
           <button-icon
             v-if="!isElectron"
-            class="open-client-button"
+            class="open-client-button secondary-control"
             title="用桌面客户端打开（支持透明桌面歌词）"
             @click.native="openDesktopClient"
             ><svg-icon icon-class="monitor"
           /></button-icon>
+          <div class="more-menu">
+            <button-icon title="更多" @click.native="toggleMoreMenu">
+              <svg-icon icon-class="more" />
+            </button-icon>
+            <div
+              v-if="moreMenuOpen"
+              ref="moreMenu"
+              class="more-dropdown"
+              tabindex="-1"
+              @mousedown.prevent
+              @click="moreMenuOpen = false"
+              @blur="moreMenuOpen = false"
+            >
+              <div
+                v-show="!player.isPersonalFM"
+                class="item"
+                @click="goToNextTracksPage"
+              >
+                <svg-icon icon-class="list" />
+                播放队列
+              </div>
+              <div class="item" @click="Download">
+                <svg-icon icon-class="download" />
+                下载
+              </div>
+              <div class="item" @click="player.loadLocalMusic()">
+                <svg-icon icon-class="upload" />
+                本地音乐
+              </div>
+              <hr />
+              <div
+                v-show="!player.isPersonalFM"
+                class="item"
+                :class="{ active: player.repeatMode !== 'off' }"
+                @click="switchRepeatMode"
+              >
+                <svg-icon
+                  :icon-class="
+                    player.repeatMode === 'one' ? 'repeat-1' : 'repeat'
+                  "
+                />
+                {{
+                  player.repeatMode === 'one'
+                    ? $t('player.repeatTrack')
+                    : $t('player.repeat')
+                }}
+              </div>
+              <div
+                v-show="!player.isPersonalFM"
+                class="item"
+                :class="{ active: player.shuffle }"
+                @click="switchShuffle"
+              >
+                <svg-icon icon-class="shuffle" />
+                {{ $t('player.shuffle') }}
+              </div>
+            </div>
+          </div>
           <button-icon
             class="lyrics-button"
             title="歌词"
@@ -230,6 +291,7 @@ export default {
   data() {
     return {
       mouseDownTarget: null,
+      moreMenuOpen: false,
       isElectron: process.env.IS_ELECTRON === true,
       desktopLyricsSupported: isDesktopLyricsSupported(),
       desktopLyricsActive: isDesktopLyricsOpen(),
@@ -285,6 +347,12 @@ export default {
           this.$router.push('/download');
         }
       }, 2000);
+    },
+    toggleMoreMenu() {
+      this.moreMenuOpen = !this.moreMenuOpen;
+      if (this.moreMenuOpen) {
+        this.$nextTick(() => this.$refs.moreMenu.focus());
+      }
     },
     handleClick(event) {
       if (event.target == this.mouseDownTarget) {
@@ -440,16 +508,6 @@ export default {
   }
 }
 
-@media (max-width: 576px) {
-  .controls .button-icon {
-    padding: 0 5px !important;
-    margin: 0 5px !important;
-  }
-  .controls {
-    padding: 0 5px;
-  }
-}
-
 .blank {
   flex-grow: 1;
 }
@@ -587,6 +645,10 @@ export default {
       width: 84px;
     }
   }
+  .more-menu {
+    display: none;
+    position: relative;
+  }
 }
 
 .button-icon.disabled {
@@ -597,6 +659,109 @@ export default {
   }
   &:active {
     transform: unset;
+  }
+}
+
+.more-dropdown {
+  position: absolute;
+  bottom: calc(100% + 12px);
+  right: 0;
+  z-index: 300;
+  display: flex;
+  flex-direction: column;
+  min-width: 148px;
+  padding: 6px;
+  border-radius: 12px;
+  background: #fff;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  box-shadow: 0 8px 24px -6px rgba(0, 0, 0, 0.28);
+  user-select: none;
+  .item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 14px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--color-text);
+    cursor: default;
+    .svg-icon {
+      height: 16px;
+      width: 16px;
+    }
+    &:active {
+      opacity: 0.75;
+      transform: scale(0.96);
+    }
+  }
+  .item.active {
+    color: var(--color-primary);
+  }
+  hr {
+    border: none;
+    height: 1px;
+    margin: 4px 10px;
+    background: rgba(128, 128, 128, 0.18);
+  }
+}
+
+[data-theme='dark'] .more-dropdown {
+  background: #242424;
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+@media (max-width: 576px) {
+  .controls {
+    display: flex;
+    align-items: center;
+    overflow: visible;
+    padding: 0 8px;
+  }
+  .blank {
+    display: none;
+  }
+  .playing {
+    flex: 1;
+    min-width: 0;
+  }
+  .playing .container {
+    flex: 1;
+    min-width: 0;
+    .cover-wrap img {
+      height: 40px;
+      width: 40px;
+    }
+    .track-info {
+      min-width: 0;
+      height: 40px;
+      margin-left: 8px;
+      .name {
+        font-size: 14px;
+      }
+    }
+    .secondary-control {
+      display: none;
+    }
+  }
+  .middle-control-buttons .container {
+    flex: none;
+    padding: 0;
+    .button-icon {
+      margin: 0 3px;
+    }
+  }
+  .right-control-buttons .container {
+    .button-icon {
+      margin: 0 3px;
+    }
+    .secondary-control {
+      display: none;
+    }
+    .more-menu {
+      display: flex;
+      align-items: center;
+    }
   }
 }
 

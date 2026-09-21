@@ -819,24 +819,6 @@
           >
         </div>
       </div>
-
-      <div class="footer">
-        <p class="author"
-          >MADE BY
-          <a href="http://github.com/qier222" target="_blank">QIER222</a></p
-        >
-        <p class="version">v{{ version }}</p>
-
-        <a
-          v-if="!isElectron"
-          href="https://vercel.com/?utm_source=ohmusic&utm_campaign=oss"
-        >
-          <img
-            height="36"
-            src="https://www.datocms-assets.com/31049/1618983297-powered-by-vercel.svg"
-          />
-        </a>
-      </div>
     </div>
   </div>
 </template>
@@ -852,7 +834,6 @@ import {
   bytesToSize,
 } from '@/utils/common';
 import { countDBSize, clearDB } from '@/utils/db';
-import pkg from '../../package.json';
 
 const electron =
   process.env.IS_ELECTRON === true ? window.require('electron') : null;
@@ -896,9 +877,6 @@ export default {
     },
     isLinux() {
       return process.platform === 'linux';
-    },
-    version() {
-      return pkg.version;
     },
     showUserInfo() {
       return isLooseLoggedIn() && this.data.user.nickname;
@@ -1812,21 +1790,6 @@ input[type='number'] {
   }
   &:focus {
     outline: none;
-  }
-}
-
-.footer {
-  text-align: center;
-  margin-top: 6rem;
-  color: var(--color-text);
-  font-weight: 600;
-  .author {
-    font-size: 0.9rem;
-  }
-  .version {
-    font-size: 0.88rem;
-    opacity: 0.58;
-    margin-top: -10px;
   }
 }
 

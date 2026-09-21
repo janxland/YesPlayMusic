@@ -467,4 +467,25 @@ button {
     opacity: 0.78;
   }
 }
+
+@media (max-width: 576px) {
+  .track {
+    .album,
+    .time {
+      display: none;
+    }
+    .title-and-artist {
+      min-width: 0;
+    }
+    img {
+      margin-right: 10px;
+    }
+  }
+  .track.tracklist img {
+    margin-right: 10px;
+  }
+  .actions {
+    width: 40px;
+  }
+}
 </style>
