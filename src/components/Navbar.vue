@@ -30,11 +30,6 @@
           :class="{ active: $route.name === 'library' }"
           >{{ $t('nav.library') }}</router-link
         >
-        <router-link
-          to="/keyboard-live"
-          :class="{ active: $route.name === 'keyboardLive' }"
-          >{{ $t('nav.keyboardLive') }}</router-link
-        >
       </div>
       <div class="right-part">
         <div class="search-box">

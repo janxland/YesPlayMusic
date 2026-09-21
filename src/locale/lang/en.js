@@ -7,7 +7,6 @@ export default {
     home: 'Home',
     explore: 'Explore',
     library: 'Library',
-    keyboardLive: 'Play Along',
     search: 'Search',
     github: 'GitHub Repo',
   },

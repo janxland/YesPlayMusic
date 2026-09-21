@@ -8,7 +8,7 @@
     "serve": "cross-env NODE_OPTIONS=--openssl-legacy-provider vue-cli-service serve",
     "build": "cross-env NODE_OPTIONS=--openssl-legacy-provider vue-cli-service build",
     "lint": "vue-cli-service lint",
-    "deploy:cdn": "cross-env NODE_OPTIONS=--openssl-legacy-provider npm run build && node scripts/check-lazy-chunks.mjs && node scripts/deploy-cdn.js",
+    "deploy:cdn": "cross-env NODE_OPTIONS=--openssl-legacy-provider npm run build && node scripts/deploy-cdn.js",
     "roginx-login": "node scripts/roginx-login.js",
     "electron:build": "cross-env NODE_OPTIONS=--openssl-legacy-provider vue-cli-service electron:build -p never",
     "electron:build-all": "cross-env NODE_OPTIONS=--openssl-legacy-provider vue-cli-service electron:build -p never -mwl",
@@ -36,8 +36,6 @@
     "node": "18 || 20"
   },
   "dependencies": {
-    "@ep-ble-sdk/adapter-web": "file:/Users/Admin1/Desktop/project/janxland/project-list/ep-ble-sdk/packages/adapter-web",
-    "@ep-ble-sdk/core": "file:/Users/Admin1/Desktop/project/janxland/project-list/ep-ble-sdk/packages/core",
     "@neteaseapireborn/api": "^4.29.7",
     "@unblockneteasemusic/rust-napi": "^0.4.0",
     "NeteaseCloudMusicApi": "^4.8.7",

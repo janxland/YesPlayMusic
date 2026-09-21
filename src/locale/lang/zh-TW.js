@@ -7,7 +7,6 @@ export default {
     home: '首頁',
     explore: '發現',
     library: '音樂庫',
-    keyboardLive: '跟彈',
     search: '搜尋',
     github: 'GitHub Repo',
   },

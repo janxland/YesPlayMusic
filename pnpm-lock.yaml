@@ -810,9 +810,6 @@ packages:
     resolution: {integrity: sha512-7323HyMh7KBAl/nPDppdLsC87G6RwRU02dy5FPeGB1eS7rUePh55+WNWiDPLhFQqqVPHzh77M69uhmoT8XnwMQ==}
     engines: {node: '>=8.6'}
 
-    peerDependencies:
-
-
   '@esbuild/aix-ppc64@0.20.2':
     resolution: {integrity: sha512-D+EBOJHXdNZcLJRBkhENNG8Wji2kgc9AZ9KiPr1JuZjsNtyHzrsfLRrY0tk2H2aoFu6RANO1y1iPPUCDYWkb5g==}
     engines: {node: '>=12'}
@@ -3412,8 +3409,8 @@ packages:
   discord-rich-presence@0.0.8:
     resolution: {integrity: sha512-IpVMPjv15C9UvppxvrrGdv6bzQHOW1P1vLoMH15HvdJwGJ3dBd2bnrJ63Uy36YRUfrAMxGLiwUDHncvC8AuPaQ==}
 
-  discord-rpc@https://codeload.github.com/discordjs/rpc/tar.gz/9e7de2a6d917591f10a66389e62e1dc053c04fec:
-    resolution: {tarball: https://codeload.github.com/discordjs/rpc/tar.gz/9e7de2a6d917591f10a66389e62e1dc053c04fec}
+  discord-rpc@git+https://git@github.com:discordjs/rpc.git#9e7de2a6d917591f10a66389e62e1dc053c04fec:
+    resolution: {commit: 9e7de2a6d917591f10a66389e62e1dc053c04fec, repo: git@github.com:discordjs/rpc.git, type: git}
     version: 4.0.1
 
   dmg-builder@23.6.0:
@@ -6505,8 +6502,8 @@ packages:
     resolution: {integrity: sha512-0ghuzq67LI9bLXpOX/ISfve/Mq33a4aFRzoQYhnnok1JOFpmE/A2TBGkNVenOGEeSBCjIiWcc6MVOG5HEQv0sA==}
     engines: {node: '>=4'}
 
-  register-scheme@https://codeload.github.com/devsnek/node-register-scheme/tar.gz/e7cc9a63a1f512565da44cb57316d9fb10750e17:
-    resolution: {tarball: https://codeload.github.com/devsnek/node-register-scheme/tar.gz/e7cc9a63a1f512565da44cb57316d9fb10750e17}
+  register-scheme@git+https://git@github.com:devsnek/node-register-scheme.git#e7cc9a63a1f512565da44cb57316d9fb10750e17:
+    resolution: {commit: e7cc9a63a1f512565da44cb57316d9fb10750e17, repo: git@github.com:devsnek/node-register-scheme.git, type: git}
     version: 0.0.2
 
   register-service-worker@1.7.2:
@@ -8807,9 +8804,6 @@ snapshots:
       plist: 3.1.0
     transitivePeerDependencies:
       - supports-color
-
-    dependencies:
-
 
   '@esbuild/aix-ppc64@0.20.2':
     optional: true
@@ -11819,18 +11813,18 @@ snapshots:
 
   discord-rich-presence@0.0.8:
     dependencies:
-      discord-rpc: https://codeload.github.com/discordjs/rpc/tar.gz/9e7de2a6d917591f10a66389e62e1dc053c04fec
+      discord-rpc: git+https://git@github.com:discordjs/rpc.git#9e7de2a6d917591f10a66389e62e1dc053c04fec
     transitivePeerDependencies:
       - bufferutil
       - encoding
       - utf-8-validate
 
-  discord-rpc@https://codeload.github.com/discordjs/rpc/tar.gz/9e7de2a6d917591f10a66389e62e1dc053c04fec:
+  discord-rpc@git+https://git@github.com:discordjs/rpc.git#9e7de2a6d917591f10a66389e62e1dc053c04fec:
     dependencies:
       node-fetch: 2.7.0
       ws: 7.5.10
     optionalDependencies:
-      register-scheme: https://codeload.github.com/devsnek/node-register-scheme/tar.gz/e7cc9a63a1f512565da44cb57316d9fb10750e17
+      register-scheme: git+https://git@github.com:devsnek/node-register-scheme.git#e7cc9a63a1f512565da44cb57316d9fb10750e17
     transitivePeerDependencies:
       - bufferutil
       - encoding
@@ -15530,7 +15524,7 @@ snapshots:
       unicode-match-property-ecmascript: 2.0.0
       unicode-match-property-value-ecmascript: 2.2.1
 
-  register-scheme@https://codeload.github.com/devsnek/node-register-scheme/tar.gz/e7cc9a63a1f512565da44cb57316d9fb10750e17:
+  register-scheme@git+https://git@github.com:devsnek/node-register-scheme.git#e7cc9a63a1f512565da44cb57316d9fb10750e17:
     dependencies:
       bindings: 1.5.0
       node-addon-api: 1.7.2

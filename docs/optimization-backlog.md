@@ -62,7 +62,7 @@
 | 22 | `src/App.vue` | Navbar/Player/Toast/Modal 全部静态引入 | 评估拆分 | LOW |
 | 23 | 全局 | plyr、vue-audio-visual、music-metadata、browser-id3-writer 零引用却留在 dependencies | 清理依赖 | LOW ★ |
 
-### B. 部署 / CDN — 6 项
+### B. 部署 / CDN — 4 项
 
 | # | 位置 | 缺陷 | 建议 | 等级 |
 |---|---|---|---|---|
@@ -70,8 +70,6 @@
 | 25 | 腾讯云 CDN 控制台 | 仅支持 gzip，未开 Brotli | 开启后首屏传输可再降 15~20% | MEDIUM |
 | 26 | `scripts/deploy-cdn.js` | 发布后无 CDN 刷新能力 | 调用 `PurgePathCache`（需 STS 授权） | MEDIUM |
 | 27 | `scripts/deploy-cdn.js` | COS 上旧 hash 文件从不清理，长期堆积 | 保留最近 N 版后删除 | LOW |
-| 28 | `scripts/check-lazy-chunks.mjs` | 仅校验 keyboard-live 一个按需块 | 扩展为「任何路由异步块」通用断言 | MEDIUM |
-| 29 | `vue.config.js` pwa.workboxOptions | precache 排除规则只写了 keyboard-live | 排除全部异步块 | MEDIUM ★ |
 
 ### C. 加载报错 / 健壮性 — 12 项
 
@@ -151,8 +149,7 @@
 
 - 控制台：0 error / 0 warning / 0 未处理拒绝 / 0 失败请求
 - 骨架自动消失（`shellGone: true`）、深色模式背景立即为 `#222`
-- `check-lazy-chunks.mjs`：首屏 JS 681.6KB，按需块 225.2KB，BLE 代码未泄漏到首屏 ✅
-- `verify-keyboard-live.mjs` 68/68、`check-sfc-contract.mjs`、visualizer 6/6 通过
+- visualizer 6/6 通过
 - eslint 无新增 error/warning（存量：mpris.js 2 空块、services.js 未用变量、request.js:72 空块、v-html 警告）
 
 ### 本次踩到并修掉的两个自检坑

@@ -11,7 +11,6 @@ export default {
     home: '首页',
     explore: '发现',
     library: '音乐库',
-    keyboardLive: '跟弹',
     search: '搜索',
     theme: '主题',
     github: 'GitHub 仓库',

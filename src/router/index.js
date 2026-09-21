@@ -148,19 +148,6 @@ const routes = [
     name: 'download',
     component: () => import('@/views/download.vue'),
   },
-  {
-    // 跟弹页带整套 Web Bluetooth SDK，必须独立成异步块：
-    // 只有进入该路由才下载（chunk 名同时被 vue.config.js 的 prefetch 黑名单引用）。
-    path: '/keyboard-live',
-    name: 'keyboardLive',
-    component: () =>
-      import(
-        /* webpackChunkName: "keyboard-live" */ '@/views/keyboardLive/index.vue'
-      ),
-    meta: {
-      keepAlive: false,
-    },
-  },
 ];
 
 const router = new VueRouter({
