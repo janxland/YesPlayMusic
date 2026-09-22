@@ -8,18 +8,49 @@ on:
       - v*
   workflow_dispatch:
 
+# 同一分支/标签只保留最新一次运行，旧的排队与在跑自动取消（防队列积压）
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  # push 到 master 只跑轻量校验（单 ubuntu，几分钟）；
+  # 三平台打包矩阵只在打 tag 或手动 dispatch 时跑 —— 迭代 push 不再排队 15~45 分钟的打包。
+  check:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 18
+          cache: 'pnpm'
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Web build
+        env:
+          NODE_OPTIONS: --openssl-legacy-provider
+          VUE_APP_NETEASE_API_URL: /api
+          VUE_APP_LASTFM_API_KEY: 09c55292403d961aa517ff7f5e8a3d9c
+          VUE_APP_LASTFM_API_SHARED_SECRET: 307c9fda32b3904e53654baff215cb67
+        run: pnpm run build
+
   release:
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
     env:
       SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.snapcraft_token }}
 
     strategy:
       fail-fast: false
       matrix:
-        # macos-13 = Intel x64 runner：Electron 13 无 darwin-arm64 构建，必须在 x64 环境安装/打包
-        # （macos-latest 是 arm64，会因下载 darwin-arm64 zip 失败而报 "解压完成但未找到 electron 可执行文件"）
-        os: [macos-13, windows-latest, ubuntu-22.04]
+        # macos-13（Intel 退役后仅存 arm64 供给且货源极少，排队 5h+）→ macos-latest（Apple Silicon，容量大）。
+        # Electron 13 无 darwin-arm64 构建：用 ELECTRON_ARCH=x64 让 extract 脚本装 x64 二进制，
+        # 打包用 --x64 只出 x64 dmg（arm64/universal 对 Electron 13 本就不可行）。
+        os: [macos-latest, windows-latest, ubuntu-22.04]
 
     steps:
       - name: Check out Git repository
@@ -38,6 +69,21 @@ jobs:
           # Node 18 LTS：pnpm 9 要求 >=18.12，且 --openssl-legacy-provider 仍可用
           node-version: 18
           cache: 'pnpm'
+
+      # 跨 run 缓存 electron zip 与 electron-builder 工具链（nsis/dmg 模板等），
+      # 命中后 mac/win 打包可省数分钟；key 挂 lockfile 哈希，依赖变更自动失效。
+      - name: Cache Electron toolchain
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/electron
+            ~/.cache/electron-builder
+            ~/Library/Caches/electron
+            ~/Library/Caches/electron-builder
+            ~/.local/share/electron
+            ${{ github.workspace }}/.cache/electron
+          key: electron-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: electron-${{ runner.os }}-
 
       - name: Install RPM & Pacman (on Ubuntu)
         if: runner.os == 'Linux'
@@ -68,6 +114,9 @@ jobs:
       # 打包前按平台补齐 electron 二进制（npmmirror 镜像，见 scripts/electron-auto-extract.js）。
       - name: Extract Electron binary
         shell: bash
+        env:
+          # arm64 mac runner 上强制 x64（Electron 13 无 darwin-arm64）
+          ELECTRON_ARCH: ${{ runner.os == 'macOS' && 'x64' || '' }}
         run: |
           set -eo pipefail
           if ! pnpm run electron:extract > /tmp/electron-extract.log 2>&1; then
@@ -77,14 +126,6 @@ jobs:
             exit 1
           fi
           tail -n 3 /tmp/electron-extract.log
-
-      # 诊断用（定位后删）：vue-cli-plugin-electron-builder 的 catch(e) 吞掉真实异常，
-      # CI 上 "Vue CLI build failed" 看不到原因。这里把泛化消息改成打印 e.stack。
-      # 容错：pattern 找不到只 warning，不 hard fail（依赖升级后模板变了也不挡构建）。
-      - name: 'Temp: unswallow plugin build error'
-        shell: bash
-        run: |
-          node -e 'const fs=require("fs");const p="node_modules/vue-cli-plugin-electron-builder/index.js";let s=fs.readFileSync(p,"utf8");const lit=String.fromCharCode(39)+"Vue CLI build failed. Please resolve any issues with your build and try again."+String.fromCharCode(39);if(!s.includes(lit)){console.warn("patch target not found, skip");process.exit(0)}s=s.replace(lit,String.fromCharCode(39)+"Vue CLI build failed: "+String.fromCharCode(39)+"+(e&&e.stack||String(e))");fs.writeFileSync(p,s);console.log("patched ok")' || echo "::warning::unswallow patch skipped"
 
       # 不用 samuelmeuli/action-electron-builder：v1.6.0 无 skip_install 输入，
       # 会在 pnpm 装好的依赖上再跑一次自己的 npm/yarn install（macos exit 127、
@@ -106,8 +147,10 @@ jobs:
           set -eo pipefail
           # 与旧 action 的 release 参数同语义：tag 触发才 --publish always
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then PUB=always; else PUB=never; fi
-          echo "publish=${PUB}"
-          if ! pnpm exec vue-cli-service electron:build --publish "${PUB}" 2>&1 | tee /tmp/electron-build.log; then
+          ARCH_FLAG=""
+          [[ "$RUNNER_OS" == "macOS" ]] && ARCH_FLAG="--x64"
+          echo "publish=${PUB} arch_flag=${ARCH_FLAG}"
+          if ! pnpm exec vue-cli-service electron:build --publish "${PUB}" ${ARCH_FLAG} 2>&1 | tee /tmp/electron-build.log; then
             tail -n 60 /tmp/electron-build.log
             # 真实报错（electron-builder 的 ⨯ 行）可能在日志任意位置，尾部 8 行只有 node 堆栈，
             # 所以把 error 特征行连同前一行上下文一起注解出来。
