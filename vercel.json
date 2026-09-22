@@ -1,0 +1,6 @@
+{
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "https://music.roginx.ink/api/$1" },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
+}
