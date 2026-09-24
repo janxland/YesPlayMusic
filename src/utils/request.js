@@ -34,9 +34,6 @@ function readSettings() {
 window.addEventListener('storage', e => {
   if (e.key === 'settings') _cachedSettings = null;
 });
-export function invalidateRequestSettingsCache() {
-  _cachedSettings = null;
-}
 
 /* 请求并发去重 + requestTag 可取消 + 可选内存缓存 */
 const inflightMap = new Map();

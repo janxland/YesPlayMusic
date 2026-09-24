@@ -149,19 +149,6 @@ export function randomNum(minNum, maxNum) {
   }
 }
 
-export function shuffleAList(list) {
-  let sortsList = list.map(t => t.sort);
-  for (let i = 1; i < sortsList.length; i++) {
-    const random = Math.floor(Math.random() * (i + 1));
-    [sortsList[i], sortsList[random]] = [sortsList[random], sortsList[i]];
-  }
-  let newSorts = {};
-  list.map(track => {
-    newSorts[track.id] = sortsList.pop();
-  });
-  return newSorts;
-}
-
 export function throttle(fn, time) {
   let isRun = false;
   return function () {
@@ -172,11 +159,6 @@ export function throttle(fn, time) {
       isRun = false;
     }, time);
   };
-}
-
-export function updateHttps(url) {
-  if (!url) return '';
-  return url.replace(/^http:/, 'https:');
 }
 
 export function dailyTask() {
