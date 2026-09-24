@@ -9,6 +9,7 @@ export default {
     library: 'Kitaplık',
     search: 'Ara',
     github: 'GitHub Repo',
+    changelog: 'Değişiklik Günlüğü',
   },
   footer: {
     settings: 'Ayarlar',

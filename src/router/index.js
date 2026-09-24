@@ -126,6 +126,11 @@ const routes = [
     component: () => import('@/views/settings.vue'),
   },
   {
+    path: '/about',
+    name: 'about',
+    component: () => import('@/views/about.vue'),
+  },
+  {
     path: '/daily/songs',
     name: 'dailySongs',
     component: () => import('@/views/dailyTracks.vue'),

@@ -9,6 +9,7 @@ export default {
     library: 'Library',
     search: 'Search',
     github: 'GitHub Repo',
+    changelog: 'Changelog',
   },
   footer: {
     settings: 'Settings',

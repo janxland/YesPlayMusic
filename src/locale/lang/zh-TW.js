@@ -9,6 +9,7 @@ export default {
     library: '音樂庫',
     search: '搜尋',
     github: 'GitHub Repo',
+    changelog: '更新日誌',
   },
   home: {
     recommendPlaylist: '推薦歌單',
