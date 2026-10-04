@@ -97,6 +97,10 @@
         <svg-icon icon-class="index" />
         {{ $t('nav.index') }}
       </div>
+      <div class="item" @click="toAbout">
+        <svg-icon icon-class="list" />
+        {{ $t('nav.changelog') }}
+      </div>
     </ContextMenu>
   </div>
 </template>
@@ -198,6 +202,9 @@ export default {
     },
     toSettings() {
       this.$router.push({ name: 'settings' });
+    },
+    toAbout() {
+      this.$router.push({ name: 'about' });
     },
     toTheme() {
       if (this.settings.appearance != 'dark') {

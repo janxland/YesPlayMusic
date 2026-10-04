@@ -64,6 +64,7 @@ export default class {
     // 播放器状态
     this._playing = false; // 是否正在播放中
     this._progress = 0; // 当前播放歌曲的进度
+    this._lastTimePersist = 0; // 上次写 playerCurrentTrackTime 的时刻
     this._enabled = false; // 是否启用Player
     this._repeatMode = 'off'; // off | on | one
     this._shuffle = false; // true | false
@@ -256,6 +257,10 @@ export default class {
   }
   _setPlaying(isPlaying) {
     this._playing = isPlaying;
+    // 定时器的写盘有 5s 节流，暂停瞬间补一次，保证恢复位置精确到秒
+    if (!isPlaying && this._howler !== null) {
+      localStorage.setItem('playerCurrentTrackTime', this._progress);
+    }
     if (isCreateTray) {
       ipcRenderer?.send('updateTrayPlayState', this._playing);
     }
@@ -269,7 +274,13 @@ export default class {
     this._progressTimer = setInterval(() => {
       if (this._howler === null || !this._playing) return;
       this._progress = this._howler.seek();
-      localStorage.setItem('playerCurrentTrackTime', this._progress);
+      // localStorage 同步写盘只用于崩溃/刷新后恢复，5s 一次足够；
+      // 原先每秒一次 setItem 在渲染线程上白白阻塞
+      const now = Date.now();
+      if (now - this._lastTimePersist >= 5000) {
+        this._lastTimePersist = now;
+        localStorage.setItem('playerCurrentTrackTime', this._progress);
+      }
       if (isCreateMpris) {
         ipcRenderer?.send('playerCurrentTrackTime', this._progress);
       }

@@ -33,9 +33,7 @@
 
       <div class="left-side">
         <div>
-          <div v-if="settings.showLyricsTime" class="date">
-            {{ date }}
-          </div>
+          <div v-if="settings.showLyricsTime" ref="dateEl" class="date"></div>
           <div class="cover">
             <div class="cover-container">
               <LazyImage :src="imageUrl" />
@@ -322,11 +320,18 @@ import {
 } from '@/utils/lyrics';
 import ButtonIcon from '@/components/ButtonIcon.vue';
 import Visualization from '@/components/Visualization';
-import * as Vibrant from 'node-vibrant/dist/vibrant.worker.min.js';
+import { getCoverPalette } from '@/utils/coverPalette';
 import Color from 'color';
 import { isAccountLoggedIn } from '@/utils/auth';
 import { hasListSource, getListSourcePath } from '@/utils/playList';
 import locale from '@/locale';
+
+function formatClock(value) {
+  const pad = n => String(n).padStart(2, '0');
+  return `${pad(value.getHours())}:${pad(value.getMinutes())}:${pad(
+    value.getSeconds()
+  )}`;
+}
 
 export default {
   name: 'Lyrics',
@@ -344,7 +349,6 @@ export default {
       lyricType: 'translation', // or 'romaPronunciation'
       highlightLyricIndex: -1,
       background: '',
-      date: this.formatTime(new Date()),
       isFullscreen: !!document.fullscreenElement,
       rightClickLyric: null,
     };
@@ -458,18 +462,20 @@ export default {
   created() {
     this.getLyric();
     this.getCoverColor();
-    this.initDate();
-    document.addEventListener('keydown', e => {
+    this._onKeydown = e => {
       if (e.key === 'F11') {
         e.preventDefault();
         this.fullscreen();
       }
-    });
-    document.addEventListener('fullscreenchange', () => {
+    };
+    this._onFullscreenChange = () => {
       this.isFullscreen = !!document.fullscreenElement;
-    });
+    };
+    document.addEventListener('keydown', this._onKeydown);
+    document.addEventListener('fullscreenchange', this._onFullscreenChange);
   },
   mounted() {
+    this.initDate();
     // 容器尺寸变化（窗口缩放、全屏、窄屏断点隐藏左侧封面）同时改变行高与居中
     // 基线；RO 只在尺寸真的变了时回调，比每帧回读布局便宜。
     this._resizeObserver = new ResizeObserver(() =>
@@ -478,9 +484,9 @@ export default {
     this._resizeObserver.observe(this.$refs.lyricsContainer);
   },
   beforeDestroy: function () {
-    if (this.timer) {
-      clearInterval(this.timer);
-    }
+    clearInterval(this._clockTimer);
+    document.removeEventListener('keydown', this._onKeydown);
+    document.removeEventListener('fullscreenchange', this._onFullscreenChange);
     this.stopLyricSync();
     this._resizeObserver?.disconnect();
   },
@@ -488,23 +494,16 @@ export default {
     ...mapMutations(['toggleLyrics', 'updateModal']),
     ...mapActions(['likeATrack', 'showToast']),
     initDate() {
-      var _this = this;
-      clearInterval(this.timer);
-      this.timer = setInterval(function () {
-        _this.date = _this.formatTime(new Date());
-      }, 1000);
-    },
-    formatTime(value) {
-      let hour = value.getHours().toString();
-      let minute = value.getMinutes().toString();
-      let second = value.getSeconds().toString();
-      return (
-        hour.padStart(2, '0') +
-        ':' +
-        minute.padStart(2, '0') +
-        ':' +
-        second.padStart(2, '0')
-      );
+      // 时钟不走响应式：赋 this.date 会让整页（数百行歌词）每秒重渲染一次，
+      // 直接写 DOM 文本节点则只更新那几个字符
+      const tick = () => {
+        if (this.$refs.dateEl) {
+          this.$refs.dateEl.textContent = formatClock(new Date());
+        }
+      };
+      tick();
+      clearInterval(this._clockTimer);
+      this._clockTimer = setInterval(tick, 1000);
     },
     fullscreen() {
       if (document.fullscreenElement) {
@@ -761,19 +760,19 @@ export default {
     getCoverColor() {
       if (this.settings.lyricsBackground !== true) return;
       const cover = this.currentTrack.al?.picUrl + '?param=256y256';
-      Vibrant.from(cover, { colorCount: 1 })
-        .getPalette()
-        .then(palette => {
-          const originColor = Color.rgb(palette.DarkMuted._rgb);
-          const color = originColor.darken(0.1).rgb().fade(0.28).string();
-          const color2 = originColor
-            .lighten(0.28)
-            .rotate(-30)
-            .rgb()
-            .fade(0.4)
-            .string();
-          this.background = `linear-gradient(to top left, ${color}, ${color2})`;
-        });
+      getCoverPalette(cover).then(palette => {
+        // 快速切歌时旧取色后到达，不能覆盖新歌的背景
+        if (this.currentTrack.al?.picUrl + '?param=256y256' !== cover) return;
+        const originColor = Color.rgb(palette.DarkMuted._rgb);
+        const color = originColor.darken(0.1).rgb().fade(0.28).string();
+        const color2 = originColor
+          .lighten(0.28)
+          .rotate(-30)
+          .rgb()
+          .fade(0.4)
+          .string();
+        this.background = `linear-gradient(to top left, ${color}, ${color2})`;
+      });
     },
     hasList() {
       return hasListSource();

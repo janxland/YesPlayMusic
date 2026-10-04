@@ -47,7 +47,7 @@
 import ButtonIcon from '@/components/ButtonIcon.vue';
 import ArtistsInLine from '@/components/ArtistsInLine.vue';
 import { mapState } from 'vuex';
-import * as Vibrant from 'node-vibrant/dist/vibrant.worker.min.js';
+import { getCoverPalette } from '@/utils/coverPalette';
 import Color from 'color';
 
 export default {
@@ -83,7 +83,6 @@ export default {
   },
   created() {
     this.getColor();
-    window.ok = this.getColor;
   },
   methods: {
     play() {
@@ -108,20 +107,26 @@ export default {
         'http://',
         'https://'
       )}?param=512y512`;
-      Vibrant.from(cover, { colorCount: 1 })
-        .getPalette()
-        .then(palette => {
-          const color = Color.rgb(palette.Vibrant._rgb)
-            .darken(0.1)
-            .rgb()
-            .string();
-          const color2 = Color.rgb(palette.Vibrant._rgb)
-            .lighten(0.28)
-            .rotate(-30)
-            .rgb()
-            .string();
-          this.background = `linear-gradient(to top left, ${color}, ${color2})`;
-        });
+      getCoverPalette(cover).then(palette => {
+        // 快速切 FM 时旧取色后到达，不能覆盖新歌的背景
+        if (
+          `${this.player.personalFMTrack?.album?.picUrl?.replace(
+            'http://',
+            'https://'
+          )}?param=512y512` !== cover
+        )
+          return;
+        const color = Color.rgb(palette.Vibrant._rgb)
+          .darken(0.1)
+          .rgb()
+          .string();
+        const color2 = Color.rgb(palette.Vibrant._rgb)
+          .lighten(0.28)
+          .rotate(-30)
+          .rgb()
+          .string();
+        this.background = `linear-gradient(to top left, ${color}, ${color2})`;
+      });
     },
   },
 };

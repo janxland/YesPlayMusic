@@ -15,6 +15,7 @@ export default {
     theme: '主题',
     github: 'GitHub 仓库',
     index: '站长博客',
+    changelog: '更新日志',
   },
   home: {
     recommendPlaylist: '推荐歌单',

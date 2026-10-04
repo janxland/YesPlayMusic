@@ -1402,6 +1402,12 @@ export default {
     this.countDBSize('tracks');
     if (process.env.IS_ELECTRON) this.getAllOutputDevices();
   },
+  deactivated() {
+    clearInterval(this._lastfmChecker);
+  },
+  beforeDestroy() {
+    clearInterval(this._lastfmChecker);
+  },
   methods: {
     ...mapActions(['showToast']),
     getAllOutputDevices() {
@@ -1448,11 +1454,12 @@ export default {
     },
     lastfmConnect() {
       lastfmAuth();
-      let lastfmChecker = setInterval(() => {
+      clearInterval(this._lastfmChecker);
+      this._lastfmChecker = setInterval(() => {
         const session = localStorage.getItem('lastfm');
         if (session) {
           this.$store.commit('updateLastfm', JSON.parse(session));
-          clearInterval(lastfmChecker);
+          clearInterval(this._lastfmChecker);
         }
       }, 1000);
     },
