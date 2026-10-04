@@ -2,10 +2,38 @@
 
 const fs = require('fs');
 const path = require('path');
+const { execSync } = require('child_process');
 const dotenv = require('dotenv');
 const COS = require('cos-nodejs-sdk-v5');
 
 const rootDir = path.resolve(__dirname, '..');
+
+// 公网 COS（music.roginx.ink）只发布 master。跟弹功能在 feat/keyboard-live，
+// 属内部使用，禁止上线 —— 而构建取的是当前工作区，所以在错误的分支上跑这条
+// 命令就会把内部代码推到公网。
+const FORBIDDEN_IN_PUBLIC = /keyboard-live/i;
+function currentBranch() {
+  return execSync('git rev-parse --abbrev-ref HEAD', {
+    cwd: rootDir,
+    encoding: 'utf8',
+  }).trim();
+}
+
+function assertDeployableBranch() {
+  const branch = currentBranch();
+  if (branch === 'master') return;
+  console.error(`❌ 当前分支是 ${branch}，deploy:cdn 只允许从 master 发布。`);
+  console.error('   非公开功能（如跟弹）不得上传到公网 COS。');
+  console.error('   请先执行: git checkout master');
+  process.exit(1);
+}
+
+// `--check-only`：在 build 之前先过闸门，避免在错误分支上白跑一次构建。
+if (process.argv.includes('--check-only')) {
+  assertDeployableBranch();
+  console.log('✅ 分支闸门通过（master）');
+  process.exit(0);
+}
 
 function loadEnv() {
   const candidates = ['.env.production', '.env.local', '.env'];
@@ -207,11 +235,30 @@ async function uploadAll(files) {
   }
 }
 
+// 分支对了还不够：dist 可能是上一次在别的分支 build 的残留。
+function assertNoForbiddenArtifacts(files) {
+  const leaked = files.filter(f =>
+    FORBIDDEN_IN_PUBLIC.test(path.relative(distDir, f))
+  );
+  if (!leaked.length) return;
+  console.error(`❌ dist 含非公开产物，拒绝上传（共 ${leaked.length} 个）:`);
+  leaked.slice(0, 10).forEach(f =>
+    console.error(`   ${path.relative(distDir, f)}`)
+  );
+  console.error('   请在 master 上重新 build 后再发布。');
+  process.exit(1);
+}
+
 async function main() {
+  assertDeployableBranch();
+
   if (!fs.existsSync(distDir)) {
     console.error('错误: dist 目录不存在，请先运行 npm run build');
     process.exit(1);
   }
+
+  const files = getAllFiles(distDir);
+  assertNoForbiddenArtifacts(files);
 
   // OAuth → STS：无 .env 真实密钥时自动获取临时密钥（隐私密钥不再进入仓库/配置）
   await initCOSWithSts();
@@ -239,7 +286,6 @@ async function main() {
     process.exit(1);
   }
 
-  const files = getAllFiles(distDir);
   console.log(`开始并行上传 ${files.length} 个文件 (并发数: ${cosConfig.concurrency})...`);
   await uploadAll(files);
 

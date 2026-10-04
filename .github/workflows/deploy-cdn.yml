@@ -1,0 +1,45 @@
+name: Deploy Web to COS CDN
+
+# push 到 master 即构建并上传 COS —— 国内入口（music.roginx.ink → 103 nginx → 本桶）的资源源
+# 与 deploy-vercel.yml 构成"一次 push，境内外同时覆盖"：
+#   境外 = Vercel（deploy-vercel.yml，自包含产物，publicPath=/）
+#   境内 = COS/CDN（本 workflow，.env.production 的 cos 绝对 publicPath）
+# 本地验证仍可用 `pnpm deploy:cdn`（OAuth→STS 免密钥），构建的是本地工作区（可含未提交改动），
+# CI 构建的是仓库 master —— 两者互不干扰。
+on:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-cdn-master
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v5
+      - uses: actions/setup-node@v5
+        with:
+          # 与 package.json engines 保持一致（Node 20 已被各平台停用）
+          node-version: 24
+          cache: 'pnpm'
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Build web（保留 .env.production 的 cos 绝对 publicPath）
+        env:
+          NODE_OPTIONS: --openssl-legacy-provider
+        run: pnpm run build
+      - name: Upload to COS（deploy-cdn.js 检测到密钥时走直传，跳过 OAuth STS）
+        env:
+          COS_SECRET_ID: ${{ secrets.COS_SECRET_ID }}
+          COS_SECRET_KEY: ${{ secrets.COS_SECRET_KEY }}
+          COS_BUCKET: mybox-1257251314
+          COS_REGION: ap-chengdu
+          COS_PREFIX: www/music/dist
+          COS_CDN_DOMAIN: https://cos.roginx.ink
+        run: node scripts/deploy-cdn.js

@@ -8,7 +8,7 @@
     "serve": "cross-env NODE_OPTIONS=--openssl-legacy-provider vue-cli-service serve",
     "build": "cross-env NODE_OPTIONS=--openssl-legacy-provider vue-cli-service build",
     "lint": "vue-cli-service lint",
-    "deploy:cdn": "cross-env NODE_OPTIONS=--openssl-legacy-provider npm run build && node scripts/deploy-cdn.js",
+    "deploy:cdn": "node scripts/deploy-cdn.js --check-only && cross-env NODE_OPTIONS=--openssl-legacy-provider pnpm run build && node scripts/deploy-cdn.js",
     "roginx-login": "node scripts/roginx-login.js",
     "electron:build": "cross-env NODE_OPTIONS=--openssl-legacy-provider vue-cli-service electron:build -p never",
     "electron:build-all": "cross-env NODE_OPTIONS=--openssl-legacy-provider vue-cli-service electron:build -p never -mwl",
@@ -33,7 +33,7 @@
   "main": "background.js",
   "packageManager": "pnpm@9.15.9",
   "engines": {
-    "node": "18 || 20"
+    "node": "24.x"
   },
   "dependencies": {
     "@neteaseapireborn/api": "^4.29.7",
