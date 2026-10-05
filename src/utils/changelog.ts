@@ -4,6 +4,42 @@
 // type 取值：feat 新功能 | fix 修复 | perf 性能 | refactor 重构 | chore 清理 | ci 构建 | docs 文档
 export const changelogEntries = [
   {
+    version: '2026.10.05',
+    date: '2026-10-05',
+    branch: 'master',
+    summary: 'Vue 3 迁移切流：新运行时全面上线 + 封面加载体验重做',
+    items: [
+      {
+        type: 'refactor',
+        text: 'Vue 3 + TypeScript + Pinia 迁移（M1）正式上线，构建由 webpack 切换至 Vite，产物面向现代浏览器（零 polyfill）',
+      },
+      {
+        type: 'perf',
+        text: '封面加载重做：骨架微光占位（修复暗色主题下加载区大片空白）、微缩图垫底防闪空帧、图片到达平滑淡入',
+      },
+      {
+        type: 'perf',
+        text: '视口内封面挂载即同步起载，不再等待 IntersectionObserver 派发（窗口被遮挡停帧时同样可加载）',
+      },
+      {
+        type: 'ci',
+        text: '发布链路修复：Vercel 工作流升 Node 24 适配 Vite 7、补配 COS 密钥与 Vercel Token，master push 一键覆盖境内外入口',
+      },
+      {
+        type: 'feat',
+        text: '桌面端完成 M2 闭环：Electron 13 → 44、contextBridge 安全 IPC（nodeIntegration 退役）、恢复三平台打包与自动更新',
+      },
+      {
+        type: 'fix',
+        text: '桌面歌词：默认锁定鼠标穿透、不再遮挡桌面；右上角工具栏改由主进程光标轮询驱动（修复拖拽区吞掉 mouseenter 导致工具栏永不显示）',
+      },
+      {
+        type: 'fix',
+        text: '桌面端接口地址修复：补 .env.electron（vite mode=electron 不读 .env.production），修复首屏请求全部 404',
+      },
+    ],
+  },
+  {
     version: '2026.09.24',
     date: '2026-09-24',
     branch: 'master',

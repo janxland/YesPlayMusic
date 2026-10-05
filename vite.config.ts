@@ -21,50 +21,54 @@ export default defineConfig(({ mode }) => {
         ],
         symbolId: 'icon-[name]',
       }),
-      VitePWA({
-        registerType: 'prompt',
-        // 注册由 src/registerServiceWorker.ts 自己完成（要走 uiStore 的更新
-        // 提示流程），插件再注入 registerSW.js 会造成同一段 sw.js 双重注册
-        injectRegister: false,
-        includeAssets: ['favicon.ico', 'robots.txt'],
-        manifest: {
-          name: 'YesPlayMusic',
-          short_name: 'YesPlayMusic',
-          description: 'A third party music player for Netease Music',
-          theme_color: '#ffffff00',
-          background_color: '#335eea',
-          display: 'standalone',
-          start_url: '.',
-          icons: [
-            {
-              src: 'img/icons/android-chrome-192x192.png',
-              sizes: '192x192',
-              type: 'image/png',
-            },
-            {
-              src: 'img/icons/android-chrome-512x512.png',
-              sizes: '512x512',
-              type: 'image/png',
-            },
-            {
-              src: 'img/icons/android-chrome-512x512.png',
-              sizes: '512x512',
-              type: 'image/png',
-              purpose: 'maskable',
-            },
-          ],
-        },
-        workbox: {
-          // skipWaiting/clientsClaim：新版 SW 装上即刻接管，配合 registerServiceWorker
-          // 的 updated() 提示，用户点「刷新应用」才真正换页 —— 没有这两个开关，
-          // 提示后刷新一次仍跑旧 SW（要刷两次才生效）。
-          skipWaiting: true,
-          clientsClaim: true,
-          // sourcemap 默认就不进 precache（globPatterns 只有 js/css/html）
-        },
-      }),
+      // 桌面端（--mode electron）产物由主进程本地 Express 直出，无 SW 必要
+      //（registerServiceWorker 运行时本就有 isDesktop 守卫）
+      ...(mode === 'electron'
+        ? []
+        : [
+            VitePWA({
+              registerType: 'prompt',
+              // 注册由 src/registerServiceWorker.ts 自己完成（要走 uiStore 的更新
+              // 提示流程），插件再注入 registerSW.js 会造成同一段 sw.js 双重注册
+              injectRegister: false,
+              includeAssets: ['favicon.ico', 'robots.txt'],
+              manifest: {
+                name: 'YesPlayMusic',
+                short_name: 'YesPlayMusic',
+                description: 'A third party music player for Netease Music',
+                theme_color: '#ffffff00',
+                background_color: '#335eea',
+                display: 'standalone',
+                start_url: '.',
+                icons: [
+                  {
+                    src: 'img/icons/android-chrome-192x192.png',
+                    sizes: '192x192',
+                    type: 'image/png',
+                  },
+                  {
+                    src: 'img/icons/android-chrome-512x512.png',
+                    sizes: '512x512',
+                    type: 'image/png',
+                  },
+                  {
+                    src: 'img/icons/android-chrome-512x512.png',
+                    sizes: '512x512',
+                    type: 'image/png',
+                    purpose: 'maskable',
+                  },
+                ],
+              },
+              workbox: {
+                // skipWaiting/clientsClaim：新版 SW 装上即刻接管，配合 registerServiceWorker
+                // 的 updated() 提示，用户点「刷新应用」才真正换页 —— 没有这两个开关，
+                // 提示后刷新一次仍跑旧 SW（要刷两次才生效）。
+                skipWaiting: true,
+                clientsClaim: true,
+              },
+            }),
+          ]),
     ],
-
     resolve: {
       alias: {
         '@': fileURLToPath(new URL('./src', import.meta.url)),
@@ -72,9 +76,10 @@ export default defineConfig(({ mode }) => {
     },
 
     define: {
-      // 平台判定唯一出处 platform/env.ts；Web 构建恒 false。
-      // M2 桌面端（electron-vite）会把这里换成 true。
-      'process.env.IS_ELECTRON': 'false',
+      // 平台判定唯一出处 platform/env.ts；Web 构建恒 false，桌面构建（--mode
+      // electron）为 true —— 同一份源码产出两个渲染层产物
+      'process.env.IS_ELECTRON':
+        mode === 'electron' ? 'true' : 'false',
       // env.js 的 osName() 在浏览器里没有 process，静态替换成 'browser'
       'process.platform': JSON.stringify('browser'),
     },
@@ -108,6 +113,9 @@ export default defineConfig(({ mode }) => {
     },
 
     build: {
+      // 桌面端产物进 dist_electron（与 esbuild 出的 background.js/preload.js 同目录，
+      // 主进程 Express 直接以 __dirname 为静态根）；Web 端维持 dist
+      outDir: mode === 'electron' ? 'dist_electron' : 'dist',
       // Vite 7 新默认 target，显式写出以锚定意图：只支持原生 ESM/动态导入/
       // import.meta/?? 的主流浏览器（Chrome107+ / Safari16 / FF104），构建
       // 产物不做 legacy 转译 —— 依赖方（PWA、Workbox、顶层 await）都按此假设

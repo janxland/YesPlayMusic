@@ -1,9 +1,10 @@
-// IPC 桥：全仓唯一允许触碰 window.require('electron') 的地方，11 个调用点收敛于此。
-// Web 构建下所有方法都是安全空操作；将来换 preload/contextBridge 只需改本文件。
+// IPC 桥：全仓唯一允许触碰 window.electronBridge（src/preload.ts 经 contextBridge 注入）的
+// 地方，11 个调用点收敛于此。Web 构建下 electronBridge 不存在，所有方法都是安全空操作。
 import { isDesktop } from './env';
 
-// isDesktop() 在 Web 构建为 false，短路后不会去读浏览器里不存在的 window.require
-const ipcRenderer = isDesktop() ? window.require('electron').ipcRenderer : null;
+// isDesktop() 在 Web 构建为 false，短路后不会去读浏览器里不存在的 electronBridge
+const bridge = isDesktop() ? window.electronBridge : null;
+const ipcRenderer = bridge ? bridge.ipcRenderer : null;
 
 /** 当前是否真的持有 IPC 通道（桌面端主窗口/歌词窗口才为 true）。 */
 export const hasIpc = () => ipcRenderer !== null;
@@ -15,8 +16,8 @@ export const ipcBridge = {
   },
 
   /**
-   * 注册监听并返回取消函数。直接挂原 listener 不包一层：
-   * 调用点有按身份 removeListener 的，包一层会静默失配导致泄漏。
+   * 注册监听并返回取消函数。preload 侧用 WeakMap 固定了「主世界 listener → 包装」
+   * 映射，这里的按身份 removeListener 能正确命中。
    */
   on(channel, listener) {
     if (!ipcRenderer) return () => {};
@@ -42,12 +43,13 @@ export const ipcBridge = {
 
   /**
    * 主进程同步弹窗（utils/nativeAlert 桌面端分支）。
-   * dialog 只在主进程存在，故同样收口在本文件触碰 window.require。
+   * contextIsolation 下渲染层拿不到 dialog，改走 ipcMain 的同步应答通道。
    */
   showMessageBoxSync(message: string) {
     if (!ipcRenderer) return;
-    window
-      .require('electron')
-      .dialog.showMessageBoxSync(null, { type: 'warning', message });
+    ipcRenderer.sendSync('show-message-box-sync', {
+      type: 'warning',
+      message,
+    });
   },
 };

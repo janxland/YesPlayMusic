@@ -25,24 +25,24 @@ jobs:
       - uses: pnpm/action-setup@v5
       - uses: actions/setup-node@v5
         with:
-          node-version: 18
+          # Vite 7 要求 Node 20.19+，与 package.json engines（24.x）对齐
+          node-version: 24
           cache: 'pnpm'
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Web build
         env:
-          NODE_OPTIONS: --openssl-legacy-provider
-          VUE_APP_NETEASE_API_URL: /api
-          VUE_APP_LASTFM_API_KEY: 09c55292403d961aa517ff7f5e8a3d9c
-          VUE_APP_LASTFM_API_SHARED_SECRET: 307c9fda32b3904e53654baff215cb67
+          VITE_LASTFM_API_KEY: 09c55292403d961aa517ff7f5e8a3d9c
+          VITE_LASTFM_API_SHARED_SECRET: 307c9fda32b3904e53654baff215cb67
         run: pnpm run build
 
   release:
     if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
-    env:
-      SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.snapcraft_token }}
+    # 默认 token 权限只读，--publish always 建 Release 需要 contents:write
+    permissions:
+      contents: write
 
     strategy:
       fail-fast: false
@@ -66,8 +66,8 @@ jobs:
       - name: Install Node.js
         uses: actions/setup-node@v5
         with:
-          # Node 18 LTS：pnpm 9 要求 >=18.12，且 --openssl-legacy-provider 仍可用
-          node-version: 18
+          # Vite 7 要求 Node 20.19+，与 package.json engines（24.x）对齐
+          node-version: 24
           cache: 'pnpm'
 
       # 跨 run 缓存 electron zip 与 electron-builder 工具链（nsis/dmg 模板等），
@@ -93,10 +93,6 @@ jobs:
           sudo apt-get install --no-install-recommends -y libarchive-tools &&
           sudo apt-get install --no-install-recommends -y libopenjp2-tools
 
-      - name: Install Snapcraft (on Ubuntu)
-        uses: samuelmeuli/action-snapcraft@v3
-        if: startsWith(matrix.os, 'ubuntu')
-
       - name: Install dependencies
         run: |
           set -eo pipefail
@@ -109,48 +105,24 @@ jobs:
           tail -n 5 /tmp/pnpm-install.log
         shell: bash
 
-      # 渲染层构建链里有 require('electron')（取 path.txt 内容），CI 跳过 postinstall
-      # 预装后 path.txt 不存在 → 插件吞掉异常、只报 "Vue CLI build failed"。
-      # 打包前按平台补齐 electron 二进制（npmmirror 镜像，见 scripts/electron-auto-extract.js）。
-      - name: Extract Electron binary
-        shell: bash
-        env:
-          # arm64 mac runner 上强制 x64（Electron 13 无 darwin-arm64）
-          ELECTRON_ARCH: ${{ runner.os == 'macOS' && 'x64' || '' }}
-        run: |
-          set -eo pipefail
-          if ! pnpm run electron:extract > /tmp/electron-extract.log 2>&1; then
-            tail -n 25 /tmp/electron-extract.log
-            msg=$(tail -n 4 /tmp/electron-extract.log | tr '\n' ' ' | tr '"' "'")
-            echo "::error::electron:extract failed: ${msg}"
-            exit 1
-          fi
-          tail -n 3 /tmp/electron-extract.log
-
       # 不用 samuelmeuli/action-electron-builder：v1.6.0 无 skip_install 输入，
       # 会在 pnpm 装好的依赖上再跑一次自己的 npm/yarn install（macos exit 127、
       # ubuntu/windows exit 1 都出在这里），且失败日志只有 admin 能看。
-      # 直接调 vue-cli-service electron:build，失败时把日志尾部转成 ::error:: 注解。
+      # 直接调 electron:build（vite 渲染层 + esbuild 主进程 + electron-builder），
+      # 失败时把日志尾部转成 ::error:: 注解。
       - name: Build Electron app
         shell: bash
         env:
-          # vue-cli/webpack4 构建需要 legacy provider（Node 18 支持该 flag）
-          NODE_OPTIONS: --openssl-legacy-provider
-          VUE_APP_NETEASE_API_URL: /api
-          VUE_APP_ELECTRON_API_URL: /api
-          VUE_APP_ELECTRON_API_URL_DEV: http://127.0.0.1:10754
-          VUE_APP_LASTFM_API_KEY: 09c55292403d961aa517ff7f5e8a3d9c
-          VUE_APP_LASTFM_API_SHARED_SECRET: 307c9fda32b3904e53654baff215cb67
+          VITE_LASTFM_API_KEY: 09c55292403d961aa517ff7f5e8a3d9c
+          VITE_LASTFM_API_SHARED_SECRET: 307c9fda32b3904e53654baff215cb67
           # electron-builder GitHub publisher 认 GH_TOKEN（仅打 tag 发版时用）
           GH_TOKEN: ${{ secrets.github_token }}
         run: |
           set -eo pipefail
           # 与旧 action 的 release 参数同语义：tag 触发才 --publish always
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then PUB=always; else PUB=never; fi
-          ARCH_FLAG=""
-          [[ "$RUNNER_OS" == "macOS" ]] && ARCH_FLAG="--x64"
-          echo "publish=${PUB} arch_flag=${ARCH_FLAG}"
-          if ! pnpm exec vue-cli-service electron:build --publish "${PUB}" ${ARCH_FLAG} 2>&1 | tee /tmp/electron-build.log; then
+          echo "publish=${PUB}"
+          if ! pnpm run electron:build -- --publish "${PUB}" 2>&1 | tee /tmp/electron-build.log; then
             tail -n 60 /tmp/electron-build.log
             # 真实报错（electron-builder 的 ⨯ 行）可能在日志任意位置，尾部 8 行只有 node 堆栈，
             # 所以把 error 特征行连同前一行上下文一起注解出来。
@@ -159,10 +131,10 @@ jobs:
             echo "::error::electron build failed (publish=${PUB}): ${err}"
             exit 1
           fi
-          ls -la dist_electron/
+          ls -la release/
           # 匿名排障：产物清单转成 notice 注解（upload 匹配 0 文件时静默成功，需暴露真实产物名）
-          files=$(ls dist_electron/ | tr '\n' ' ' | sed 's/%/%25/g')
-          echo "::notice::dist_electron files: ${files:-EMPTY}"
+          files=$(ls release/ | tr '\n' ' ' | sed 's/%/%25/g')
+          echo "::notice::release files: ${files:-EMPTY}"
 
       - name: Upload macOS artifacts
         if: runner.os == 'macOS'
@@ -170,8 +142,8 @@ jobs:
         with:
           name: YesPlayMusic-mac
           path: |
-            dist_electron/*.dmg
-            !dist_electron/*.blockmap
+            release/*.dmg
+            !release/*.blockmap
           if-no-files-found: warn
 
       - name: Upload Windows artifacts
@@ -180,8 +152,8 @@ jobs:
         with:
           name: YesPlayMusic-win
           path: |
-            dist_electron/*.exe
-            !dist_electron/*.blockmap
+            release/*.exe
+            !release/*.blockmap
           if-no-files-found: warn
 
       - name: Upload Linux artifacts
@@ -190,6 +162,10 @@ jobs:
         with:
           name: YesPlayMusic-linux
           path: |
-            dist_electron/*.AppImage
-            dist_electron/*.deb
+            release/*.AppImage
+            release/*.deb
+            release/*.rpm
+            release/*.tar.gz
+            release/*.snap
+            release/*.pacman
           if-no-files-found: warn

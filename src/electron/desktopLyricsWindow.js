@@ -2,6 +2,7 @@
 // 透明、无边框、置顶的小窗口渲染 /#/desktop-lyrics 路由，
 // 主窗口的播放状态经 IPC 转发过来（渲染进程 desktopLyrics.js 负责发送）。
 import { BrowserWindow, ipcMain, screen } from 'electron';
+import path from 'path';
 
 const clc = require('cli-color');
 const log = text => {
@@ -16,10 +17,14 @@ let saveBoundsTimer = null;
 // ---- 锁定穿透的热区检测 ----
 // macOS 的 setIgnoreMouseEvents(forward:true) 在真实鼠标下不可靠（转发 mousemove
 // 会丢事件），锁定后用户可能永远碰不到解锁按钮。改为主进程轮询系统光标坐标：
-// 渲染进程上报工具栏热区（窗口相对坐标），主进程每 80ms 判断光标是否命中，
-// 命中→关穿透并通知渲染显示工具栏，移出→恢复穿透。
+// 渲染进程上报工具栏热区（窗口相对坐标），主进程每 80ms 判断光标是否命中。
+// 注意：不能依赖渲染层的 DOM mouseenter/mouseleave——解锁态整窗是
+// -webkit-app-region: drag 拖拽区，Electron 会吞掉拖拽区上的全部 DOM 鼠标事件
+//（工具栏"永远不显示"的根因），所以窗口悬停与否也在这里轮询后推送给渲染层。
 let hitArea = null; // { x, y, w, h } 相对歌词窗口左上角（DIP）
-let hoverHot = false;
+let hoverHot = false; // 锁定态：光标在解锁按钮热区内
+let insideWindow = false; // 光标是否在窗口内（解锁态工具栏显隐用）
+let lockedState = false;
 let pollTimer = null;
 
 function stopHoverPoll() {
@@ -41,18 +46,39 @@ function isCursorInHitArea(win) {
   );
 }
 
-function startHoverPoll(win) {
-  stopHoverPoll();
+function isCursorInsideWindow(win) {
+  const pt = screen.getCursorScreenPoint();
+  const [x, y] = win.getPosition();
+  const [w, h] = win.getContentSize();
+  return pt.x >= x && pt.x <= x + w && pt.y >= y && pt.y <= y + h;
+}
+
+function pushHoverState(win) {
+  win.webContents.send('desktopLyrics:hover', {
+    inside: insideWindow,
+    hot: hoverHot,
+  });
+}
+
+function startHoverPoll() {
+  if (pollTimer) return;
   pollTimer = setInterval(() => {
+    const win = lyricWindow;
     if (!win || win.isDestroyed()) {
       stopHoverPoll();
       return;
     }
-    const inside = isCursorInHitArea(win);
-    if (inside === hoverHot) return;
-    hoverHot = inside;
-    win.setIgnoreMouseEvents(!inside);
-    win.webContents.send('desktopLyrics:hover', inside);
+    const inside = isCursorInsideWindow(win);
+    const hot = lockedState && isCursorInHitArea(win);
+    if (inside !== insideWindow || hot !== hoverHot) {
+      insideWindow = inside;
+      hoverHot = hot;
+      // 语义（用户预期）：光标悬停在歌词窗上任意位置 → 工具栏显示 + 窗口可交互；
+      // 光标离开窗口 → 恢复鼠标穿透。锁定/解锁只影响默认拖拽与否，
+      // 不再要求光标贴到小按钮上才能唤出工具栏
+      win.setIgnoreMouseEvents(!(inside || hot));
+      pushHoverState(win);
+    }
   }, 80);
 }
 
@@ -74,8 +100,8 @@ function debounceSaveBounds() {
 }
 
 function getLyricsUrl() {
-  const base = process.env.WEBPACK_DEV_SERVER_URL
-    ? process.env.WEBPACK_DEV_SERVER_URL
+  const base = process.env.VITE_DEV_SERVER_URL
+    ? process.env.VITE_DEV_SERVER_URL
     : 'http://localhost:27232';
   return `${base}/#/desktop-lyrics`;
 }
@@ -99,9 +125,9 @@ function createLyricsWindow() {
     title: 'YesPlayMusic 桌面歌词',
     webPreferences: {
       webSecurity: false,
-      nodeIntegration: true,
-      enableRemoteModule: true,
-      contextIsolation: false,
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
     },
   });
 
@@ -171,20 +197,17 @@ export function initDesktopLyrics(window, electronStore) {
     }
   });
 
-  // 锁定穿透：主进程轮询光标热区（见文件头注释）——只接受歌词窗口自己的指令
+  // 锁定态切换（见文件头注释）——只接受歌词窗口自己的指令。
+  // 轮询两种状态都要跑：解锁态的"悬停显示工具栏"同样依赖主进程光标轮询
+  //（拖拽区吞 DOM 鼠标事件，渲染层自己测不到 mouseenter）
   ipcMain.on('desktopLyrics:setLock', (event, locked) => {
     if (!lyricWindow || lyricWindow.isDestroyed()) return;
     if (event.sender !== lyricWindow.webContents) return;
-    if (locked) {
-      hoverHot = false;
-      lyricWindow.setIgnoreMouseEvents(true);
-      startHoverPoll(lyricWindow);
-    } else {
-      stopHoverPoll();
-      hoverHot = false;
-      lyricWindow.setIgnoreMouseEvents(false);
-      lyricWindow.webContents.send('desktopLyrics:hover', false);
-    }
+    lockedState = !!locked;
+    hoverHot = false;
+    insideWindow = false;
+    startHoverPoll();
+    pushHoverState(lyricWindow);
   });
   ipcMain.on('desktopLyrics:hitArea', (event, area) => {
     if (!lyricWindow || lyricWindow.isDestroyed()) return;
