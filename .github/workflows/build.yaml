@@ -43,8 +43,6 @@ jobs:
     # 默认 token 权限只读，--publish always 建 Release 需要 contents:write
     permissions:
       contents: write
-    env:
-      SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.snapcraft_token }}
 
     strategy:
       fail-fast: false
@@ -94,10 +92,6 @@ jobs:
           sudo apt-get install --no-install-recommends -y rpm &&
           sudo apt-get install --no-install-recommends -y libarchive-tools &&
           sudo apt-get install --no-install-recommends -y libopenjp2-tools
-
-      - name: Install Snapcraft (on Ubuntu)
-        uses: samuelmeuli/action-snapcraft@v3
-        if: startsWith(matrix.os, 'ubuntu')
 
       - name: Install dependencies
         run: |

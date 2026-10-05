@@ -104,7 +104,6 @@
         "tar.gz",
         "deb",
         "rpm",
-        "snap",
         "pacman"
       ],
       "category": "Music",
