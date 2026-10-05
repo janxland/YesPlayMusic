@@ -25,46 +25,45 @@
   </div>
 </template>
 
-<script>
-// icons by https://github.com/microsoft/vscode-codicons
+<script setup lang="ts">
+// codicon 字体 71KB 且只有桌面端标题栏用：随本组件按需加载（Navbar 里 defineAsyncComponent）
 import 'vscode-codicons/dist/codicon.css';
+import { ipcBridge } from '@/platform/bridge';
+import { isDesktop } from '@/platform/env';
+import { ref, onBeforeUnmount } from 'vue';
+import { useUiStore } from '@/stores/ui';
+import { storeToRefs } from 'pinia';
 
-import { mapState } from 'vuex';
+const uiStore = useUiStore();
 
-const electron =
-  process.env.IS_ELECTRON === true ? window.require('electron') : null;
-const ipcRenderer =
-  process.env.IS_ELECTRON === true ? electron.ipcRenderer : null;
+const { title } = storeToRefs(uiStore);
 
-export default {
-  name: 'LinuxTitlebar',
-  data() {
-    return {
-      isMaximized: false,
-    };
-  },
-  computed: {
-    ...mapState(['title']),
-  },
-  created() {
-    if (process.env.IS_ELECTRON === true) {
-      ipcRenderer.on('isMaximized', (_, value) => {
-        this.isMaximized = value;
-      });
-    }
-  },
-  methods: {
-    windowMinimize() {
-      ipcRenderer.send('minimize');
-    },
-    windowMaxRestore() {
-      ipcRenderer.send('maximizeOrUnmaximize');
-    },
-    windowClose() {
-      ipcRenderer.send('close');
-    },
-  },
-};
+const isMaximized = ref<any>(false);
+
+function windowMinimize() {
+  ipcBridge.send('minimize');
+}
+
+function windowMaxRestore() {
+  ipcBridge.send('maximizeOrUnmaximize');
+}
+
+function windowClose() {
+  ipcBridge.send('close');
+}
+
+let offIsMaximized: (() => void) | null = null;
+if (isDesktop()) {
+  offIsMaximized = ipcBridge.on('isMaximized', (_, value) => {
+    isMaximized.value = value;
+  });
+}
+
+onBeforeUnmount(function beforeUnmount() {
+  // ipcBridge.on 返回注销函数；卸载后不摘除会把监听和组件作用域一起钉死
+  offIsMaximized?.();
+  offIsMaximized = null;
+});
 </script>
 
 <style lang="scss" scoped>
@@ -93,7 +92,6 @@ export default {
   }
   .controls {
     height: 32px;
-    //margin-left: auto;
     justify-content: flex-end;
     display: flex;
     .button {

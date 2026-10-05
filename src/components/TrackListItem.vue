@@ -2,7 +2,6 @@
   <div
     class="track"
     :class="trackClass"
-    :style="trackStyle"
     :title="showUnavailableSongInGreyStyle ? track.reason : ''"
     @click="playTrack"
     @mouseover="hover = true"
@@ -40,7 +39,7 @@
           <span v-if="isAlbum" class="featured">
             <ArtistsInLine
               :artists="track.ar"
-              :exclude="$parent.albumObject.artist.name"
+              :exclude="albumObject?.artist?.name"
               prefix="-"
           /></span>
           <span
@@ -87,162 +86,199 @@
       </button>
     </div>
     <div v-if="showTrackTime" class="time">
-      {{ track.dt | formatTime }}
+      {{ timeText }}
     </div>
 
     <div v-if="track.playCount" class="count"> {{ track.playCount }}</div>
   </div>
 </template>
 
-<script>
+<script setup lang="ts">
+const router = useRouter();
+
+import { isDesktop } from '@/platform/env';
 import ArtistsInLine from '@/components/ArtistsInLine.vue';
 import ExplicitSymbol from '@/components/ExplicitSymbol.vue';
 import { COVER_FALLBACK } from '@/utils/imageFallback';
-import { mapState } from 'vuex';
+import { formatTime } from '@/utils/formatters';
 import isNil from 'lodash/isNil';
+import { computed, ref } from 'vue';
+import { useLikedStore } from '@/stores/liked';
+import { usePlayerStore } from '@/stores/player';
+import { useSettingsStore } from '@/stores/settings';
+import { storeToRefs } from 'pinia';
 
-export default {
-  name: 'TrackListItem',
-  components: { ArtistsInLine, ExplicitSymbol },
+import { useRouter } from 'vue-router';
+const { settings } = storeToRefs(useSettingsStore());
+const likedStore = useLikedStore();
+const { liked } = storeToRefs(likedStore);
+const { player } = storeToRefs(usePlayerStore());
 
-  props: {
-    trackProp: Object,
-    highlightPlayingTrack: {
-      type: Boolean,
-      default: true,
-    },
-    otherServerAccess: {
-      type: Boolean,
-      default: true,
-    },
+const props = defineProps({
+  trackProp: Object,
+  highlightPlayingTrack: {
+    type: Boolean,
+    default: true,
   },
-
-  data() {
-    return { hover: false, trackStyle: {} };
+  otherServerAccess: {
+    type: Boolean,
+    default: true,
   },
-
-  computed: {
-    ...mapState(['settings']),
-    track() {
-      return this.type === 'cloudDisk'
-        ? this.trackProp.simpleSong
-        : this.trackProp;
-    },
-    playable() {
-      return this.track?.privilege?.pl > 0 || this.track?.playable;
-    },
-    imgUrl() {
-      let image =
-        this.track?.picUrl ??
-        this.track?.al?.picUrl ??
-        this.track?.album?.picUrl ??
-        COVER_FALLBACK;
-      if (image.startsWith('data:')) return image;
-      return image + '?param=224y224';
-    },
-    artists() {
-      const { ar, artists } = this.track;
-      if (!isNil(ar)) return ar;
-      if (!isNil(artists)) return artists;
-      return [];
-    },
-    album() {
-      return this.track.album || this.track.al || this.track?.simpleSong?.al;
-    },
-    subTitle() {
-      let tn = undefined;
-      if (
-        this.track?.tns?.length > 0 &&
-        this.track.name !== this.track.tns[0]
-      ) {
-        tn = this.track.tns[0];
-      }
-
-      //优先显示alia
-      if (this.$store.state.settings.subTitleDefault) {
-        return this.track?.alia?.length > 0 ? this.track.alia[0] : tn;
-      } else {
-        return tn === undefined ? this.track.alia[0] : tn;
-      }
-    },
-    type() {
-      return this.$parent.type;
-    },
-    isAlbum() {
-      return this.type === 'album';
-    },
-    isSubTitle() {
-      return (
-        (this.track?.tns?.length > 0 &&
-          this.track.name !== this.track.tns[0]) ||
-        this.track.alia?.length > 0
-      );
-    },
-    isPlaylist() {
-      return this.type === 'playlist';
-    },
-    isLiked() {
-      return this.$parent.liked.songs.includes(this.track?.id);
-    },
-    isPlaying() {
-      return this.$store.state.player.currentTrack.id === this.track?.id;
-    },
-    trackClass() {
-      let trackClass = [this.type];
-      if (!this.playable && this.showUnavailableSongInGreyStyle)
-        trackClass.push('disable');
-      if (this.isPlaying && this.highlightPlayingTrack)
-        trackClass.push('playing');
-      if (this.focus) trackClass.push('focus');
-      return trackClass;
-    },
-    isMenuOpened() {
-      return this.$parent.rightClickedTrack.id === this.track.id ? true : false;
-    },
-    focus() {
-      return (
-        (this.hover && this.$parent.rightClickedTrack.id === 0) ||
-        this.isMenuOpened
-      );
-    },
-    showUnavailableSongInGreyStyle() {
-      // return false;
-      return process.env.IS_ELECTRON
-        ? !this.$store.state.settings.enableUnblockNeteaseMusic
-        : true;
-    },
-    showLikeButton() {
-      return this.type !== 'tracklist' && this.type !== 'cloudDisk';
-    },
-    showOrderNumber() {
-      return this.type === 'album';
-    },
-    showAlbumName() {
-      return this.type !== 'album' && this.type !== 'tracklist';
-    },
-    showTrackTime() {
-      return this.type !== 'tracklist';
-    },
+  // 列表类型（playlist/album/tracklist/cloudDisk…），原经 $parent.type 读取
+  type: {
+    type: String,
+    default: 'tracklist',
   },
-
-  methods: {
-    goToAlbum() {
-      if (this.track.al.id === 0) return;
-      if (this.track.sourceUrl) {
-        window.open(this.track.sourceUrl);
-        return;
-      }
-      this.$router.push({ path: '/album/' + this.track.al.id });
-    },
-    playTrack() {
-      if (this.track.source) this.$parent.playThisList(this.track);
-      else this.$parent.playThisList(this.track.id);
-    },
-    likeThisSong() {
-      this.$parent.likeATrack(this.track.id);
-    },
+  // 专辑页用于「排除本专辑歌手」的专辑对象，原经 $parent.albumObject 读取
+  albumObject: {
+    type: Object,
+    default: () => ({ artist: { name: '' } }),
   },
-};
+  // 当前行是否正被右键菜单选中，原经 $parent.rightClickedTrack 读取
+  rightClickedTrackId: {
+    type: Number,
+    default: 0,
+  },
+});
+
+// 播放该行：payload 为整条 track（本地音源）或 track id，由 TrackList.playThisList 分派
+const emit = defineEmits(['play']);
+
+const hover = ref<any>(false);
+
+const track = computed(function track() {
+  return type.value === 'cloudDisk'
+    ? props.trackProp.simpleSong
+    : props.trackProp;
+});
+
+const playable = computed(function playable() {
+  return track.value?.privilege?.pl > 0 || track.value?.playable;
+});
+
+const imgUrl = computed(function imgUrl() {
+  let image =
+    track.value?.picUrl ??
+    track.value?.al?.picUrl ??
+    track.value?.album?.picUrl ??
+    COVER_FALLBACK;
+  if (image.startsWith('data:')) return image;
+  return image + '?param=224y224';
+});
+
+const artists = computed(function artists() {
+  const { ar, artists } = track.value;
+  if (!isNil(ar)) return ar;
+  if (!isNil(artists)) return artists;
+  return [];
+});
+
+const album = computed(function album() {
+  return track.value.album || track.value.al || track.value?.simpleSong?.al;
+});
+
+const subTitle = computed(function subTitle() {
+  let tn = undefined;
+  if (track.value?.tns?.length > 0 && track.value.name !== track.value.tns[0]) {
+    tn = track.value.tns[0];
+  }
+
+  //优先显示alia
+  if (settings.value.subTitleDefault) {
+    return track.value?.alia?.length > 0 ? track.value.alia[0] : tn;
+  } else {
+    return tn === undefined ? track.value.alia[0] : tn;
+  }
+});
+
+const type = computed(function type() {
+  return props.type;
+});
+
+const isAlbum = computed(function isAlbum() {
+  return type.value === 'album';
+});
+
+const isSubTitle = computed(function isSubTitle() {
+  return (
+    (track.value?.tns?.length > 0 && track.value.name !== track.value.tns[0]) ||
+    track.value.alia?.length > 0
+  );
+});
+
+const isPlaylist = computed(function isPlaylist() {
+  return type.value === 'playlist';
+});
+
+const isLiked = computed(function isLiked() {
+  return liked.value.songs.includes(track.value?.id);
+});
+
+const isPlaying = computed(function isPlaying() {
+  return player.value.currentTrack.id === track.value?.id;
+});
+
+const trackClass = computed(function trackClass() {
+  let trackClass = [type.value];
+  if (!playable.value && showUnavailableSongInGreyStyle.value)
+    trackClass.push('disable');
+  if (isPlaying.value && props.highlightPlayingTrack)
+    trackClass.push('playing');
+  if (focus.value) trackClass.push('focus');
+  return trackClass;
+});
+
+const isMenuOpened = computed(function isMenuOpened() {
+  return props.rightClickedTrackId === track.value.id ? true : false;
+});
+
+const focus = computed(function focus() {
+  return (hover.value && props.rightClickedTrackId === 0) || isMenuOpened.value;
+});
+
+const showUnavailableSongInGreyStyle = computed(
+  function showUnavailableSongInGreyStyle() {
+    return isDesktop() ? !settings.value.enableUnblockNeteaseMusic : true;
+  }
+);
+
+const showLikeButton = computed(function showLikeButton() {
+  return type.value !== 'tracklist' && type.value !== 'cloudDisk';
+});
+
+const showOrderNumber = computed(function showOrderNumber() {
+  return type.value === 'album';
+});
+
+const showAlbumName = computed(function showAlbumName() {
+  return type.value !== 'album' && type.value !== 'tracklist';
+});
+
+const showTrackTime = computed(function showTrackTime() {
+  return type.value !== 'tracklist';
+});
+
+// 每行模板里的 formatTime(track.dt) 收敛为 computed，行不重渲染就不重算
+const timeText = computed(function timeText() {
+  return formatTime(track.value.dt);
+});
+
+function goToAlbum() {
+  if (track.value.al.id === 0) return;
+  if (track.value.sourceUrl) {
+    window.open(track.value.sourceUrl);
+    return;
+  }
+  router.push({ path: '/album/' + track.value.al.id });
+}
+
+function playTrack() {
+  emit('play', track.value.source ? track.value : track.value.id);
+}
+
+function likeThisSong() {
+  likedStore.likeATrack(track.value.id);
+}
 </script>
 
 <style lang="scss" scoped>

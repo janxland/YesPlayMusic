@@ -1,0 +1,212 @@
+import request from '@/utils/request';
+import { bust } from './internal';
+import { mapTrackPlayableStatus } from '@/utils/common';
+import {
+  cacheTrackDetail,
+  getTrackDetailFromCache,
+  cacheLyric,
+  getLyricFromCache,
+} from '@/utils/db';
+
+/* 音质设置直读 localStorage（与 utils/request.js 的 readSettings 同口径），
+   避免 api 层反向依赖 store（R14 / P0.9 收口） */
+function readMusicQuality() {
+  try {
+    const settings = JSON.parse(localStorage.getItem('settings')) || {};
+    return settings.musicQuality ?? '320000';
+  } catch (_) {
+    return '320000';
+  }
+}
+/**
+ * 解灰
+ * 说明 : 使用歌单详情接口后 , 能得到的音乐的 id, 但不能得到的音乐 url, 调用此接口, 传入的音乐 id( 可多个 , 用逗号隔开 ), 可以获取对应的音乐的 url,
+ * !!!未登录状态返回试听片段(返回字段包含被截取的正常歌曲的开始时间和结束时间)
+ * @param {string} id - 音乐的 id，例如 id=405998841,33894312
+ */
+export function unblock(id: any) {
+  return request({
+    url: '/song/unblock',
+    method: 'get',
+    params: {
+      id,
+      https: location.protocol === 'https:',
+    },
+  });
+}
+/**
+ * 获取音乐 url
+ * 说明 : 使用歌单详情接口后 , 能得到的音乐的 id, 但不能得到的音乐 url, 调用此接口, 传入的音乐 id( 可多个 , 用逗号隔开 ), 可以获取对应的音乐的 url,
+ * !!!未登录状态返回试听片段(返回字段包含被截取的正常歌曲的开始时间和结束时间)
+ * @param {string} id - 音乐的 id，例如 id=405998841,33894312
+ */
+export function getMP3(id: any) {
+  const getBr = () => {
+    // 当返回的 quality >= 400000时，就会优先返回 hi-res
+    const quality = readMusicQuality();
+    return quality === 'flac' ? '350000' : quality;
+  };
+
+  return request({
+    url: '/song/url',
+    method: 'get',
+    params: {
+      id,
+      br: getBr(),
+    },
+  });
+}
+
+/**
+ * 获取歌曲详情
+ * 说明 : 调用此接口 , 传入音乐 id(支持多个 id, 用 , 隔开), 可获得歌曲详情(注意:歌曲封面现在需要通过专辑内容接口获取)
+ * @param {string} ids - 音乐 id, 例如 ids=405998841,33894312
+ */
+export function getTrackDetail(ids: any) {
+  const fetchLatest = () => {
+    return request({
+      url: '/song/detail',
+      method: 'get',
+      params: {
+        ids,
+      },
+    }).then(data => {
+      if (!data || !Array.isArray(data.songs)) {
+        return { songs: [], privileges: [] };
+      }
+      const privilegesList = Array.isArray(data.privileges)
+        ? data.privileges
+        : [];
+      data.songs.forEach(song => {
+        const privileges = privilegesList.find(t => t.id === song.id);
+        cacheTrackDetail(song, privileges);
+      });
+      data.privileges = privilegesList;
+      data.songs = mapTrackPlayableStatus(data.songs, data.privileges);
+      return data;
+    });
+  };
+  let idsInArray = [String(ids)];
+  if (typeof ids === 'string') {
+    idsInArray = ids.split(',');
+  }
+
+  return getTrackDetailFromCache(idsInArray).then(result => {
+    if (result && Array.isArray(result.songs)) {
+      result.songs = mapTrackPlayableStatus(result.songs, result.privileges);
+      return result;
+    }
+    return fetchLatest();
+  });
+}
+
+/**
+ * 获取歌词
+ * 说明 : 调用此接口 , 传入音乐 id 可获得对应音乐的歌词 ( 不需要登录 )
+ * @param id - 音乐 id
+ * @param server - 歌词源（unblock 恢复的音源），不传走默认源
+ */
+export function getLyric(id: number, server?: string) {
+  const fetchLatest = () => {
+    return request({
+      url: '/lyric',
+      method: 'get',
+      params: {
+        id,
+        server: server ? server : undefined,
+      },
+    }).then(result => {
+      cacheLyric(`${server ? server : ''}${id}`, result);
+      return result;
+    });
+  };
+  return getLyricFromCache(`${server ? server : ''}${id}`).then(result => {
+    return result ?? fetchLatest();
+  });
+}
+
+/**
+ * 获取云盘歌曲内嵌歌词 * 说明 : 调用此接口 , 传入音乐 id 可获得云盘歌曲的内嵌歌词
+ * @param {number} songId - 音乐 id
+ * @param {number} userId - 用户 id
+ */
+export function getCloudLyric(songId: any, userId: any) {
+  const fetchLatest = () => {
+    return request({
+      url: '/api',
+      method: 'get',
+      params: {
+        uri: `/api/cloud/lyric/get`,
+        data: {
+          songId,
+          userId,
+          lv: '-1',
+          kv: '-1',
+        },
+        crypto: 'eapi',
+      },
+    }).then(result => {
+      cacheLyric(songId, result);
+      return result;
+    });
+  };
+
+  // 原先这里先裸执行一次 fetchLatest()（返回值被丢弃），随后再走缓存分支。
+  // 于是每首云盘歌都必定打两次网络请求，第二次几乎立刻触发。
+  return getLyricFromCache(songId).then(result => {
+    return result ?? fetchLatest();
+  });
+}
+
+/**
+ * 新歌速递
+ * 说明 : 调用此接口 , 可获取新歌速递
+ * @param {number} type - 地区类型 id, 对应以下: 全部:0 华语:7 欧美:96 日本:8 韩国:16
+ */
+export function topSong(type: any) {
+  return request({
+    url: '/top/song',
+    method: 'get',
+    params: {
+      type,
+    },
+  });
+}
+
+/**
+ * 喜欢音乐
+ * 说明 : 调用此接口 , 传入音乐 id, 可喜欢该音乐
+ * - id - 歌曲 id
+ * - like - 默认为 true 即喜欢 , 若传 false, 则取消喜欢
+ * @param {Object} params
+ * @param {number} params.id
+ * @param {boolean=} [params.like]
+ */
+export function likeATrack(params: any) {
+  params.timestamp = bust();
+  return request({
+    url: '/like',
+    method: 'get',
+    params,
+  });
+}
+
+/**
+ * 听歌打卡
+ * 说明 : 调用此接口 , 传入音乐 id, 来源 id，歌曲时间 time，更新听歌排行数据
+ * - id - 歌曲 id
+ * - sourceid - 歌单或专辑 id
+ * - time - 歌曲播放时间,单位为秒
+ * @param {Object} params
+ * @param {number} params.id
+ * @param {number} params.sourceid
+ * @param {number=} params.time
+ */
+export function scrobble(params: any) {
+  params.timestamp = bust();
+  return request({
+    url: '/scrobble',
+    method: 'get',
+    params,
+  });
+}

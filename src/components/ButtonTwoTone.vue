@@ -9,54 +9,52 @@
   </button>
 </template>
 
-<script>
-export default {
-  name: 'ButtonTwoTone',
-  props: {
-    iconClass: {
-      type: String,
-      default: null,
-    },
-    iconButton: {
-      type: Boolean,
-      default: false,
-    },
-    horizontalPadding: {
-      type: Number,
-      default: 16,
-    },
-    color: {
-      type: String,
-      default: 'blue',
-    },
-    backgroundColor: {
-      type: String,
-      default: '',
-    },
-    textColor: {
-      type: String,
-      default: '',
-    },
-    shape: {
-      type: String,
-      default: 'square',
-    },
+<script setup lang="ts">
+import { computed } from 'vue';
+import type { CSSProperties } from 'vue';
+
+const props = defineProps({
+  iconClass: {
+    type: String,
+    default: null,
   },
-  computed: {
-    buttonStyle() {
-      let styles = {
-        borderRadius: this.shape === 'round' ? '50%' : '8px',
-        padding: `8px ${this.horizontalPadding}px`,
-        // height: "38px",
-        width: this.shape === 'round' ? '38px' : 'auto',
-      };
-      if (this.backgroundColor !== '')
-        styles.backgroundColor = this.backgroundColor;
-      if (this.textColor !== '') styles.color = this.textColor;
-      return styles;
-    },
+  iconButton: {
+    type: Boolean,
+    default: false,
   },
-};
+  horizontalPadding: {
+    type: Number,
+    default: 16,
+  },
+  color: {
+    type: String,
+    default: 'blue',
+  },
+  backgroundColor: {
+    type: String,
+    default: '',
+  },
+  textColor: {
+    type: String,
+    default: '',
+  },
+  shape: {
+    type: String,
+    default: 'square',
+  },
+});
+
+const buttonStyle = computed(function buttonStyle() {
+  let styles: CSSProperties = {
+    borderRadius: props.shape === 'round' ? '50%' : '8px',
+    padding: `8px ${props.horizontalPadding}px`,
+    width: props.shape === 'round' ? '38px' : 'auto',
+  };
+  if (props.backgroundColor !== '')
+    styles.backgroundColor = props.backgroundColor;
+  if (props.textColor !== '') styles.color = props.textColor;
+  return styles;
+});
 </script>
 
 <style lang="scss" scoped>

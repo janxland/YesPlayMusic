@@ -3,7 +3,7 @@
     <div class="current-video">
       <div class="video">
         <video
-          ref="videoPlayer"
+          ref="videoPlayerRef"
           class="custom-video-player"
           controls
           preload="metadata"
@@ -27,17 +27,17 @@
           -
           {{ mv.data.name }}
           <div class="buttons">
-            <button-icon class="button" @click.native="likeMV">
+            <button-icon class="button" @click="likeMV">
               <svg-icon v-if="mv.subed" icon-class="heart-solid"></svg-icon>
               <svg-icon v-else icon-class="heart"></svg-icon>
             </button-icon>
-            <button-icon class="button" @click.native="openMenu">
+            <button-icon class="button" @click="openMenu">
               <svg-icon icon-class="more"></svg-icon>
             </button-icon>
           </div>
         </div>
         <div class="info">
-          {{ mv.data.playCount | formatPlayCount }} Views ·
+          {{ formatPlayCount(mv.data.playCount) }} Views ·
           {{ mv.data.publishTime }}
         </div>
       </div>
@@ -46,7 +46,7 @@
       <div class="section-title">{{ $t('mv.moreVideo') }}</div>
       <MvRow :mvs="simiMvs" />
     </div>
-    <ContextMenu ref="mvMenu">
+    <ContextMenu ref="mvMenuRef">
       <div class="item" @click="copyUrl(mv.data.id)">{{
         $t('contextMenu.copyUrl')
       }}</div>
@@ -57,122 +57,111 @@
   </div>
 </template>
 
-<script>
+<script setup lang="ts">
 import { mvDetail, mvUrl, simiMv, likeAMV } from '@/api/mv';
 import { isAccountLoggedIn } from '@/utils/auth';
 import { loadWithProgress, loadOptional } from '@/utils/pageLoad';
-import locale from '@/locale';
-
+import { getI18n } from '@/locale';
 import ButtonIcon from '@/components/ButtonIcon.vue';
 import ContextMenu from '@/components/ContextMenu.vue';
 import MvRow from '@/components/MvRow.vue';
-import { mapActions } from 'vuex';
+import { formatPlayCount } from '@/utils/formatters';
+import { ref, onMounted } from 'vue';
+import { usePlayerStore, useUiStore } from '@/stores';
+import { onBeforeRouteUpdate, useRoute } from 'vue-router';
+import { useNeteaseLinkActions } from '@/composables/useNeteaseLinkActions';
 
-export default {
-  name: 'Mv',
-  components: {
-    MvRow,
-    ButtonIcon,
-    ContextMenu,
-  },
-  beforeRouteUpdate(to, from, next) {
-    this.getData(to.params.id);
-    next();
-  },
-  data() {
-    return {
-      mv: {
-        url: '',
-        data: {
-          name: '',
-          artistName: '',
-          playCount: '',
-          publishTime: '',
-          cover: '',
-        },
-      },
-      videoSources: [],
-      simiMvs: [],
-    };
-  },
-  mounted() {
-    // 设置音量
-    if (this.$refs.videoPlayer) {
-      this.$refs.videoPlayer.volume = this.$store.state.player.volume;
+const videoPlayerRef = ref<any>(null);
+const mvMenuRef = ref<any>(null);
+const route = useRoute();
+const playerStore = usePlayerStore();
+const uiStore = useUiStore();
 
-      // 监听播放事件
-      this.$refs.videoPlayer.addEventListener('play', () => {
-        this.$store.state.player.pause();
-      });
+// MvRow 经 $parent.player.playing 取当前播放态（跳 MV 带 autoplay 参数）
+defineExpose({ player: playerStore.player });
 
-      // 自动播放
-      if (this.$route.query.autoplay === 'true') {
-        this.$refs.videoPlayer.autoplay = true;
-      }
-    }
+const showToast = uiStore.showToast;
 
-    this.getData(this.$route.params.id);
-    console.log('网易云你这mv音频码率也太糊了吧🙄');
+// 复制链接 / 浏览器打开（原与 album/artist 重复的实现收敛于此）
+const { copyUrl, openInBrowser } = useNeteaseLinkActions('mv');
+
+const mv = ref<any>({
+  url: '',
+  data: {
+    name: '',
+    artistName: '',
+    playCount: '',
+    publishTime: '',
+    cover: '',
   },
-  methods: {
-    ...mapActions(['showToast']),
-    getData(id) {
-      loadWithProgress(
-        mvDetail(id)
-          .then(data => {
-            this.mv = data;
-            const requests = data.data.brs.map(br => {
-              return mvUrl({ id, r: br.br });
-            });
-            return Promise.all(requests);
-          })
-          .then(results => {
-            this.videoSources = results.map(result => {
-              return {
-                src: result.data.url.replace(/^http:/, 'https:'),
-                type: 'video/mp4',
-                size: result.data.r,
-              };
-            });
-          })
-      );
-      loadOptional(
-        simiMv(id).then(data => {
-          this.simiMvs = data.mvs;
-        })
-      );
-    },
-    likeMV() {
-      if (!isAccountLoggedIn()) {
-        this.showToast(locale.t('toast.needToLogin'));
-        return;
-      }
-      likeAMV({
-        mvid: this.mv.data.id,
-        t: this.mv.subed ? 0 : 1,
-      }).then(data => {
-        if (data.code === 200) this.mv.subed = !this.mv.subed;
-      });
-    },
-    openMenu(e) {
-      this.$refs.mvMenu.openMenu(e);
-    },
-    copyUrl(id) {
-      let showToast = this.showToast;
-      this.$copyText(`https://music.163.com/#/mv?id=${id}`)
-        .then(function () {
-          showToast(locale.t('toast.copied'));
-        })
-        .catch(error => {
-          showToast(`${locale.t('toast.copyFailed')}${error}`);
+});
+
+const videoSources = ref<any>([]);
+
+const simiMvs = ref<any>([]);
+
+function getData(id) {
+  loadWithProgress(
+    mvDetail(id)
+      .then(data => {
+        mv.value = data;
+        const requests = data.data.brs.map(br => {
+          return mvUrl({ id, r: br.br });
         });
-    },
-    openInBrowser(id) {
-      const url = `https://music.163.com/#/mv?id=${id}`;
-      window.open(url);
-    },
-  },
-};
+        return Promise.all(requests);
+      })
+      .then(results => {
+        videoSources.value = results.map(result => {
+          return {
+            src: result.data.url.replace(/^http:/, 'https:'),
+            type: 'video/mp4',
+            size: result.data.r,
+          };
+        });
+      })
+  );
+  loadOptional(
+    simiMv(id).then(data => {
+      simiMvs.value = data.mvs;
+    })
+  );
+}
+
+function likeMV() {
+  if (!isAccountLoggedIn()) {
+    showToast((getI18n() as any).global.t('toast.needToLogin'));
+    return;
+  }
+  likeAMV({
+    mvid: mv.value.data.id,
+    t: mv.value.subed ? 0 : 1,
+  }).then(data => {
+    if (data.code === 200) mv.value.subed = !mv.value.subed;
+  });
+}
+
+function openMenu(e) {
+  mvMenuRef.value.openMenu(e);
+}
+
+onMounted(function mounted() {
+  if (videoPlayerRef.value) {
+    videoPlayerRef.value.volume = playerStore.player.volume;
+    videoPlayerRef.value.addEventListener('play', () => {
+      playerStore.player.pause();
+    });
+    if (route.query.autoplay === 'true') {
+      videoPlayerRef.value.autoplay = true;
+    }
+  }
+
+  getData(route.params.id);
+});
+
+onBeforeRouteUpdate((to, from, next) => {
+  getData(to.params.id);
+  next();
+});
 </script>
 <style lang="scss" scoped>
 .video {

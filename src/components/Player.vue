@@ -27,9 +27,7 @@
         <div class="container" @click.stop>
           <div class="cover-wrap">
             <LazyImage
-              :src="
-                currentTrack.al && currentTrack.al.picUrl | resizeImage(224)
-              "
+              :src="resizeImage(currentTrack.al && currentTrack.al.picUrl, 224)"
               referrerpolicy="no-referrer"
               @click="goToAlbum"
             />
@@ -42,8 +40,8 @@
           </div>
           <div class="track-info" :title="audioSource">
             <div
-              :class="['name', { 'has-list': hasList() }]"
-              @click="hasList() && goToList()"
+              :class="['name', { 'has-list': hasList }]"
+              @click="hasList && goToList()"
             >
               {{ currentTrack.name }}
             </div>
@@ -65,7 +63,7 @@
                   ? $t('player.unlike')
                   : $t('player.like')
               "
-              @click.native="likeATrack(player.currentTrack.id)"
+              @click="likedStore.likeATrack(player.currentTrack.id)"
             >
               <svg-icon
                 v-show="!player.isCurrentTrackLiked"
@@ -77,12 +75,12 @@
               ></svg-icon>
             </button-icon>
           </div>
-          <button-icon class="secondary-control" @click.native="Download">
+          <button-icon class="secondary-control" @click="Download">
             <svg-icon icon-class="download" />
           </button-icon>
           <button-icon
             class="secondary-control"
-            @click.native="player.loadLocalMusic()"
+            @click="player.loadLocalMusic()"
           >
             <svg-icon icon-class="upload" />
           </button-icon>
@@ -92,19 +90,17 @@
       <div class="middle-control-buttons">
         <div class="blank"></div>
         <div class="container" @click.stop>
-          <button-icon
-            :title="$t('player.previous')"
-            @click.native="playPrevTrack"
+          <button-icon :title="$t('player.previous')" @click="playPrevTrack"
             ><svg-icon icon-class="previous"
           /></button-icon>
           <button-icon
             class="play"
             :title="$t(player.playing ? 'player.pause' : 'player.play')"
-            @click.native="playOrPause"
+            @click="playOrPause"
           >
             <svg-icon :icon-class="player.playing ? 'pause' : 'play'"
           /></button-icon>
-          <button-icon :title="$t('player.next')" @click.native="playNextTrack"
+          <button-icon :title="$t('player.next')" @click="playNextTrack"
             ><svg-icon icon-class="next"
           /></button-icon>
         </div>
@@ -120,7 +116,7 @@
               active: $route.name === 'next',
               disabled: player.isPersonalFM,
             }"
-            @click.native="goToNextTracksPage"
+            @click="goToNextTracksPage"
             ><svg-icon icon-class="list"
           /></button-icon>
           <button-icon
@@ -134,7 +130,7 @@
                 ? $t('player.repeatTrack')
                 : $t('player.repeat')
             "
-            @click.native="switchRepeatMode"
+            @click="switchRepeatMode"
           >
             <svg-icon
               v-show="player.repeatMode !== 'one'"
@@ -149,7 +145,7 @@
             class="secondary-control"
             :class="{ active: player.shuffle, disabled: player.isPersonalFM }"
             :title="$t('player.shuffle')"
-            @click.native="switchShuffle"
+            @click="switchShuffle"
             ><svg-icon icon-class="shuffle"
           /></button-icon>
           <button-icon
@@ -157,11 +153,11 @@
             class="secondary-control"
             :class="{ active: player.reversed, disabled: player.isPersonalFM }"
             :title="$t('player.reversed')"
-            @click.native="switchReversed"
+            @click="switchReversed"
             ><svg-icon icon-class="sort-up"
           /></button-icon>
           <div class="volume-control secondary-control">
-            <button-icon :title="$t('player.mute')" @click.native="mute">
+            <button-icon :title="$t('player.mute')" @click="mute">
               <svg-icon v-show="volume > 0.5" icon-class="volume" />
               <svg-icon v-show="volume === 0" icon-class="volume-mute" />
               <svg-icon
@@ -188,23 +184,23 @@
             class="desktop-lyrics-button secondary-control"
             :class="{ active: desktopLyricsActive }"
             title="桌面歌词"
-            @click.native="toggleDesktopLyrics"
+            @click="toggleDesktopLyrics"
             ><svg-icon icon-class="desktop-lyrics"
           /></button-icon>
           <button-icon
             v-if="!isElectron"
             class="open-client-button secondary-control"
             title="用桌面客户端打开（支持透明桌面歌词）"
-            @click.native="openDesktopClient"
+            @click="openDesktopClient"
             ><svg-icon icon-class="monitor"
           /></button-icon>
           <div class="more-menu">
-            <button-icon title="更多" @click.native="toggleMoreMenu">
+            <button-icon title="更多" @click="toggleMoreMenu">
               <svg-icon icon-class="more" />
             </button-icon>
             <div
               v-if="moreMenuOpen"
-              ref="moreMenu"
+              ref="moreMenuRef"
               class="more-dropdown"
               tabindex="-1"
               @mousedown.prevent
@@ -259,7 +255,7 @@
           <button-icon
             class="lyrics-button"
             title="歌词"
-            @click.native="toggleLyrics"
+            @click="uiStore.toggleLyrics()"
             ><svg-icon icon-class="arrow-up"
           /></button-icon>
         </div>
@@ -268,206 +264,244 @@
   </div>
 </template>
 
-<script>
-import { mapState, mapMutations, mapActions } from 'vuex';
+<script setup lang="ts">
+const router = useRouter();
+const route = useRoute();
+
+let offDesktopLyricsState = null;
+import { isDesktop } from '@/platform/env';
+import { player as playerInstance } from '@/player/singleton';
 import '@/assets/css/slider.css';
 
 import ButtonIcon from '@/components/ButtonIcon.vue';
 import VueSlider from 'vue-slider-component';
 import { goToListSource, hasListSource } from '@/utils/playList';
+import { resizeImage } from '@/utils/formatters';
 import {
   isDesktopLyricsSupported,
   isDesktopLyricsOpen,
   onDesktopLyricsStateChange,
   toggleDesktopLyrics as toggleDesktopLyricsAction,
 } from '@/utils/desktopLyrics';
+import {
+  ref,
+  computed,
+  nextTick,
+  onMounted,
+  onBeforeUnmount,
+  shallowRef,
+  useTemplateRef,
+} from 'vue';
+import { useLikedStore } from '@/stores/liked';
+import { usePlayerStore } from '@/stores/player';
+import { useSettingsStore } from '@/stores/settings';
+import { useUiStore } from '@/stores/ui';
+import { storeToRefs } from 'pinia';
 
-export default {
-  name: 'Player',
-  components: {
-    ButtonIcon,
-    VueSlider,
+import { useRoute, useRouter } from 'vue-router';
+// 模板 ref 用 useTemplateRef：类型更准，避免被当成数据 ref 误用
+const moreMenuRef = useTemplateRef<HTMLElement>('moreMenuRef');
+
+const { player } = storeToRefs(usePlayerStore());
+const { settings } = storeToRefs(useSettingsStore());
+const uiStore = useUiStore();
+const likedStore = useLikedStore();
+
+// 只做身份比对、从不渲染的 DOM 节点用 shallowRef，避免整个元素被深度代理
+const mouseDownTarget = shallowRef<EventTarget | null>(null);
+
+const moreMenuOpen = ref<any>(false);
+
+const isElectron = ref(isDesktop());
+
+const desktopLyricsSupported = ref(isDesktopLyricsSupported());
+
+const desktopLyricsActive = ref(isDesktopLyricsOpen());
+
+const currentTrack = computed(function currentTrack() {
+  return player.value.currentTrack;
+});
+
+const volume = computed({
+  get() {
+    return player.value.volume;
   },
-  data() {
-    return {
-      mouseDownTarget: null,
-      moreMenuOpen: false,
-      isElectron: process.env.IS_ELECTRON === true,
-      desktopLyricsSupported: isDesktopLyricsSupported(),
-      desktopLyricsActive: isDesktopLyricsOpen(),
-    };
+  set(value) {
+    // 直写真身（镜像写入单向同步，见 store/index.js P0.2 注释）
+    playerInstance.volume = value;
   },
-  computed: {
-    ...mapState(['player', 'settings', 'data']),
-    currentTrack() {
-      return this.player.currentTrack;
-    },
-    volume: {
-      get() {
-        return this.player.volume;
-      },
-      set(value) {
-        this.player.volume = value;
-      },
-    },
-    playing() {
-      return this.player.playing;
-    },
-    audioSource() {
-      return this.player._howler?._src.includes('kuwo.cn')
-        ? '音源来自酷我音乐'
-        : '';
-    },
-  },
-  mounted() {
-    this.setupMediaControls();
-    window.addEventListener('keydown', this.handleKeydown);
-    this.offDesktopLyricsState = onDesktopLyricsStateChange(open => {
-      this.desktopLyricsActive = open;
+});
+
+// 模板里出现两次的 hasList() 收敛为 computed，避免每次渲染重复求值
+const hasList = computed(function hasList() {
+  return hasListSource();
+});
+
+const audioSource = computed(function audioSource() {
+  // _howler 不进 store 镜像（类实例不入响应式系统，见 player/singleton.ts），从单例直读；依赖 currentTrack 让换歌（_howler 重建）时重算
+  void player.value.currentTrack;
+  const src = (playerInstance._howler as any)?._src;
+  return typeof src === 'string' && src.includes('kuwo.cn')
+    ? '音源来自酷我音乐'
+    : '';
+});
+
+function toggleDesktopLyrics() {
+  toggleDesktopLyricsAction().catch(err => {
+    console.warn('[desktopLyrics] toggle failed:', err);
+    uiStore.showToast('当前浏览器不支持桌面歌词');
+  });
+}
+
+function openDesktopClient() {
+  // 未安装客户端时自定义协议静默失败：页面保持可见且握有焦点 → 引导去下载页
+  window.open('yesplaymusic://desktop-lyrics', '_blank');
+  setTimeout(() => {
+    if (!document.hidden && document.hasFocus()) {
+      router.push('/download');
+    }
+  }, 2000);
+}
+
+function toggleMoreMenu() {
+  moreMenuOpen.value = !moreMenuOpen.value;
+  if (moreMenuOpen.value) {
+    nextTick(() => moreMenuRef.value.focus());
+  }
+}
+
+function handleClick(event) {
+  if (event.target == mouseDownTarget.value) {
+    uiStore.toggleLyrics();
+  }
+}
+
+function handleMouseDown(event) {
+  mouseDownTarget.value = event.target;
+}
+
+function playPrevTrack() {
+  player.value.playPrevTrack();
+}
+
+function playOrPause() {
+  player.value.playOrPause();
+}
+
+function playNextTrack() {
+  if (player.value.isPersonalFM) {
+    player.value.playNextFMTrack();
+  } else {
+    player.value.playNextTrack();
+  }
+}
+
+function goToNextTracksPage() {
+  if (player.value.isPersonalFM) return;
+  route.name === 'next' ? router.go(-1) : router.push({ name: 'next' });
+}
+
+function formatTrackTime(value) {
+  if (!value) return '';
+  let min = ~~((value / 60) % 60);
+  let sec = (~~(value % 60)).toString().padStart(2, '0');
+  return `${min}:${sec}`;
+}
+
+function Download() {
+  const { name, ar } = currentTrack.value;
+  const newMp3Url = player.value.nowMp3Url.split(':')[1];
+  fetch(newMp3Url)
+    .then(response => response.blob())
+    .then(blob => {
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = `${name}-${ar[0].name}`;
+      link.style.display = 'none';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(link.href);
+    })
+    .catch(() => window.open(newMp3Url, '_blank'));
+}
+
+function goToList() {
+  goToListSource();
+}
+
+function goToAlbum() {
+  if (player.value.currentTrack.al.id === 0) return;
+  router.push({ path: '/album/' + player.value.currentTrack.al.id });
+}
+
+function goToArtist(id) {
+  router.push({ path: '/artist/' + id });
+}
+
+function switchRepeatMode() {
+  player.value.switchRepeatMode();
+}
+
+function switchShuffle() {
+  player.value.switchShuffle();
+}
+
+function switchReversed() {
+  player.value.switchReversed();
+}
+
+function mute() {
+  player.value.mute();
+}
+
+function setupMediaControls() {
+  if ('mediaSession' in navigator) {
+    navigator.mediaSession.setActionHandler('play', () => {
+      playOrPause();
     });
-  },
-  beforeDestroy() {
-    window.removeEventListener('keydown', this.handleKeydown);
-    this.offDesktopLyricsState?.();
-  },
-  methods: {
-    ...mapMutations(['toggleLyrics']),
-    ...mapActions(['showToast', 'likeATrack']),
-    toggleDesktopLyrics() {
-      toggleDesktopLyricsAction().catch(err => {
-        console.warn('[desktopLyrics] toggle failed:', err);
-        this.showToast('当前浏览器不支持桌面歌词');
-      });
-    },
-    openDesktopClient() {
-      // 未安装客户端时自定义协议静默失败：页面保持可见且握有焦点 → 引导去下载页
-      window.open('yesplaymusic://desktop-lyrics', '_blank');
-      setTimeout(() => {
-        if (!document.hidden && document.hasFocus()) {
-          this.$router.push('/download');
-        }
-      }, 2000);
-    },
-    toggleMoreMenu() {
-      this.moreMenuOpen = !this.moreMenuOpen;
-      if (this.moreMenuOpen) {
-        this.$nextTick(() => this.$refs.moreMenu.focus());
-      }
-    },
-    handleClick(event) {
-      if (event.target == this.mouseDownTarget) {
-        this.toggleLyrics();
-      }
-    },
-    handleMouseDown(event) {
-      this.mouseDownTarget = event.target;
-    },
-    playPrevTrack() {
-      this.player.playPrevTrack();
-    },
-    playOrPause() {
-      this.player.playOrPause();
-    },
-    playNextTrack() {
-      if (this.player.isPersonalFM) {
-        this.player.playNextFMTrack();
-      } else {
-        this.player.playNextTrack();
-      }
-    },
-    goToNextTracksPage() {
-      if (this.player.isPersonalFM) return;
-      this.$route.name === 'next'
-        ? this.$router.go(-1)
-        : this.$router.push({ name: 'next' });
-    },
-    formatTrackTime(value) {
-      if (!value) return '';
-      let min = ~~((value / 60) % 60);
-      let sec = (~~(value % 60)).toString().padStart(2, '0');
-      return `${min}:${sec}`;
-    },
-    hasList() {
-      return hasListSource();
-    },
-    /* eslint-disable */
-    Download() {
-      const { name, ar } = this.currentTrack;
-      const newMp3Url = this.player.nowMp3Url.split(':')[1];
-      fetch(newMp3Url)
-        .then(response => response.blob())
-        .then(blob => {
-          const link = document.createElement('a');
-          link.href = URL.createObjectURL(blob);
-          link.download = `${name}-${ar[0].name}`;
-          link.style.display = 'none';
-          document.body.appendChild(link);
-          link.click();
-          document.body.removeChild(link);
-          URL.revokeObjectURL(link.href);
-        })
-        .catch(() => window.open(newMp3Url, '_blank'));
-    },
-    goToList() {
-      goToListSource();
-    },
-    goToAlbum() {
-      if (this.player.currentTrack.al.id === 0) return;
-      this.$router.push({ path: '/album/' + this.player.currentTrack.al.id });
-    },
-    goToArtist(id) {
-      this.$router.push({ path: '/artist/' + id });
-    },
-    moveToFMTrash() {
-      this.player.moveToFMTrash();
-    },
-    switchRepeatMode() {
-      this.player.switchRepeatMode();
-    },
-    switchShuffle() {
-      this.player.switchShuffle();
-    },
-    switchReversed() {
-      this.player.switchReversed();
-    },
-    mute() {
-      this.player.mute();
-    },
+    navigator.mediaSession.setActionHandler('pause', () => {
+      playOrPause();
+    });
+    navigator.mediaSession.setActionHandler('previoustrack', () => {
+      playPrevTrack();
+    });
+    navigator.mediaSession.setActionHandler('nexttrack', () => {
+      playNextTrack();
+    });
+  }
+}
 
-    setupMediaControls() {
-      if ('mediaSession' in navigator) {
-        navigator.mediaSession.setActionHandler('play', () => {
-          this.playOrPause();
-        });
-        navigator.mediaSession.setActionHandler('pause', () => {
-          this.playOrPause();
-        });
-        navigator.mediaSession.setActionHandler('previoustrack', () => {
-          this.playPrevTrack();
-        });
-        navigator.mediaSession.setActionHandler('nexttrack', () => {
-          this.playNextTrack();
-        });
-      }
-    },
+function handleKeydown(event) {
+  switch (event.code) {
+    case 'MediaPlayPause':
+      playOrPause();
+      break;
+    case 'MediaTrackPrevious':
+      playPrevTrack();
+      break;
+    case 'MediaTrackNext':
+      playNextTrack();
+      break;
+    default:
+      break;
+  }
+}
 
-    handleKeydown(event) {
-      switch (event.code) {
-        case 'MediaPlayPause':
-          this.playOrPause();
-          break;
-        case 'MediaTrackPrevious':
-          this.playPrevTrack();
-          break;
-        case 'MediaTrackNext':
-          this.playNextTrack();
-          break;
-        default:
-          break;
-      }
-    },
-  },
-};
+onMounted(function mounted() {
+  setupMediaControls();
+  window.addEventListener('keydown', handleKeydown);
+  offDesktopLyricsState = onDesktopLyricsStateChange(open => {
+    desktopLyricsActive.value = open;
+  });
+});
+
+onBeforeUnmount(function beforeUnmount() {
+  window.removeEventListener('keydown', handleKeydown);
+  offDesktopLyricsState?.();
+});
+
+defineExpose({ goToNextTracksPage });
 </script>
 
 <style lang="scss" scoped>

@@ -34,80 +34,83 @@
   </div>
 </template>
 
-<script>
-export default {
-  props: {
-    id: { type: Number, required: true },
-    type: { type: String, required: true },
-    imageUrl: { type: String, required: true },
-    fixedSize: { type: Number, default: 0 },
-    playButtonSize: { type: Number, default: 22 },
-    coverHover: { type: Boolean, default: true },
-    alwaysShowPlayButton: { type: Boolean, default: true },
-    alwaysShowShadow: { type: Boolean, default: false },
-    clickCoverToPlay: { type: Boolean, default: false },
-    clickCoverToPlayFun: { type: Function, default: undefined },
-    shadowMargin: { type: Number, default: 12 },
-    radius: { type: Number, default: 12 },
-  },
-  data() {
-    return {
-      focus: false,
-    };
-  },
-  computed: {
-    /**
-     * 本张封面正在装载音源。以前点击后 UI 完全静止，三跳串行要走一秒多，
-     * 用户只能以为没点上。按当前播放列表来源去重到具体那一张。
-     */
-    isPendingSource() {
-      const player = this.$store.state.player;
-      return player.loading && player.playlistSource?.id === this.id;
-    },
-    imageStyles() {
-      let styles = {};
-      if (this.fixedSize !== 0) {
-        styles.width = this.fixedSize + 'px';
-        styles.height = this.fixedSize + 'px';
-      }
-      if (this.type === 'artist') styles.borderRadius = '50%';
-      return styles;
-    },
-    playButtonStyles() {
-      let styles = {};
-      styles.width = this.playButtonSize + '%';
-      styles.height = this.playButtonSize + '%';
-      return styles;
-    },
-    shadowStyles() {
-      let styles = {};
-      styles.backgroundImage = `url(${this.imageUrl})`;
-      if (this.type === 'artist') styles.borderRadius = '50%';
-      return styles;
-    },
-  },
-  methods: {
-    play() {
-      // 重复点击由 _playResource 的 key 与 playlistSource 的 inflight 两道防线
-      // 挡住，这里不再做时间节流 —— 那会让正常的二次点击失效
-      const player = this.$store.state.player;
-      const playActions = {
-        album: player.playAlbumByID,
-        playlist: player.playPlaylistByID,
-        artist: player.playArtistByID,
-      };
-      const fn = playActions[this.type];
-      if (fn) fn.bind(player)(this.id);
-    },
-    goTo() {
-      this.$router.push({
-        name: this.type,
-        params: { id: this.id },
-        query: { server: this.$route.query.server },
-      });
-    },
-  },
-};
+<script setup lang="ts">
+const router = useRouter();
+const route = useRoute();
+
+import { ref, computed } from 'vue';
+import type { CSSProperties } from 'vue';
+import { usePlayerStore } from '@/stores/player';
+
+import { useRoute } from 'vue-router';
+import { useRouter } from 'vue-router';
+const playerStore = usePlayerStore();
+
+const props = defineProps({
+  id: { type: Number, required: true },
+  type: { type: String, required: true },
+  imageUrl: { type: String, required: true },
+  fixedSize: { type: Number, default: 0 },
+  playButtonSize: { type: Number, default: 22 },
+  coverHover: { type: Boolean, default: true },
+  alwaysShowPlayButton: { type: Boolean, default: true },
+  alwaysShowShadow: { type: Boolean, default: false },
+  clickCoverToPlay: { type: Boolean, default: false },
+  clickCoverToPlayFun: { type: Function, default: undefined },
+  shadowMargin: { type: Number, default: 12 },
+  radius: { type: Number, default: 12 },
+});
+
+const focus = ref<any>(false);
+
+const isPendingSource = computed(function isPendingSource() {
+  const player = playerStore.player;
+  return player.loading && player.playlistSource?.id === props.id;
+});
+
+const imageStyles = computed(function imageStyles() {
+  let styles: CSSProperties = {};
+  if (props.fixedSize !== 0) {
+    styles.width = props.fixedSize + 'px';
+    styles.height = props.fixedSize + 'px';
+  }
+  if (props.type === 'artist') styles.borderRadius = '50%';
+  return styles;
+});
+
+const playButtonStyles = computed(function playButtonStyles() {
+  let styles: CSSProperties = {};
+  styles.width = props.playButtonSize + '%';
+  styles.height = props.playButtonSize + '%';
+  return styles;
+});
+
+const shadowStyles = computed(function shadowStyles() {
+  let styles: CSSProperties = {};
+  styles.backgroundImage = `url(${props.imageUrl})`;
+  if (props.type === 'artist') styles.borderRadius = '50%';
+  return styles;
+});
+
+function play() {
+  // 重复点击由 _playResource key 与 playlistSource inflight 挡住，这里不做时间节流（会误伤正常二次点击）
+  const player = playerStore.player;
+  const playActions = {
+    album: player.playAlbumByID,
+    playlist: player.playPlaylistByID,
+    artist: player.playArtistByID,
+  };
+  const fn = playActions[props.type];
+  if (fn) fn.bind(player)(props.id);
+}
+
+function goTo() {
+  router.push({
+    name: props.type,
+    params: { id: props.id },
+    query: { server: route.query.server },
+  });
+}
 </script>
 
 <style lang="scss" scoped>
@@ -129,7 +132,6 @@ img {
 .cover-hover {
   &:hover {
     cursor: pointer;
-    /* transform: scale(1.02); */
   }
 }
 
@@ -207,7 +209,8 @@ img {
 .fade-leave-active {
   transition: opacity 0.3s;
 }
-.fade-enter, .fade-leave-to /* .fade-leave-active below version 2.1.8 */ {
+.fade-enter-from,
+.fade-leave-to {
   opacity: 0;
 }
 </style>

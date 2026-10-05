@@ -9,10 +9,10 @@
       <Win32Titlebar v-if="enableWin32Titlebar" />
       <LinuxTitlebar v-if="enableLinuxTitlebar" />
       <div class="navigation-buttons">
-        <button-icon @click.native="go('back')"
+        <button-icon @click="go('back')"
           ><svg-icon icon-class="arrow-left"
         /></button-icon>
-        <button-icon @click.native="go('forward')"
+        <button-icon @click="go('forward')"
           ><svg-icon icon-class="arrow-right"
         /></button-icon>
       </div>
@@ -41,7 +41,7 @@
             <a><svg-icon icon-class="search" /></a>
             <div class="input">
               <input
-                ref="searchInput"
+                ref="searchInputRef"
                 v-model="keywords"
                 type="search"
                 :placeholder="inputFocus ? '' : $t('nav.search')"
@@ -63,13 +63,13 @@
         />
       </div>
     </nav>
-    <ContextMenu ref="showSearchList">
+    <ContextMenu ref="showSearchListRef">
       <div class="item" @click="toCoSearch('tencent')">
         <svg-icon icon-class="settings" />
         其他搜索
       </div>
     </ContextMenu>
-    <ContextMenu ref="userProfileMenu">
+    <ContextMenu ref="userProfileMenuRef">
       <div class="item" @click="toSettings">
         <svg-icon icon-class="settings" />
         {{ $t('library.userProfileMenu.settings') }}
@@ -105,131 +105,151 @@
   </div>
 </template>
 
-<script>
-import { mapState } from 'vuex';
-import { isLooseLoggedIn, doLogout } from '@/utils/auth';
+<script setup lang="ts">
+const router = useRouter();
+const route = useRoute();
+
+import { isDesktop } from '@/platform/env';
+import { isLooseLoggedIn as isLooseLoggedInUtil, doLogout } from '@/utils/auth';
 import { COVER_FALLBACK } from '@/utils/imageFallback';
 
-// import icons for win32 title bar
-// icons by https://github.com/microsoft/vscode-codicons
-import 'vscode-codicons/dist/codicon.css';
-
-import Win32Titlebar from '@/components/Win32Titlebar.vue';
-import LinuxTitlebar from '@/components/LinuxTitlebar.vue';
+// 标题栏（含 codicon 字体 71KB）只在桌面端出现：defineAsyncComponent 按需拉取，web 构建不再无条件打包 codicon.css（见 Win32/LinuxTitlebar 内 import）
+const Win32Titlebar = defineAsyncComponent(
+  () => import('@/components/Win32Titlebar.vue')
+);
+const LinuxTitlebar = defineAsyncComponent(
+  () => import('@/components/LinuxTitlebar.vue')
+);
 import ContextMenu from '@/components/ContextMenu.vue';
 import ButtonIcon from '@/components/ButtonIcon.vue';
 import { changeAppearance } from '@/utils/common';
-export default {
-  name: 'Navbar',
-  components: {
-    Win32Titlebar,
-    LinuxTitlebar,
-    ButtonIcon,
-    ContextMenu,
-  },
-  data() {
-    return {
-      inputFocus: false,
-      langs: ['zh-CN', 'zh-TW', 'en', 'tr'],
-      keywords: '',
-      enableWin32Titlebar: false,
-      enableLinuxTitlebar: false,
-    };
-  },
-  computed: {
-    ...mapState(['settings', 'data']),
-    isLooseLoggedIn() {
-      return isLooseLoggedIn();
-    },
-    avatarUrl() {
-      return this.data?.user?.avatarUrl && this.isLooseLoggedIn
-        ? `${this.data?.user?.avatarUrl}?param=512y512`
-        : COVER_FALLBACK;
-    },
-    hasCustomTitlebar() {
-      return this.enableWin32Titlebar || this.enableLinuxTitlebar;
-    },
-  },
-  created() {
-    if (process.platform === 'win32') {
-      this.enableWin32Titlebar = true;
-    } else if (
-      process.platform === 'linux' &&
-      this.settings.linuxEnableCustomTitlebar
-    ) {
-      this.enableLinuxTitlebar = true;
-    }
-  },
-  methods: {
-    go(where) {
-      if (where === 'back') this.$router.go(-1);
-      else this.$router.go(1);
-    },
-    focusSearch() {
-      this.inputFocus = true;
-      this.$nextTick(() => this.$refs.searchInput.focus());
-    },
-    doSearch() {
-      if (!this.keywords) return;
-      this.$refs.searchInput.blur();
-      if (
-        this.$route.name === 'search' &&
-        this.$route.params.keywords === this.keywords
-      ) {
-        return;
-      }
-      this.$router.push({
-        name: 'search',
-        params: { keywords: this.keywords },
-      });
-    },
-    showUserProfileMenu(e) {
-      this.$refs.userProfileMenu.openMenu(e);
-    },
-    showSearchList(e) {
-      this.$refs.showSearchList.openMenu(e);
-    },
-    toCoSearch(item) {
-      this.$router.push({
-        name: 'coSearch',
-        query: { server: item, keywords: this.keywords },
-      });
-    },
-    logout() {
-      if (!confirm('确定要退出登录吗？')) return;
-      doLogout();
-      this.$router.push({ name: 'home' });
-    },
-    toSettings() {
-      this.$router.push({ name: 'settings' });
-    },
-    toAbout() {
-      this.$router.push({ name: 'about' });
-    },
-    toTheme() {
-      if (this.settings.appearance != 'dark') {
-        this.settings.appearance = 'dark';
-        changeAppearance('dark');
-      } else {
-        this.settings.appearance = 'light';
-        changeAppearance('light');
-      }
-    },
-    toGitHub() {
-      window.open('https://github.com/janxland/YesPlayMusic');
-    },
-    toIndex() {
-      window.open('https://www.roginx.ink');
-    },
-    toLogin() {
-      if (process.env.IS_ELECTRON === true) {
-        this.$router.push({ name: 'loginAccount' });
-      } else {
-        this.$router.push({ name: 'login' });
-      }
-    },
-  },
-};
+import {
+  ref,
+  computed,
+  nextTick,
+  defineAsyncComponent,
+  useTemplateRef,
+} from 'vue';
+import { useDataStore } from '@/stores/data';
+import { useSettingsStore } from '@/stores/settings';
+import { storeToRefs } from 'pinia';
+
+import { useRoute, useRouter } from 'vue-router';
+// 模板 ref 用 useTemplateRef：类型更准（searchInput 仍经 defineExpose 暴露，App.vue 里 navbarRef.searchInput.focus() 的自动解包行为不变）
+const showSearchListRef =
+  useTemplateRef<InstanceType<typeof ContextMenu>>('showSearchListRef');
+const userProfileMenuRef =
+  useTemplateRef<InstanceType<typeof ContextMenu>>('userProfileMenuRef');
+const searchInputRef = useTemplateRef<HTMLInputElement>('searchInputRef');
+
+const settingsStore = useSettingsStore();
+const { settings } = storeToRefs(settingsStore);
+const { data } = storeToRefs(useDataStore());
+
+const inputFocus = ref<any>(false);
+
+const keywords = ref<any>('');
+
+const enableWin32Titlebar = ref<any>(false);
+
+const enableLinuxTitlebar = ref<any>(false);
+
+const isLooseLoggedIn = computed(() => isLooseLoggedInUtil());
+
+const avatarUrl = computed(function avatarUrl() {
+  return data.value?.user?.avatarUrl && isLooseLoggedIn.value
+    ? `${data.value?.user?.avatarUrl}?param=512y512`
+    : COVER_FALLBACK;
+});
+
+const hasCustomTitlebar = computed(function hasCustomTitlebar() {
+  return enableWin32Titlebar.value || enableLinuxTitlebar.value;
+});
+
+function go(where) {
+  if (where === 'back') router.go(-1);
+  else router.go(1);
+}
+
+function focusSearch() {
+  inputFocus.value = true;
+  nextTick(() => searchInputRef.value.focus());
+}
+
+function doSearch() {
+  if (!keywords.value) return;
+  searchInputRef.value.blur();
+  if (route.name === 'search' && route.params.keywords === keywords.value) {
+    return;
+  }
+  router.push({
+    name: 'search',
+    params: { keywords: keywords.value },
+  });
+}
+
+function showUserProfileMenu(e) {
+  userProfileMenuRef.value.openMenu(e);
+}
+
+function showSearchList(e) {
+  showSearchListRef.value.openMenu(e);
+}
+
+function toCoSearch(item) {
+  router.push({
+    name: 'coSearch',
+    query: { server: item, keywords: keywords.value },
+  });
+}
+
+function logout() {
+  if (!confirm('确定要退出登录吗？')) return;
+  doLogout();
+  router.push({ name: 'home' });
+}
+
+function toSettings() {
+  router.push({ name: 'settings' });
+}
+
+function toAbout() {
+  router.push({ name: 'about' });
+}
+
+function toTheme() {
+  // 直写 state 会绕过 updateSettings 内的桌面端 IPC 推送（托盘/OSD 收不到主题变更）
+  const next = settings.value.appearance != 'dark' ? 'dark' : 'light';
+  settingsStore.updateSettings({ key: 'appearance', value: next });
+  changeAppearance(next);
+}
+
+function toGitHub() {
+  window.open('https://github.com/janxland/YesPlayMusic');
+}
+
+function toIndex() {
+  window.open('https://www.roginx.ink');
+}
+
+function toLogin() {
+  if (isDesktop()) {
+    router.push({ name: 'loginAccount' });
+  } else {
+    router.push({ name: 'login' });
+  }
+}
+
+if (process.platform === 'win32') {
+  enableWin32Titlebar.value = true;
+} else if (
+  process.platform === 'linux' &&
+  settings.value.linuxEnableCustomTitlebar
+) {
+  enableLinuxTitlebar.value = true;
+}
+
+defineExpose({ go, inputFocus, searchInput: searchInputRef });
 </script>
 
 <style lang="scss" scoped>

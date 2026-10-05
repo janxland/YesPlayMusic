@@ -137,11 +137,14 @@
   </div>
 </template>
 
-<script>
+<script setup lang="ts">
+const router = useRouter();
+const route = useRoute();
+
+import { isDesktop } from '@/platform/env';
 import QRCode from 'qrcode';
 import md5 from 'crypto-js/md5';
 import NProgress from 'nprogress';
-import { mapMutations } from 'vuex';
 import {
   setCookies,
   parseCookieJar,
@@ -159,261 +162,281 @@ import {
   loginQrCodeKey,
   loginQrCodeCheck,
 } from '@/api/auth';
+import { ref, computed, onBeforeUnmount } from 'vue';
+import { useDataStore, useLikedStore, useUiStore } from '@/stores';
 
-export default {
-  name: 'Login',
-  data() {
-    return {
-      processing: false,
-      mode: 'qrCode',
-      countryCode: '+86',
-      phoneNumber: '',
-      email: '',
-      password: '',
-      smsCode: '',
-      inputFocus: '',
-      qrCodeKey: '',
-      qrCodeSvg: '',
-      qrCodeCheckInterval: null,
-      qrCodeInformation: '打开网易云音乐APP扫码登录',
-      cookieInput: '',
-    };
-  },
-  computed: {
-    isElectron() {
-      return process.env.IS_ELECTRON;
-    },
-  },
-  created() {
-    if (['phone', 'email', 'qrCode'].includes(this.$route.query.mode)) {
-      this.mode = this.$route.query.mode;
-    }
-    this.getQrCodeKey();
-  },
-  beforeDestroy() {
-    clearInterval(this.qrCodeCheckInterval);
-  },
-  methods: {
-    ...mapMutations(['updateData']),
-    validatePhone() {
-      if (
-        this.countryCode === '' ||
-        this.phone === '' ||
-        this.password === ''
-      ) {
-        nativeAlert('国家区号或手机号不正确');
-        this.processing = false;
-        return false;
-      }
-      return true;
-    },
-    validateEmail() {
-      const emailReg =
-        /^(([^<>()[\]\\.,;:\s@"]+(\.[^<>()[\]\\.,;:\s@"]+)*)|(".+"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/;
-      if (
-        this.email === '' ||
-        this.password === '' ||
-        !emailReg.test(this.email)
-      ) {
-        nativeAlert('邮箱不正确');
-        return false;
-      }
-      return true;
-    },
-    // 扫码与密码登录均已被网易云风控拦截，Cookie 导入是当前唯一可行的登录路径。
-    // 写入后必须真实回源校验，否则会留下「看似登录、实则取不到数据」的假态。
-    loginWithCookie() {
-      const jar = parseCookieJar(this.cookieInput);
-      if (!jar.MUSIC_U) {
-        nativeAlert('未识别到 MUSIC_U，请粘贴完整 Cookie 或 MUSIC_U 的值');
-        return;
-      }
+import { useRoute, useRouter } from 'vue-router';
+const dataStore = useDataStore();
+const likedStore = useLikedStore();
+const uiStore = useUiStore();
 
-      this.processing = true;
-      // 先备份再写入：校验失败回滚原会话（旧实现坏 Cookie 会把已登录账号踢下线）
-      const prev = {
-        MUSIC_U: getCookie('MUSIC_U'),
-        __csrf: getCookie('__csrf'),
-      };
-      const prevMode = this.$store.state.data.loginMode;
-      writeCookieJar(jar);
-      this.updateData({ key: 'loginMode', value: 'account' });
+const updateData = dataStore.updateData;
 
-      userAccount()
-        .then(result => {
-          if (result.code !== 200 || !result.profile) {
-            throw new Error(
-              result.message ?? result.msg ?? `接口返回 code=${result.code}`
-            );
-          }
-          this.updateData({ key: 'user', value: result.profile });
-          // 机会性同步：把凭据交给后端供首页取歌使用；失败不影响播放器登录闭环
-          this.syncCredential(cookieHeaderOf(jar));
-          return this.$store.dispatch('fetchLikedPlaylist');
-        })
-        .then(() => {
-          this.$router.push({ path: '/library' });
-        })
-        .catch(error => {
-          this.processing = false;
-          Object.keys(jar).forEach(name => removeCookie(name));
-          if (prev.MUSIC_U) {
-            writeCookieJar(prev.__csrf ? prev : { MUSIC_U: prev.MUSIC_U });
-            this.updateData({ key: 'loginMode', value: prevMode });
-          } else {
-            doLogout();
-          }
-          nativeAlert(`Cookie 无效或已过期\n${error.message ?? error}`);
-        });
-    },
-    syncCredential(cookie) {
-      fetch('/api/netease/credential', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cookie }),
-      }).catch(() => {
-        // 同步是机会性的：失败时播放器登录态仍然有效
-      });
-    },
-    login() {
-      if (this.mode === 'cookie') {
-        this.loginWithCookie();
-        return;
-      }
-      if (this.mode === 'phone') {
-        this.processing = this.validatePhone();
-        if (!this.processing) return;
-        loginWithPhone({
-          countrycode: this.countryCode.replace('+', '').replace(/\s/g, ''),
-          phone: this.phoneNumber.replace(/\s/g, ''),
-          password: 'fakePassword',
-          md5_password: md5(this.password).toString(),
-        })
-          .then(this.handleLoginResponse)
-          .catch(error => {
-            this.processing = false;
-            nativeAlert(`发生错误，请检查你的账号密码是否正确\n${error}`);
-          });
-      } else {
-        this.processing = this.validateEmail();
-        if (!this.processing) return;
-        loginWithEmail({
-          email: this.email.replace(/\s/g, ''),
-          password: 'fakePassword',
-          md5_password: md5(this.password).toString(),
-        })
-          .then(this.handleLoginResponse)
-          .catch(error => {
-            this.processing = false;
-            nativeAlert(`发生错误，请检查你的账号密码是否正确\n${error}`);
-          });
-      }
-    },
-    handleLoginResponse(data) {
-      if (!data) {
-        this.processing = false;
-        return;
-      }
-      if (data.code === 200) {
-        setCookies(data.cookie);
+const processing = ref<any>(false);
 
-        this.updateData({ key: 'loginMode', value: 'account' });
-        this.$store.dispatch('fetchUserProfile').then(() => {
-          this.$store.dispatch('fetchLikedPlaylist').then(() => {
-            this.$router.push({ path: '/library' });
-          });
-        });
-      } else {
-        this.processing = false;
-        nativeAlert(data.msg ?? data.message ?? '账号或密码错误，请检查');
-      }
-    },
-    getQrCodeKey() {
-      // 双参 then：失败处理不额外套一层 catch 链，成功路径不必整体缩进
-      return loginQrCodeKey().then(
-        result => {
-          if (result.code === 200) {
-            this.qrCodeKey = result.data.unikey;
-            QRCode.toString(
-              `https://music.163.com/login?codekey=${this.qrCodeKey}`,
-              {
-                width: 192,
-                margin: 0,
-                color: {
-                  dark: '#335eea',
-                  light: '#00000000',
-                },
-                type: 'svg',
-              }
-            )
-              .then(svg => {
-                this.qrCodeSvg = `data:image/svg+xml;utf8,${encodeURIComponent(
-                  svg
-                )}`;
-              })
-              .catch(err => {
-                console.error(err);
-              })
-              .finally(() => {
-                NProgress.done();
-              });
-          }
-          this.checkQrCodeLogin();
-        },
-        err => {
-          console.warn('[login] getQrCodeKey failed:', err?.message ?? err);
-          NProgress.done();
-        }
-      );
-    },
-    checkQrCodeLogin() {
-      // 清除二维码检测
-      clearInterval(this.qrCodeCheckInterval);
-      this.qrCodeCheckInterval = setInterval(() => {
-        if (this.qrCodeKey === '') return;
-        loginQrCodeCheck(this.qrCodeKey).then(
-          result => {
-            // 8821：网易云扫码通道已被风控全面拦截，继续轮询只会让新人
-            // 对着死二维码干等 —— 停轮询并自动改道 Cookie 导入
-            if (result.code === 8821) {
-              clearInterval(this.qrCodeCheckInterval);
-              this.changeMode('cookie');
-              this.$store.dispatch(
-                'showToast',
-                '扫码登录已被网易云风控拦截，请改用 Cookie 导入'
-              );
-            } else if (result.code === 800) {
-              this.getQrCodeKey(); // 重新生成QrCode
-              this.qrCodeInformation = '二维码已失效，请重新扫码';
-            } else if (result.code === 802) {
-              this.qrCodeInformation = '扫描成功，请在手机上确认登录';
-            } else if (result.code === 801) {
-              this.qrCodeInformation = '打开网易云音乐APP扫码登录';
-            } else if (result.code === 803) {
-              clearInterval(this.qrCodeCheckInterval);
-              this.qrCodeInformation = '登录成功，请稍等...';
-              result.code = 200;
-              result.cookie = result.cookie.replace('HTTPOnly', '');
-              this.handleLoginResponse(result);
-            }
-          },
-          // interval 内无兜底时一次网络抖动就是一个未捕获 rejection；
-          // 静默降级，下一秒自动重试
-          err =>
-            console.warn('[login] qrCode check failed:', err?.message ?? err)
+const mode = ref<any>('qrCode');
+
+const countryCode = ref<any>('+86');
+
+const phoneNumber = ref<any>('');
+
+const email = ref<any>('');
+
+const password = ref<any>('');
+
+const smsCode = ref<any>('');
+
+const inputFocus = ref<any>('');
+
+const qrCodeKey = ref<any>('');
+
+const qrCodeSvg = ref<any>('');
+
+// 二维码轮询定时器句柄（非响应式）：同 lyrics.vue 的 _clockTimer 一样
+// 用普通变量，避免无意义的响应式开销；onBeforeUnmount 统一清理
+let _qrCodeCheckInterval: ReturnType<typeof setInterval> | null = null;
+
+const qrCodeInformation = ref<any>('打开网易云音乐APP扫码登录');
+
+const cookieInput = ref<any>('');
+
+const isElectron = computed(function isElectron() {
+  return isDesktop();
+});
+
+function validatePhone() {
+  if (
+    countryCode.value === '' ||
+    phoneNumber.value === '' || // 修复原版 this.phone 恒 undefined 导致手机号空值校验失效
+    password.value === ''
+  ) {
+    nativeAlert('国家区号或手机号不正确');
+    processing.value = false;
+    return false;
+  }
+  return true;
+}
+
+function validateEmail() {
+  const emailReg =
+    /^(([^<>()[\]\\.,;:\s@"]+(\.[^<>()[\]\\.,;:\s@"]+)*)|(".+"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/;
+  if (
+    email.value === '' ||
+    password.value === '' ||
+    !emailReg.test(email.value)
+  ) {
+    nativeAlert('邮箱不正确');
+    return false;
+  }
+  return true;
+}
+
+function loginWithCookie() {
+  const jar = parseCookieJar(cookieInput.value);
+  if (!jar.MUSIC_U) {
+    nativeAlert('未识别到 MUSIC_U，请粘贴完整 Cookie 或 MUSIC_U 的值');
+    return;
+  }
+
+  processing.value = true;
+  // 先备份再写入：校验失败回滚原会话（旧实现坏 Cookie 会把已登录账号踢下线）
+  const prev = {
+    MUSIC_U: getCookie('MUSIC_U'),
+    __csrf: getCookie('__csrf'),
+  };
+  const prevMode = dataStore.data.loginMode;
+  writeCookieJar(jar);
+  updateData({ key: 'loginMode', value: 'account' });
+
+  userAccount()
+    .then(result => {
+      if (result.code !== 200 || !result.profile) {
+        throw new Error(
+          result.message ?? result.msg ?? `接口返回 code=${result.code}`
         );
-      }, 1000);
-    },
-    changeMode(mode) {
-      this.mode = mode;
-      if (mode === 'qrCode') {
-        this.checkQrCodeLogin();
-      } else {
-        clearInterval(this.qrCodeCheckInterval);
       }
+      updateData({ key: 'user', value: result.profile });
+      // 机会性同步：把凭据交给后端供首页取歌使用；失败不影响播放器登录闭环
+      syncCredential(cookieHeaderOf(jar));
+      return likedStore.fetchLikedPlaylist();
+    })
+    .then(() => {
+      router.push({ path: '/library' });
+    })
+    .catch(error => {
+      processing.value = false;
+      Object.keys(jar).forEach(name => removeCookie(name));
+      if (prev.MUSIC_U) {
+        writeCookieJar(prev.__csrf ? prev : { MUSIC_U: prev.MUSIC_U });
+        updateData({ key: 'loginMode', value: prevMode });
+      } else {
+        doLogout();
+      }
+      nativeAlert(`Cookie 无效或已过期\n${error.message ?? error}`);
+    });
+}
+
+function syncCredential(cookie) {
+  fetch('/api/netease/credential', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ cookie }),
+  }).catch(() => {
+    // 同步是机会性的：失败时播放器登录态仍然有效
+  });
+}
+
+function login() {
+  if (mode.value === 'cookie') {
+    loginWithCookie();
+    return;
+  }
+  if (mode.value === 'phone') {
+    processing.value = validatePhone();
+    if (!processing.value) return;
+    loginWithPhone({
+      countrycode: countryCode.value.replace('+', '').replace(/\s/g, ''),
+      phone: phoneNumber.value.replace(/\s/g, ''),
+      password: 'fakePassword',
+      md5_password: md5(password.value).toString(),
+    })
+      .then(handleLoginResponse)
+      .catch(error => {
+        processing.value = false;
+        nativeAlert(`发生错误，请检查你的账号密码是否正确\n${error}`);
+      });
+  } else {
+    processing.value = validateEmail();
+    if (!processing.value) return;
+    loginWithEmail({
+      email: email.value.replace(/\s/g, ''),
+      password: 'fakePassword',
+      md5_password: md5(password.value).toString(),
+    })
+      .then(handleLoginResponse)
+      .catch(error => {
+        processing.value = false;
+        nativeAlert(`发生错误，请检查你的账号密码是否正确\n${error}`);
+      });
+  }
+}
+
+function handleLoginResponse(data) {
+  if (!data) {
+    processing.value = false;
+    return;
+  }
+  if (data.code === 200) {
+    setCookies(data.cookie);
+
+    updateData({ key: 'loginMode', value: 'account' });
+    dataStore.fetchUserProfile().then(() => {
+      likedStore.fetchLikedPlaylist().then(() => {
+        router.push({ path: '/library' });
+      });
+    });
+  } else {
+    processing.value = false;
+    nativeAlert(data.msg ?? data.message ?? '账号或密码错误，请检查');
+  }
+}
+
+function getQrCodeKey() {
+  // 双参 then：失败处理不额外套一层 catch 链，成功路径不必整体缩进
+  return loginQrCodeKey().then(
+    result => {
+      if (result.code === 200) {
+        qrCodeKey.value = result.data.unikey;
+        QRCode.toString(
+          `https://music.163.com/login?codekey=${qrCodeKey.value}`,
+          {
+            width: 192,
+            margin: 0,
+            color: {
+              dark: '#335eea',
+              light: '#00000000',
+            },
+            type: 'svg',
+          }
+        )
+          .then(svg => {
+            qrCodeSvg.value = `data:image/svg+xml;utf8,${encodeURIComponent(
+              svg
+            )}`;
+          })
+          .catch(err => {
+            console.error(err);
+          })
+          .finally(() => {
+            NProgress.done();
+          });
+      }
+      checkQrCodeLogin();
     },
-  },
-};
+    err => {
+      console.warn('[login] getQrCodeKey failed:', err?.message ?? err);
+      NProgress.done();
+    }
+  );
+}
+
+function checkQrCodeLogin() {
+  // 清除二维码检测
+  clearInterval(_qrCodeCheckInterval);
+  _qrCodeCheckInterval = setInterval(() => {
+    if (qrCodeKey.value === '') return;
+    loginQrCodeCheck(qrCodeKey.value).then(
+      result => {
+        // 8821：网易云扫码通道已被风控全面拦截，继续轮询只会让新人
+        // 对着死二维码干等 —— 停轮询并自动改道 Cookie 导入
+        if (result.code === 8821) {
+          clearInterval(_qrCodeCheckInterval);
+          changeMode('cookie');
+          uiStore.showToast('扫码登录已被网易云风控拦截，请改用 Cookie 导入');
+        } else if (result.code === 800) {
+          getQrCodeKey(); // 重新生成QrCode
+          qrCodeInformation.value = '二维码已失效，请重新扫码';
+        } else if (result.code === 802) {
+          qrCodeInformation.value = '扫描成功，请在手机上确认登录';
+        } else if (result.code === 801) {
+          qrCodeInformation.value = '打开网易云音乐APP扫码登录';
+        } else if (result.code === 803) {
+          clearInterval(_qrCodeCheckInterval);
+          qrCodeInformation.value = '登录成功，请稍等...';
+          result.code = 200;
+          result.cookie = result.cookie.replace('HTTPOnly', '');
+          handleLoginResponse(result);
+        }
+      },
+      // interval 内无兜底时一次网络抖动就是一个未捕获 rejection；
+      // 静默降级，下一秒自动重试
+      err => console.warn('[login] qrCode check failed:', err?.message ?? err)
+    );
+  }, 1000);
+}
+
+function changeMode(targetMode) {
+  // 参数改名 targetMode：原迁移版被同名 ref 遮蔽，mode.value = mode 自赋值，切换登录方式失效
+  mode.value = targetMode;
+  if (targetMode === 'qrCode') {
+    checkQrCodeLogin();
+  } else {
+    clearInterval(_qrCodeCheckInterval);
+  }
+}
+
+// 路由 query 是 string | string[]，单值语义，取首元素收窄
+const queryMode = Array.isArray(route.query.mode)
+  ? route.query.mode[0]
+  : route.query.mode;
+if (['phone', 'email', 'qrCode'].includes(queryMode)) {
+  mode.value = queryMode;
+}
+getQrCodeKey();
+
+onBeforeUnmount(function beforeUnmount() {
+  clearInterval(_qrCodeCheckInterval);
+});
 </script>
 
 <style lang="scss" scoped>

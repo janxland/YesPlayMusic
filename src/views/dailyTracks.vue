@@ -13,46 +13,38 @@
   </div>
 </template>
 
-<script>
-import { mapMutations, mapState } from 'vuex';
+<script setup lang="ts">
 import { loadWithProgress } from '@/utils/pageLoad';
 import { dailyRecommendTracks } from '@/api/playlist';
-
 import TrackList from '@/components/TrackList.vue';
+import { ref } from 'vue';
+import { useUiStore } from '@/stores';
+import { storeToRefs } from 'pinia';
+import { useAppScroll } from '@/composables/useAppScroll';
 
-export default {
-  name: 'DailyTracks',
-  components: {
-    TrackList,
-  },
-  data() {
-    return {
-      show: false,
-    };
-  },
-  computed: {
-    ...mapState(['player', 'data', 'dailyTracks']),
-  },
-  created() {
-    if (this.dailyTracks.length === 0) {
-      this.loadDailyTracks();
-    } else {
-      this.show = true;
-    }
-    this.$parent.$refs.main.scrollTo(0, 0);
-  },
-  methods: {
-    ...mapMutations(['updateDailyTracks']),
-    loadDailyTracks() {
-      loadWithProgress(
-        dailyRecommendTracks().then(result => {
-          this.updateDailyTracks(result.data.dailySongs);
-          this.show = true;
-        })
-      );
-    },
-  },
-};
+const uiStore = useUiStore();
+
+const { dailyTracks } = storeToRefs(uiStore);
+
+const updateDailyTracks = uiStore.updateDailyTracks;
+
+const show = ref<any>(false);
+
+function loadDailyTracks() {
+  loadWithProgress(
+    dailyRecommendTracks().then(result => {
+      updateDailyTracks(result.data.dailySongs);
+      show.value = true;
+    })
+  );
+}
+
+if (dailyTracks.value.length === 0) {
+  loadDailyTracks();
+} else {
+  show.value = true;
+}
+useAppScroll().scrollTo(0, 0);
 </script>
 
 <style lang="scss" scoped>
@@ -93,11 +85,6 @@ export default {
     animation-name: letterSpacing4;
     -webkit-text-fill-color: transparent;
     background-clip: text;
-    // background-image: linear-gradient(
-    //   225deg,
-    //   var(--color-primary),
-    //   var(--color-primary)
-    // );
 
     img {
       height: 78px;

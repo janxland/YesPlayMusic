@@ -150,7 +150,6 @@
           </select>
         </div>
       </div>
-      <!-- <h3>音质</h3> -->
       <div class="item">
         <div class="left">
           <div class="title"> {{ $t('settings.musicQuality.text') }} </div>
@@ -571,109 +570,28 @@
         </div>
       </div>
 
-      <div v-if="isElectron && isLinux" class="item">
-        <div class="left">
-          <div class="title"> {{ $t('settings.enableCustomTitlebar') }} </div>
-        </div>
-        <div class="right">
-          <div class="toggle">
-            <input
-              id="enable-custom-titlebar"
-              v-model="enableCustomTitlebar"
-              type="checkbox"
-              name="enable-custom-titlebar"
-            />
-            <label for="enable-custom-titlebar"></label>
+      <!-- 「其他」分组 6 个开关项配置驱动渲染：DOM 结构与原逐项手写标记逐 attr 对齐，仅收敛样板，顺序与显示条件不变 -->
+      <template v-for="toggle in otherToggles" :key="toggle.id">
+        <div v-if="toggle.show ? toggle.show() : true" class="item">
+          <div class="left">
+            <div class="title" :style="toggle.titleStyle">
+              {{ toggle.titleKey ? $t(toggle.titleKey) : toggle.title }}
+            </div>
+          </div>
+          <div class="right">
+            <div class="toggle">
+              <input
+                :id="toggle.id"
+                :checked="toggle.model.value"
+                type="checkbox"
+                :name="toggle.id"
+                @change="setToggle(toggle, $event)"
+              />
+              <label :for="toggle.id"></label>
+            </div>
           </div>
         </div>
-      </div>
-
-      <div v-if="isElectron" class="item">
-        <div class="left">
-          <div class="title"> {{ $t('settings.showLibraryDefault') }}</div>
-        </div>
-        <div class="right">
-          <div class="toggle">
-            <input
-              id="show-library-default"
-              v-model="showLibraryDefault"
-              type="checkbox"
-              name="show-library-default"
-            />
-            <label for="show-library-default"></label>
-          </div>
-        </div>
-      </div>
-
-      <div class="item">
-        <div class="left">
-          <div class="title">
-            {{ $t('settings.showPlaylistsByAppleMusic') }}</div
-          >
-        </div>
-        <div class="right">
-          <div class="toggle">
-            <input
-              id="show-playlists-by-apple-music"
-              v-model="showPlaylistsByAppleMusic"
-              type="checkbox"
-              name="show-playlists-by-apple-music"
-            />
-            <label for="show-playlists-by-apple-music"></label>
-          </div>
-        </div>
-      </div>
-
-      <div class="item">
-        <div class="left">
-          <div class="title">{{ $t('settings.subTitleDefault') }}</div>
-        </div>
-        <div class="right">
-          <div class="toggle">
-            <input
-              id="sub-title-default"
-              v-model="subTitleDefault"
-              type="checkbox"
-              name="sub-title-default"
-            />
-            <label for="sub-title-default"></label>
-          </div>
-        </div>
-      </div>
-
-      <div class="item">
-        <div class="left">
-          <div class="title">{{ $t('settings.enableReversedMode') }}</div>
-        </div>
-        <div class="right">
-          <div class="toggle">
-            <input
-              id="enable-reversed-mode"
-              v-model="enableReversedMode"
-              type="checkbox"
-              name="enable-reversed-mode"
-            />
-            <label for="enable-reversed-mode"></label>
-          </div>
-        </div>
-      </div>
-
-      <div class="item">
-        <div class="left">
-          <div class="title" style="transform: scaleX(-1)">🐈️ 🏳️‍🌈</div>
-        </div>
-        <div class="right">
-          <div class="toggle">
-            <input
-              id="nyancat-style"
-              v-model="nyancatStyle"
-              type="checkbox"
-              name="nyancat-style"
-            />
-            <label for="nyancat-style"></label>
-          </div>
-        </div>
-      </div>
+      </template>
 
       <div v-if="isElectron">
         <h3>代理</h3>
@@ -686,7 +604,6 @@
               <option value="noProxy"> 关闭代理 </option>
               <option value="HTTP"> HTTP 代理 </option>
               <option value="HTTPS"> HTTPS 代理 </option>
-              <!-- <option value="SOCKS"> SOCKS 代理 </option> -->
             </select>
           </div>
         </div>
@@ -823,9 +740,12 @@
   </div>
 </template>
 
-<script>
-/* eslint-disable */
-import { mapState, mapActions } from 'vuex';
+<script setup lang="ts">
+const router = useRouter();
+
+let _lastfmChecker = null;
+
+import { player as playerInstance } from '@/player/singleton';
 import { isLooseLoggedIn, doLogout } from '@/utils/auth';
 import { auth as lastfmAuth } from '@/api/lastfm';
 import {
@@ -833,733 +753,669 @@ import {
   changeThemeColor,
   bytesToSize,
 } from '@/utils/common';
-import { countDBSize, clearDB } from '@/utils/db';
+import { countDBSize as countDBSizeUtil, clearDB } from '@/utils/db';
+import { ipcBridge } from '@/platform/bridge';
+import { isDesktop } from '@/platform/env';
+import { changeI18nLocale } from '@/locale';
+import {
+  ref,
+  computed,
+  onBeforeUnmount,
+  onActivated,
+  onMounted,
+  onDeactivated,
+} from 'vue';
+import {
+  useDataStore,
+  usePlayerStore,
+  useSettingsStore,
+  useUiStore,
+} from '@/stores';
+import { storeToRefs } from 'pinia';
 
-const electron =
-  process.env.IS_ELECTRON === true ? window.require('electron') : null;
-const ipcRenderer =
-  process.env.IS_ELECTRON === true ? electron.ipcRenderer : null;
+import { useRouter } from 'vue-router';
 
 const validShortcutCodes = ['=', '-', '~', '[', ']', ';', "'", ',', '.', '/'];
 
-export default {
-  name: 'Settings',
-  data() {
-    return {
-      tracksCache: {
-        size: '0KB',
-        length: 0,
-      },
-      allOutputDevices: [
+const settingsStore = useSettingsStore();
+const dataStore = useDataStore();
+const playerStore = usePlayerStore();
+const uiStore = useUiStore();
+
+const { settings } = storeToRefs(settingsStore);
+const { data, lastfm } = storeToRefs(dataStore);
+const { player } = storeToRefs(playerStore);
+
+const showToast = uiStore.showToast;
+
+// settingComputed 工厂：给 25 个纯「读 settings[key] + 写回 updateSettings」的开关/下拉用，替代各 8~10 行 get/set 样板
+// merge 'nullish' 对齐旧 ?? / 显式 undefined 判断，'or' 对齐旧 ||（falsy 归默认值）；带副作用的设置项不适用，保持手写
+function settingComputed(
+  key: string,
+  options: {
+    fallback?: any;
+    merge?: 'or' | 'nullish';
+    setTransform?: (v: any) => any;
+  } = {}
+) {
+  const { fallback = undefined, merge = 'nullish', setTransform } = options;
+  return computed({
+    get() {
+      const value = settings.value[key];
+      if (merge === 'or') return value || fallback;
+      if (fallback === undefined) return value;
+      return value === undefined ? fallback : value;
+    },
+    set(value) {
+      settingsStore.updateSettings({
+        key,
+        value: setTransform ? setTransform(value) : value,
+      });
+    },
+  });
+}
+
+const tracksCache = ref<any>({
+  size: '0KB',
+  length: 0,
+});
+
+const allOutputDevices = ref<any>([
+  {
+    deviceId: 'default',
+    label: 'settings.permissionRequired',
+  },
+]);
+
+const shortcutInput = ref<any>({
+  id: '',
+  type: '',
+  recording: false,
+});
+
+const recordedShortcut = ref<any>([]);
+
+const fonts = computed(function fonts() {
+  return uiStore.fonts;
+});
+
+const isElectron = computed(function isElectron() {
+  return isDesktop();
+});
+
+const isMac = computed(function isMac() {
+  return /macintosh|mac os x/i.test(navigator.userAgent);
+});
+
+const isLinux = computed(function isLinux() {
+  return process.platform === 'linux';
+});
+
+const showUserInfo = computed(function showUserInfo() {
+  return isLooseLoggedIn() && data.value.user.nickname;
+});
+
+const recordedShortcutComputed = computed(function recordedShortcutComputed() {
+  let shortcut: string[] = [];
+  recordedShortcut.value.map(e => {
+    if (e.keyCode >= 65 && e.keyCode <= 90) {
+      // A-Z
+      shortcut.push(e.code.replace('Key', ''));
+    } else if (e.key === 'Meta') {
+      // ⌘ Command on macOS
+      shortcut.push('Command');
+    } else if (['Alt', 'Control', 'Shift'].includes(e.key)) {
+      shortcut.push(e.key);
+    } else if (e.keyCode >= 48 && e.keyCode <= 57) {
+      // 0-9
+      shortcut.push(e.code.replace('Digit', ''));
+    } else if (e.keyCode >= 112 && e.keyCode <= 123) {
+      // F1-F12
+      shortcut.push(e.code);
+    } else if (
+      ['ArrowRight', 'ArrowLeft', 'ArrowUp', 'ArrowDown'].includes(e.key)
+    ) {
+      // Arrows
+      shortcut.push(e.code.replace('Arrow', ''));
+    } else if (validShortcutCodes.includes(e.key)) {
+      shortcut.push(e.key);
+    }
+  });
+  const sortTable = {
+    Control: 1,
+    Shift: 2,
+    Alt: 3,
+    Command: 4,
+  };
+  shortcut = shortcut.sort((a, b) => {
+    if (!sortTable[a] || !sortTable[b]) return 0;
+    if (sortTable[a] - sortTable[b] <= -1) {
+      return -1;
+    } else if (sortTable[a] - sortTable[b] >= 1) {
+      return 1;
+    } else {
+      return 0;
+    }
+  });
+  return shortcut.join('+');
+});
+
+const lang = computed({
+  get() {
+    return settings.value.lang;
+  },
+  set(lang) {
+    // 语言包按需加载：目标语言未装载时先动态拉取再切换（见 src/locale/index.ts）
+    changeI18nLocale(lang);
+    settingsStore.changeLang(lang);
+  },
+});
+
+const musicLanguage = settingComputed('musicLanguage', { fallback: 'all' });
+
+const appearance = computed({
+  get() {
+    if (settings.value.appearance === undefined) return 'auto';
+    return settings.value.appearance;
+  },
+  set(value) {
+    settingsStore.updateSettings({
+      key: 'appearance',
+      value,
+    });
+    changeAppearance(value);
+    const resolvedAppearance =
+      value === 'auto'
+        ? document.body?.getAttribute('data-theme') || 'light'
+        : value;
+    changeThemeColor(themeColor.value, resolvedAppearance);
+  },
+});
+
+const themeColor = computed({
+  get() {
+    if (settings.value.themeColor === undefined) return 'default';
+    return settings.value.themeColor;
+  },
+  set(value) {
+    settingsStore.updateSettings({
+      key: 'themeColor',
+      value,
+    });
+    const resolvedAppearance =
+      settings.value.appearance === 'auto'
+        ? document.body?.getAttribute('data-theme') || 'light'
+        : settings.value.appearance;
+    changeThemeColor(value, resolvedAppearance);
+  },
+});
+
+const imageLoadEffect = settingComputed('imageLoadEffect', {
+  fallback: 'blur',
+});
+
+const fontFamilyName = computed({
+  get() {
+    return settings.value.fontFamilyName ?? '思源黑体中文';
+  },
+  set(value) {
+    if (value === settings.value.fontFamilyName) return;
+    localStorage.setItem('fontFamilyName', value);
+    settingsStore.changefontFamilyName(value);
+    clearCache();
+  },
+});
+
+const trayIconTheme = computed({
+  get() {
+    if (settings.value.trayIconTheme === undefined) return 'auto';
+    return settings.value.trayIconTheme;
+  },
+  set(value) {
+    settingsStore.updateSettings({
+      key: 'trayIconTheme',
+      value,
+    });
+    if (isElectron.value) {
+      ipcBridge.send('updateTrayIcon', value);
+    }
+  },
+});
+
+const musicQuality = computed({
+  get() {
+    return settings.value.musicQuality ?? 320000;
+  },
+  set(value) {
+    if (value === settings.value.musicQuality) return;
+    settingsStore.changeMusicQuality(value);
+    clearCache();
+  },
+});
+
+const lyricFontSize = computed({
+  get() {
+    if (settings.value.lyricFontSize === undefined) return 28;
+    return settings.value.lyricFontSize;
+  },
+  set(value) {
+    settingsStore.changeLyricFontSize(value);
+  },
+});
+
+const outputDevice = computed({
+  get() {
+    const isValidDevice = allOutputDevices.value.find(
+      device => device.deviceId === settings.value.outputDevice
+    );
+    if (
+      settings.value.outputDevice === undefined ||
+      isValidDevice === undefined
+    )
+      return 'default';
+    return settings.value.outputDevice;
+  },
+  set(deviceId) {
+    if (deviceId === settings.value.outputDevice || deviceId === undefined)
+      return;
+    settingsStore.changeOutputDevice(deviceId);
+    player.value.setOutputDevice();
+  },
+});
+
+const enableUnblockNeteaseMusic = settingComputed('enableUnblockNeteaseMusic', {
+  fallback: true,
+});
+
+const showPlaylistsByAppleMusic = settingComputed('showPlaylistsByAppleMusic', {
+  fallback: true,
+});
+
+const nyancatStyle = settingComputed('nyancatStyle', { fallback: false });
+
+const automaticallyCacheSongs = computed({
+  get() {
+    if (settings.value.automaticallyCacheSongs === undefined) return false;
+    return settings.value.automaticallyCacheSongs;
+  },
+  set(value) {
+    settingsStore.updateSettings({
+      key: 'automaticallyCacheSongs',
+      value,
+    });
+    if (value === false) {
+      clearCache();
+    }
+  },
+});
+
+const showLyricsTranslation = settingComputed('showLyricsTranslation');
+
+const lyricsBackground = settingComputed('lyricsBackground', {
+  merge: 'or',
+  fallback: false,
+});
+
+const showLyricsTime = settingComputed('showLyricsTime');
+
+const enableOsdlyricsSupport = settingComputed('enableOsdlyricsSupport');
+
+const closeAppOption = settingComputed('closeAppOption');
+
+const enableDiscordRichPresence = settingComputed('enableDiscordRichPresence');
+
+const subTitleDefault = settingComputed('subTitleDefault');
+
+const enableReversedMode = computed({
+  get() {
+    if (settings.value.enableReversedMode === undefined) return false;
+    return settings.value.enableReversedMode;
+  },
+  set(value) {
+    settingsStore.updateSettings({
+      key: 'enableReversedMode',
+      value,
+    });
+    if (value === false) {
+      // 直写真身（镜像写入单向同步）
+      playerInstance.reversed = false;
+    }
+  },
+});
+
+const enableGlobalShortcut = settingComputed('enableGlobalShortcut');
+
+const showLibraryDefault = settingComputed('showLibraryDefault', {
+  merge: 'or',
+  fallback: false,
+});
+
+const cacheLimit = settingComputed('cacheLimit', {
+  merge: 'or',
+  fallback: false,
+});
+
+const proxyProtocol = computed({
+  get() {
+    return settings.value.proxyConfig?.protocol || 'noProxy';
+  },
+  set(value) {
+    let config = settings.value.proxyConfig || {};
+    config.protocol = value;
+    if (value === 'noProxy') {
+      ipcBridge.send('removeProxy');
+      showToast('已关闭代理');
+    }
+    settingsStore.updateSettings({
+      key: 'proxyConfig',
+      value: config,
+    });
+  },
+});
+
+const proxyServer = computed({
+  get() {
+    return settings.value.proxyConfig?.server || '';
+  },
+  set(value) {
+    let config = settings.value.proxyConfig || {};
+    config.server = value;
+    settingsStore.updateSettings({
+      key: 'proxyConfig',
+      value: config,
+    });
+  },
+});
+
+const enableRealIP = settingComputed('enableRealIP', {
+  merge: 'or',
+  fallback: false,
+});
+
+const realIP = settingComputed('realIP', { merge: 'or', fallback: '' });
+
+const proxyPort = computed({
+  get() {
+    return settings.value.proxyConfig?.port || '';
+  },
+  set(value) {
+    let config = settings.value.proxyConfig || {};
+    config.port = value;
+    settingsStore.updateSettings({
+      key: 'proxyConfig',
+      value: config,
+    });
+  },
+});
+
+// unm 系列：set 时 `value.length && value` 把空串归 0 落库是历史行为，setTransform 原样保留（读取侧 `|| ''` 不受影响）
+const unmSource = settingComputed('unmSource', {
+  merge: 'or',
+  fallback: '',
+  setTransform: value => value.length && value,
+});
+
+const unmSearchMode = settingComputed('unmSearchMode', {
+  merge: 'or',
+  fallback: 'fast-first',
+});
+
+const unmEnableFlac = settingComputed('unmEnableFlac', {
+  merge: 'or',
+  fallback: false,
+});
+
+const unmProxyUri = settingComputed('unmProxyUri', {
+  merge: 'or',
+  fallback: '',
+  setTransform: value => value.length && value,
+});
+
+const unmJooxCookie = settingComputed('unmJooxCookie', {
+  merge: 'or',
+  fallback: '',
+  setTransform: value => value.length && value,
+});
+
+const unmQQCookie = settingComputed('unmQQCookie', {
+  merge: 'or',
+  fallback: '',
+  setTransform: value => value.length && value,
+});
+
+const unmYtDlExe = settingComputed('unmYtDlExe', {
+  merge: 'or',
+  fallback: '',
+  setTransform: value => value.length && value,
+});
+
+// key 与变量名不同（settings 里叫 linuxEnableCustomTitlebar）
+const enableCustomTitlebar = settingComputed('linuxEnableCustomTitlebar');
+
+const isLastfmConnected = computed(function isLastfmConnected() {
+  return lastfm.value.key !== undefined;
+});
+
+// 「其他」分组 6 个开关项的渲染配置（模板 v-for 消费）；model 是可写 computed ref：:checked 读 .value，@change 写 .value，与 v-model 监听 change 同源等价
+interface ToggleItem {
+  id: string;
+  titleKey?: string; // 走 $t 的标题 key
+  title?: string; // 直接渲染的标题（nyancat 彩蛋行）
+  titleStyle?: string; // 标题行内样式
+  model: { value: any }; // 可写 computed ref
+  show?: () => boolean; // 原模板 v-if 条件
+}
+
+const otherToggles: ToggleItem[] = [
+  {
+    id: 'enable-custom-titlebar',
+    titleKey: 'settings.enableCustomTitlebar',
+    model: enableCustomTitlebar,
+    show: () => isElectron.value && isLinux.value,
+  },
+  {
+    id: 'show-library-default',
+    titleKey: 'settings.showLibraryDefault',
+    model: showLibraryDefault,
+    show: () => isElectron.value,
+  },
+  {
+    id: 'show-playlists-by-apple-music',
+    titleKey: 'settings.showPlaylistsByAppleMusic',
+    model: showPlaylistsByAppleMusic,
+  },
+  {
+    id: 'sub-title-default',
+    titleKey: 'settings.subTitleDefault',
+    model: subTitleDefault,
+  },
+  {
+    id: 'enable-reversed-mode',
+    titleKey: 'settings.enableReversedMode',
+    model: enableReversedMode,
+  },
+  {
+    id: 'nyancat-style',
+    title: '🐈️ 🏳️‍🌈',
+    titleStyle: 'transform: scaleX(-1)',
+    model: nyancatStyle,
+  },
+];
+
+function setToggle(toggle: ToggleItem, e: Event) {
+  toggle.model.value = (e.target as HTMLInputElement).checked;
+}
+
+function getAllOutputDevices() {
+  navigator.mediaDevices.enumerateDevices().then(devices => {
+    allOutputDevices.value = devices.filter(device => {
+      return device.kind == 'audiooutput';
+    });
+    if (
+      allOutputDevices.value.length === 0 ||
+      allOutputDevices.value[0].label === ''
+    ) {
+      allOutputDevices.value = [
         {
           deviceId: 'default',
           label: 'settings.permissionRequired',
         },
-      ],
-      shortcutInput: {
-        id: '',
-        type: '',
-        recording: false,
-      },
-      recordedShortcut: [],
-    };
-  },
-  computed: {
-    ...mapState(['player', 'settings', 'data', 'lastfm']),
-    fonts() {
-      return this.$store.state.fonts;
-    },
-    isElectron() {
-      return process.env.IS_ELECTRON;
-    },
-    isMac() {
-      return /macintosh|mac os x/i.test(navigator.userAgent);
-    },
-    isLinux() {
-      return process.platform === 'linux';
-    },
-    showUserInfo() {
-      return isLooseLoggedIn() && this.data.user.nickname;
-    },
-    recordedShortcutComputed() {
-      let shortcut = [];
-      this.recordedShortcut.map(e => {
-        if (e.keyCode >= 65 && e.keyCode <= 90) {
-          // A-Z
-          shortcut.push(e.code.replace('Key', ''));
-        } else if (e.key === 'Meta') {
-          // ⌘ Command on macOS
-          shortcut.push('Command');
-        } else if (['Alt', 'Control', 'Shift'].includes(e.key)) {
-          shortcut.push(e.key);
-        } else if (e.keyCode >= 48 && e.keyCode <= 57) {
-          // 0-9
-          shortcut.push(e.code.replace('Digit', ''));
-        } else if (e.keyCode >= 112 && e.keyCode <= 123) {
-          // F1-F12
-          shortcut.push(e.code);
-        } else if (
-          ['ArrowRight', 'ArrowLeft', 'ArrowUp', 'ArrowDown'].includes(e.key)
-        ) {
-          // Arrows
-          shortcut.push(e.code.replace('Arrow', ''));
-        } else if (validShortcutCodes.includes(e.key)) {
-          shortcut.push(e.key);
-        }
-      });
-      const sortTable = {
-        Control: 1,
-        Shift: 2,
-        Alt: 3,
-        Command: 4,
-      };
-      shortcut = shortcut.sort((a, b) => {
-        if (!sortTable[a] || !sortTable[b]) return 0;
-        if (sortTable[a] - sortTable[b] <= -1) {
-          return -1;
-        } else if (sortTable[a] - sortTable[b] >= 1) {
-          return 1;
-        } else {
-          return 0;
-        }
-      });
-      shortcut = shortcut.join('+');
-      return shortcut;
-    },
+      ];
+    }
+  });
+}
 
-    lang: {
-      get() {
-        return this.settings.lang;
-      },
-      set(lang) {
-        this.$i18n.locale = lang;
-        this.$store.commit('changeLang', lang);
-      },
-    },
-    musicLanguage: {
-      get() {
-        return this.settings.musicLanguage ?? 'all';
-      },
-      set(value) {
-        this.$store.commit('updateSettings', {
-          key: 'musicLanguage',
-          value,
-        });
-      },
-    },
-    appearance: {
-      get() {
-        if (this.settings.appearance === undefined) return 'auto';
-        return this.settings.appearance;
-      },
-      set(value) {
-        this.$store.commit('updateSettings', {
-          key: 'appearance',
-          value,
-        });
-        changeAppearance(value);
-        const resolvedAppearance =
-          value === 'auto'
-            ? document.body?.getAttribute('data-theme') || 'light'
-            : value;
-        changeThemeColor(this.themeColor, resolvedAppearance);
-      },
-    },
-    themeColor: {
-      get() {
-        if (this.settings.themeColor === undefined) return 'default';
-        return this.settings.themeColor;
-      },
-      set(value) {
-        this.$store.commit('updateSettings', {
-          key: 'themeColor',
-          value,
-        });
-        const resolvedAppearance =
-          this.settings.appearance === 'auto'
-            ? document.body?.getAttribute('data-theme') || 'light'
-            : this.settings.appearance;
-        changeThemeColor(value, resolvedAppearance);
-      },
-    },
-    imageLoadEffect: {
-      get() {
-        return this.settings.imageLoadEffect ?? 'blur';
-      },
-      set(value) {
-        this.$store.commit('updateSettings', {
-          key: 'imageLoadEffect',
-          value,
-        });
-      },
-    },
-    fontFamilyName: {
-      get() {
-        return this.settings.fontFamilyName ?? '思源黑体中文';
-      },
-      set(value) {
-        if (value === this.settings.fontFamilyName) return;
-        localStorage.setItem('fontFamilyName', value);
-        this.$store.commit('changefontFamilyName', value);
-        this.clearCache();
-      },
-    },
-    trayIconTheme: {
-      get() {
-        if (this.settings.trayIconTheme === undefined) return 'auto';
-        return this.settings.trayIconTheme;
-      },
-      set(value) {
-        this.$store.commit('updateSettings', {
-          key: 'trayIconTheme',
-          value,
-        });
-        if (this.isElectron) {
-          ipcRenderer.send('updateTrayIcon', value);
-        }
-      },
-    },
-    musicQuality: {
-      get() {
-        return this.settings.musicQuality ?? 320000;
-      },
-      set(value) {
-        if (value === this.settings.musicQuality) return;
-        this.$store.commit('changeMusicQuality', value);
-        this.clearCache();
-      },
-    },
-    lyricFontSize: {
-      get() {
-        if (this.settings.lyricFontSize === undefined) return 28;
-        return this.settings.lyricFontSize;
-      },
-      set(value) {
-        this.$store.commit('changeLyricFontSize', value);
-      },
-    },
-    outputDevice: {
-      get() {
-        const isValidDevice = this.allOutputDevices.find(
-          device => device.deviceId === this.settings.outputDevice
-        );
-        if (
-          this.settings.outputDevice === undefined ||
-          isValidDevice === undefined
-        )
-          return 'default'; // Default deviceId
-        return this.settings.outputDevice;
-      },
-      set(deviceId) {
-        if (deviceId === this.settings.outputDevice || deviceId === undefined)
-          return;
-        this.$store.commit('changeOutputDevice', deviceId);
-        this.player.setOutputDevice();
-      },
-    },
-    enableUnblockNeteaseMusic: {
-      get() {
-        const value = this.settings.enableUnblockNeteaseMusic;
-        return value !== undefined ? value : true;
-      },
-      set(value) {
-        this.$store.commit('updateSettings', {
-          key: 'enableUnblockNeteaseMusic',
-          value,
-        });
-      },
-    },
-    showPlaylistsByAppleMusic: {
-      get() {
-        if (this.settings.showPlaylistsByAppleMusic === undefined) return true;
-        return this.settings.showPlaylistsByAppleMusic;
-      },
-      set(value) {
-        this.$store.commit('updateSettings', {
-          key: 'showPlaylistsByAppleMusic',
-          value,
-        });
-      },
-    },
-    nyancatStyle: {
-      get() {
-        if (this.settings.nyancatStyle === undefined) return false;
-        return this.settings.nyancatStyle;
-      },
-      set(value) {
-        this.$store.commit('updateSettings', {
-          key: 'nyancatStyle',
-          value,
-        });
-      },
-    },
-    automaticallyCacheSongs: {
-      get() {
-        if (this.settings.automaticallyCacheSongs === undefined) return false;
-        return this.settings.automaticallyCacheSongs;
-      },
-      set(value) {
-        this.$store.commit('updateSettings', {
-          key: 'automaticallyCacheSongs',
-          value,
-        });
-        if (value === false) {
-          this.clearCache();
-        }
-      },
-    },
-    showLyricsTranslation: {
-      get() {
-        return this.settings.showLyricsTranslation;
-      },
-      set(value) {
-        this.$store.commit('updateSettings', {
-          key: 'showLyricsTranslation',
-          value,
-        });
-      },
-    },
-    lyricsBackground: {
-      get() {
-        return this.settings.lyricsBackground || false;
-      },
-      set(value) {
-        this.$store.commit('updateSettings', {
-          key: 'lyricsBackground',
-          value,
-        });
-      },
-    },
-    showLyricsTime: {
-      get() {
-        return this.settings.showLyricsTime;
-      },
-      set(value) {
-        this.$store.commit('updateSettings', {
-          key: 'showLyricsTime',
-          value,
-        });
-      },
-    },
-    enableOsdlyricsSupport: {
-      get() {
-        return this.settings.enableOsdlyricsSupport;
-      },
-      set(value) {
-        this.$store.commit('updateSettings', {
-          key: 'enableOsdlyricsSupport',
-          value,
-        });
-      },
-    },
-    closeAppOption: {
-      get() {
-        return this.settings.closeAppOption;
-      },
-      set(value) {
-        this.$store.commit('updateSettings', {
-          key: 'closeAppOption',
-          value,
-        });
-      },
-    },
-    enableDiscordRichPresence: {
-      get() {
-        return this.settings.enableDiscordRichPresence;
-      },
-      set(value) {
-        this.$store.commit('updateSettings', {
-          key: 'enableDiscordRichPresence',
-          value,
-        });
-      },
-    },
-    subTitleDefault: {
-      get() {
-        return this.settings.subTitleDefault;
-      },
-      set(value) {
-        this.$store.commit('updateSettings', {
-          key: 'subTitleDefault',
-          value,
-        });
-      },
-    },
-    enableReversedMode: {
-      get() {
-        if (this.settings.enableReversedMode === undefined) return false;
-        return this.settings.enableReversedMode;
-      },
-      set(value) {
-        this.$store.commit('updateSettings', {
-          key: 'enableReversedMode',
-          value,
-        });
-        if (value === false) {
-          this.$store.state.player.reversed = false;
-        }
-      },
-    },
-    enableGlobalShortcut: {
-      get() {
-        return this.settings.enableGlobalShortcut;
-      },
-      set(value) {
-        this.$store.commit('updateSettings', {
-          key: 'enableGlobalShortcut',
-          value,
-        });
-      },
-    },
-    showLibraryDefault: {
-      get() {
-        return this.settings.showLibraryDefault || false;
-      },
-      set(value) {
-        this.$store.commit('updateSettings', {
-          key: 'showLibraryDefault',
-          value,
-        });
-      },
-    },
-    cacheLimit: {
-      get() {
-        return this.settings.cacheLimit || false;
-      },
-      set(value) {
-        this.$store.commit('updateSettings', {
-          key: 'cacheLimit',
-          value,
-        });
-      },
-    },
-    proxyProtocol: {
-      get() {
-        return this.settings.proxyConfig?.protocol || 'noProxy';
-      },
-      set(value) {
-        let config = this.settings.proxyConfig || {};
-        config.protocol = value;
-        if (value === 'noProxy') {
-          ipcRenderer.send('removeProxy');
-          this.showToast('已关闭代理');
-        }
-        this.$store.commit('updateSettings', {
-          key: 'proxyConfig',
-          value: config,
-        });
-      },
-    },
-    proxyServer: {
-      get() {
-        return this.settings.proxyConfig?.server || '';
-      },
-      set(value) {
-        let config = this.settings.proxyConfig || {};
-        config.server = value;
-        this.$store.commit('updateSettings', {
-          key: 'proxyConfig',
-          value: config,
-        });
-      },
-    },
-    enableRealIP: {
-      get() {
-        return this.settings.enableRealIP || false;
-      },
-      set(value) {
-        this.$store.commit('updateSettings', {
-          key: 'enableRealIP',
-          value: value,
-        });
-      },
-    },
-    realIP: {
-      get() {
-        return this.settings.realIP || '';
-      },
-      set(value) {
-        this.$store.commit('updateSettings', {
-          key: 'realIP',
-          value: value,
-        });
-      },
-    },
-    proxyPort: {
-      get() {
-        return this.settings.proxyConfig?.port || '';
-      },
-      set(value) {
-        let config = this.settings.proxyConfig || {};
-        config.port = value;
-        this.$store.commit('updateSettings', {
-          key: 'proxyConfig',
-          value: config,
-        });
-      },
-    },
-    unmSource: {
-      /**
-       * @returns {string}
-       */
-      get() {
-        return this.settings.unmSource || '';
-      },
-      /** @param {string?} value */
-      set(value) {
-        this.$store.commit('updateSettings', {
-          key: 'unmSource',
-          value: value.length && value,
-        });
-      },
-    },
-    unmSearchMode: {
-      get() {
-        return this.settings.unmSearchMode || 'fast-first';
-      },
-      set(value) {
-        this.$store.commit('updateSettings', {
-          key: 'unmSearchMode',
-          value: value,
-        });
-      },
-    },
-    unmEnableFlac: {
-      get() {
-        return this.settings.unmEnableFlac || false;
-      },
-      set(value) {
-        this.$store.commit('updateSettings', {
-          key: 'unmEnableFlac',
-          value: value || false,
-        });
-      },
-    },
-    unmProxyUri: {
-      get() {
-        return this.settings.unmProxyUri || '';
-      },
-      set(value) {
-        this.$store.commit('updateSettings', {
-          key: 'unmProxyUri',
-          value: value.length && value,
-        });
-      },
-    },
-    unmJooxCookie: {
-      get() {
-        return this.settings.unmJooxCookie || '';
-      },
-      set(value) {
-        this.$store.commit('updateSettings', {
-          key: 'unmJooxCookie',
-          value: value.length && value,
-        });
-      },
-    },
-    unmQQCookie: {
-      get() {
-        return this.settings.unmQQCookie || '';
-      },
-      set(value) {
-        this.$store.commit('updateSettings', {
-          key: 'unmQQCookie',
-          value: value.length && value,
-        });
-      },
-    },
-    unmYtDlExe: {
-      get() {
-        return this.settings.unmYtDlExe || '';
-      },
-      set(value) {
-        this.$store.commit('updateSettings', {
-          key: 'unmYtDlExe',
-          value: value.length && value,
-        });
-      },
-    },
-    enableCustomTitlebar: {
-      get() {
-        return this.settings.linuxEnableCustomTitlebar;
-      },
-      set(value) {
-        this.$store.commit('updateSettings', {
-          key: 'linuxEnableCustomTitlebar',
-          value,
-        });
-      },
-    },
-    isLastfmConnected() {
-      return this.lastfm.key !== undefined;
-    },
-  },
-  created() {
-    this.countDBSize('tracks');
-    if (process.env.IS_ELECTRON) this.getAllOutputDevices();
-  },
-  activated() {
-    this.countDBSize('tracks');
-    if (process.env.IS_ELECTRON) this.getAllOutputDevices();
-  },
-  deactivated() {
-    clearInterval(this._lastfmChecker);
-  },
-  beforeDestroy() {
-    clearInterval(this._lastfmChecker);
-  },
-  methods: {
-    ...mapActions(['showToast']),
-    getAllOutputDevices() {
-      navigator.mediaDevices.enumerateDevices().then(devices => {
-        this.allOutputDevices = devices.filter(device => {
-          return device.kind == 'audiooutput';
-        });
-        if (
-          this.allOutputDevices.length > 0 &&
-          this.allOutputDevices[0].label !== ''
-        ) {
-          this.withoutAudioPriviledge = false;
-        } else {
-          this.allOutputDevices = [
-            {
-              deviceId: 'default',
-              label: 'settings.permissionRequired',
-            },
-          ];
-        }
-      });
-    },
-    logout() {
-      doLogout();
-      this.$router.push({ name: 'home' });
-    },
-    countDBSize() {
-      countDBSize().then(data => {
-        if (data === undefined) {
-          this.tracksCache = {
-            size: '0KB',
-            length: 0,
-          };
-          return;
-        }
-        this.tracksCache.size = bytesToSize(data.bytes);
-        this.tracksCache.length = data.length;
-      });
-    },
-    clearCache() {
-      clearDB().then(() => {
-        this.countDBSize();
-      });
-    },
-    lastfmConnect() {
-      lastfmAuth();
-      clearInterval(this._lastfmChecker);
-      this._lastfmChecker = setInterval(() => {
-        const session = localStorage.getItem('lastfm');
-        if (session) {
-          this.$store.commit('updateLastfm', JSON.parse(session));
-          clearInterval(this._lastfmChecker);
-        }
-      }, 1000);
-    },
-    lastfmDisconnect() {
-      localStorage.removeItem('lastfm');
-      this.$store.commit('updateLastfm', {});
-    },
-    sendProxyConfig() {
-      if (this.proxyProtocol === 'noProxy') return;
-      const config = this.settings.proxyConfig;
-      if (
-        config.server === '' ||
-        !config.port ||
-        config.protocol === 'noProxy'
-      ) {
-        ipcRenderer.send('removeProxy');
-      } else {
-        ipcRenderer.send('setProxy', config);
-      }
-      this.showToast('已更新代理设置');
-    },
-    clickOutside() {
-      this.exitRecordShortcut();
-    },
-    formatShortcut(shortcut) {
-      shortcut = shortcut
-        .replaceAll('+', ' + ')
-        .replace('Up', '↑')
-        .replace('Down', '↓')
-        .replace('Right', '→')
-        .replace('Left', '←');
-      if (this.settings.lang === 'zh-CN') {
-        shortcut = shortcut.replace('Space', '空格');
-      } else if (this.settings.lang === 'zh-TW') {
-        shortcut = shortcut.replace('Space', '空白鍵');
-      }
-      if (process.platform === 'darwin') {
-        return shortcut
-          .replace('CommandOrControl', '⌘')
-          .replace('Command', '⌘')
-          .replace('Alt', '⌥')
-          .replace('Control', '⌃')
-          .replace('Shift', '⇧');
-      }
-      return shortcut.replace('CommandOrControl', 'Ctrl');
-    },
-    readyToRecordShortcut(id, type) {
-      if (type === 'globalShortcut' && this.enableGlobalShortcut === false) {
-        return;
-      }
-      this.shortcutInput = { id, type, recording: true };
-      this.recordedShortcut = [];
-      ipcRenderer.send('switchGlobalShortcutStatusTemporary', 'disable');
-    },
-    handleShortcutKeydown(e) {
-      if (this.shortcutInput.recording === false) return;
-      e.preventDefault();
-      if (this.recordedShortcut.find(s => s.keyCode === e.keyCode)) return;
-      this.recordedShortcut.push(e);
-      if (
-        (e.keyCode >= 65 && e.keyCode <= 90) || // A-Z
-        (e.keyCode >= 48 && e.keyCode <= 57) || // 0-9
-        (e.keyCode >= 112 && e.keyCode <= 123) || // F1-F12
-        ['ArrowRight', 'ArrowLeft', 'ArrowUp', 'ArrowDown'].includes(e.key) || // Arrows
-        validShortcutCodes.includes(e.key)
-      ) {
-        this.saveShortcut();
-      }
-    },
-    handleShortcutKeyup(e) {
-      if (this.recordedShortcut.find(s => s.keyCode === e.keyCode)) {
-        this.recordedShortcut = this.recordedShortcut.filter(
-          s => s.keyCode !== e.keyCode
-        );
-      }
-    },
-    saveShortcut() {
-      const { id, type } = this.shortcutInput;
-      const payload = {
-        id,
-        type,
-        shortcut: this.recordedShortcutComputed,
+function logout() {
+  doLogout();
+  router.push({ name: 'home' });
+}
+
+function countDBSize() {
+  countDBSizeUtil().then(data => {
+    if (data === undefined) {
+      tracksCache.value = {
+        size: '0KB',
+        length: 0,
       };
-      this.$store.commit('updateShortcut', payload);
-      ipcRenderer.send('updateShortcut', payload);
-      this.showToast('快捷键已保存');
-      this.recordedShortcut = [];
-    },
-    exitRecordShortcut() {
-      if (this.shortcutInput.recording === false) return;
-      this.shortcutInput = { id: '', type: '', recording: false };
-      this.recordedShortcut = [];
-      ipcRenderer.send('switchGlobalShortcutStatusTemporary', 'enable');
-    },
-    restoreDefaultShortcuts() {
-      this.$store.commit('restoreDefaultShortcuts');
-      ipcRenderer.send('restoreDefaultShortcuts');
-    },
-  },
-};
+      return;
+    }
+    tracksCache.value.size = bytesToSize(data.bytes);
+    tracksCache.value.length = data.length;
+  });
+}
+
+function clearCache() {
+  clearDB().then(() => {
+    countDBSize();
+  });
+}
+
+function lastfmConnect() {
+  lastfmAuth();
+  clearInterval(_lastfmChecker);
+  _lastfmChecker = setInterval(() => {
+    const session = localStorage.getItem('lastfm');
+    if (session) {
+      dataStore.updateLastfm(JSON.parse(session));
+      clearInterval(_lastfmChecker);
+    }
+  }, 1000);
+}
+
+function lastfmDisconnect() {
+  localStorage.removeItem('lastfm');
+  dataStore.updateLastfm({});
+}
+
+function sendProxyConfig() {
+  if (proxyProtocol.value === 'noProxy') return;
+  const config = settings.value.proxyConfig;
+  if (config.server === '' || !config.port || config.protocol === 'noProxy') {
+    ipcBridge.send('removeProxy');
+  } else {
+    ipcBridge.send('setProxy', config);
+  }
+  showToast('已更新代理设置');
+}
+
+function clickOutside() {
+  exitRecordShortcut();
+}
+
+function formatShortcut(shortcut) {
+  shortcut = shortcut
+    .replaceAll('+', ' + ')
+    .replace('Up', '↑')
+    .replace('Down', '↓')
+    .replace('Right', '→')
+    .replace('Left', '←');
+  if (settings.value.lang === 'zh-CN') {
+    shortcut = shortcut.replace('Space', '空格');
+  } else if (settings.value.lang === 'zh-TW') {
+    shortcut = shortcut.replace('Space', '空白鍵');
+  }
+  if (process.platform === 'darwin') {
+    return shortcut
+      .replace('CommandOrControl', '⌘')
+      .replace('Command', '⌘')
+      .replace('Alt', '⌥')
+      .replace('Control', '⌃')
+      .replace('Shift', '⇧');
+  }
+  return shortcut.replace('CommandOrControl', 'Ctrl');
+}
+
+function readyToRecordShortcut(id, type) {
+  if (type === 'globalShortcut' && enableGlobalShortcut.value === false) {
+    return;
+  }
+  shortcutInput.value = { id, type, recording: true };
+  recordedShortcut.value = [];
+  ipcBridge.send('switchGlobalShortcutStatusTemporary', 'disable');
+}
+
+function handleShortcutKeydown(e) {
+  if (shortcutInput.value.recording === false) return;
+  e.preventDefault();
+  if (recordedShortcut.value.find(s => s.keyCode === e.keyCode)) return;
+  recordedShortcut.value.push(e);
+  if (
+    (e.keyCode >= 65 && e.keyCode <= 90) || // A-Z
+    (e.keyCode >= 48 && e.keyCode <= 57) || // 0-9
+    (e.keyCode >= 112 && e.keyCode <= 123) || // F1-F12
+    ['ArrowRight', 'ArrowLeft', 'ArrowUp', 'ArrowDown'].includes(e.key) || // Arrows
+    validShortcutCodes.includes(e.key)
+  ) {
+    saveShortcut();
+  }
+}
+
+function saveShortcut() {
+  const { id, type } = shortcutInput.value;
+  const payload = {
+    id,
+    type,
+    shortcut: recordedShortcutComputed.value,
+  };
+  settingsStore.updateShortcut(payload);
+  ipcBridge.send('updateShortcut', payload);
+  showToast('快捷键已保存');
+  recordedShortcut.value = [];
+}
+
+function exitRecordShortcut() {
+  if (shortcutInput.value.recording === false) return;
+  shortcutInput.value = { id: '', type: '', recording: false };
+  recordedShortcut.value = [];
+  ipcBridge.send('switchGlobalShortcutStatusTemporary', 'enable');
+}
+
+function restoreDefaultShortcuts() {
+  settingsStore.restoreDefaultShortcuts();
+  ipcBridge.send('restoreDefaultShortcuts');
+}
+
+// 原 created 阶段调用；方法的实参本就被忽略
+countDBSize();
+if (isDesktop()) getAllOutputDevices();
+
+onBeforeUnmount(function beforeUnmount() {
+  clearInterval(_lastfmChecker);
+});
+
+onActivated(function activated() {
+  countDBSize();
+  if (isDesktop()) getAllOutputDevices();
+});
+
+onMounted(function activatedOnMount() {
+  countDBSize();
+  if (isDesktop()) getAllOutputDevices();
+});
+
+onDeactivated(function deactivated() {
+  clearInterval(_lastfmChecker);
+});
 </script>
 
 <style lang="scss" scoped>
@@ -1749,7 +1605,6 @@ input[type='number'] {
 
 #shortcut-table {
   font-size: 14px;
-  /* border: 1px solid black; */
   user-select: none;
   color: var(--color-text);
   .row {
@@ -1765,7 +1620,6 @@ input[type='number'] {
     padding: 8px;
     display: flex;
     align-items: center;
-    /* border: 1px solid red; */
     &:first-of-type {
       padding-left: 0;
       min-width: 128px;

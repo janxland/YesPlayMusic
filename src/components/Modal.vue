@@ -1,65 +1,66 @@
 <template>
-  <div v-show="show" class="shade" @click="clickOutside">
-    <div class="modal" :style="modalStyles" @click.stop>
-      <div class="header">
-        <div class="title">{{ title }}</div>
-        <button class="close" @click="close"
-          ><svg-icon icon-class="x"
-        /></button>
-      </div>
-      <div class="content"><slot></slot></div>
-      <div v-if="showFooter" class="footer">
-        <!-- <button>取消</button>
-        <button class="primary">确定</button> -->
-        <slot name="footer"></slot>
+  <!-- Teleport 到 body：shade 依赖 fixed+z-index，祖先有 transform/filter 会降级相对定位；$attrs 手动绑定透传 class（inheritAttrs:false） -->
+  <Teleport to="body">
+    <div v-show="show" class="shade" v-bind="$attrs" @click="clickOutside">
+      <div class="modal" :style="modalStyles" @click.stop>
+        <div class="header">
+          <div class="title">{{ title }}</div>
+          <button class="close" @click="show = false"
+            ><svg-icon icon-class="x"
+          /></button>
+        </div>
+        <div class="content"><slot></slot></div>
+        <div v-if="showFooter" class="footer">
+          <slot name="footer"></slot>
+        </div>
       </div>
     </div>
-  </div>
+  </Teleport>
 </template>
 
-<script>
-export default {
-  name: 'Modal',
-  props: {
-    show: Boolean,
-    close: Function,
-    title: {
-      type: String,
-      default: 'Title',
-    },
-    showFooter: {
-      type: Boolean,
-      default: true,
-    },
-    width: {
-      type: String,
-      default: '50vw',
-    },
-    clickOutsideHide: {
-      type: Boolean,
-      default: false,
-    },
-    minWidth: {
-      type: String,
-      default: 'calc(min(23rem, 100vw))',
-    },
+<script setup lang="ts">
+import { computed } from 'vue';
+
+defineOptions({ inheritAttrs: false });
+
+// v-model:show 取代 Vue2 风格的 show prop + close 回调 prop
+const show = defineModel<boolean>('show', { default: false });
+
+const props = defineProps({
+  title: {
+    type: String,
+    default: 'Title',
   },
-  computed: {
-    modalStyles() {
-      return {
-        width: this.width,
-        minWidth: this.minWidth,
-      };
-    },
+  showFooter: {
+    type: Boolean,
+    default: true,
   },
-  methods: {
-    clickOutside() {
-      if (this.clickOutsideHide) {
-        this.close();
-      }
-    },
+  width: {
+    type: String,
+    default: '50vw',
   },
-};
+  clickOutsideHide: {
+    type: Boolean,
+    default: false,
+  },
+  minWidth: {
+    type: String,
+    default: 'calc(min(23rem, 100vw))',
+  },
+});
+
+const modalStyles = computed(function modalStyles() {
+  return {
+    width: props.width,
+    minWidth: props.minWidth,
+  };
+});
+
+function clickOutside() {
+  if (props.clickOutsideHide) {
+    show.value = false;
+  }
+}
 </script>
 
 <style lang="scss" scoped>

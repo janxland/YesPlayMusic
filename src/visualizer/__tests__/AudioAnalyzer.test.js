@@ -1,6 +1,6 @@
 /* AudioAnalyzer 单元测试（mock Web Audio） */
 import assert from 'node:assert/strict';
-import { AudioAnalyzer } from '../core/AudioAnalyzer.js';
+import { AudioAnalyzer } from '../core/AudioAnalyzer.ts';
 
 /** 最小可用的 AnalyserNode mock：每次返回固定/可注入数据。 */
 function makeMockAnalyser() {

@@ -33,7 +33,7 @@
         </button>
       </template>
       <button
-        ref="lockBtn"
+        ref="lockBtnRef"
         :title="
           locked
             ? '已锁定（鼠标穿透），悬停到本按钮附近可操作，点击解锁'
@@ -54,7 +54,7 @@
           <div class="roller" :style="rollerStyle">
             <div
               v-for="(line, i) in lyricLines"
-              :key="i"
+              :key="`${line.time}-${i}`"
               class="line"
               :class="{
                 active: i === highlightIndex,
@@ -73,197 +73,209 @@
   </div>
 </template>
 
-<script>
-// Electron 桌面歌词窗口内容：透明置顶窗口，播放状态由主窗口经主进程 IPC 转发
-// （desktopLyrics:state），本地按时间插值 + rAF 逐帧驱动。
-// 锁定语义与真实歌词软件一致：整窗不可拖动、完全鼠标穿透（可直接操作下方桌面），
-// 唯一交互是解锁按钮。热区命中检测在主进程做光标坐标轮询（mac 的 forward
-// mousemove 在真实鼠标下不可靠，会导致锁定后解不开）：本窗口上报解锁按钮
-// rect，主进程轮询命中→关穿透并回发 hover 状态显示工具栏，移出→恢复穿透。
-// 播控按钮（上一首/播放/停止/下一首/模式）经主进程转发回主窗口执行。
+<script setup lang="ts">
+import { ipcBridge, hasIpc } from '@/platform/bridge';
 import { getLyric } from '@/api/track';
 import { lyricParser } from '@/utils/lyrics';
+import { ref, computed, nextTick, onMounted, onBeforeUnmount } from 'vue';
 
 const HIT_MARGIN = 16; // 解锁按钮热区外扩像素（含在上报的 rect 里）
 const LINE_H = 48; // 滚动列每行固定高度（px），viewport 高 3 行
 
-export default {
-  name: 'DesktopLyrics',
-  data() {
-    return {
-      ipcRenderer: null,
-      locked: localStorage.getItem('desktopLyricsLocked') === '1',
-      hovering: false, // 光标在窗口内（仅影响解锁状态下的工具栏可见性）
-      btnHot: false, // 主进程轮询判定：光标命中解锁按钮热区（锁定时唯一可交互点）
-      trackId: 0,
-      trackName: '',
-      progress: 0,
-      playing: false,
-      repeatMode: 'off', // off | on | one（与主窗口 player 一致）
-      lastStateAt: Date.now(),
-      lyricLines: [],
-      // 歌词加载状态：loading=请求中，ok=有词，none=无词/纯音乐（对齐 lyrics.vue 的 noLyric 语义）
-      lyricState: 'idle',
-      highlightIndex: -1,
-      renderedIdx: null, // roller 当前停靠的行索引（null=未就位，禁动效）
-      animRoll: false,
-      tickTimer: null,
-      rafId: 0,
-    };
-  },
-  computed: {
-    showRoller() {
-      return this.lyricLines.length > 0 && this.highlightIndex >= 0;
-    },
-    rollerStyle() {
-      const idx = this.renderedIdx == null ? 0 : this.renderedIdx;
-      return {
-        transform: `translateY(${LINE_H * (1 - idx)}px)`,
-        transition: this.animRoll
-          ? 'transform 0.5s cubic-bezier(0.2, 0.8, 0.2, 1)'
-          : 'none',
-      };
-    },
-    currentText() {
-      if (!this.trackName) return '未在播放';
-      if (this.lyricState === 'loading') {
-        return `《${this.trackName}》 正在获取歌词…`;
-      }
-      // 无词/纯音乐，或前奏空档：与 lyrics.vue 一致画音符
-      return '♪ ♪ ♪';
-    },
-    modeTitle() {
-      return {
-        off: '列表播放（点击切换）',
-        on: '列表循环（点击切换）',
-        one: '单曲循环（点击切换）',
-      }[this.repeatMode];
-    },
-  },
-  mounted() {
-    document.documentElement.classList.add('desktop-lyrics-view');
-    this.ipcRenderer = window.require('electron').ipcRenderer;
-    this.ipcRenderer.on('desktopLyrics:state', this.handleState);
-    // 主进程热区轮询的回执：光标进入/离开解锁按钮区域
-    this.ipcRenderer.on('desktopLyrics:hover', (event, hot) => {
-      this.btnHot = hot;
+const lockBtnRef = ref<any>(null);
+const locked = ref(localStorage.getItem('desktopLyricsLocked') === '1');
+
+const hovering = ref<any>(false);
+
+const btnHot = ref<any>(false);
+
+const trackId = ref<any>(0);
+
+const trackName = ref<any>('');
+
+const progress = ref<any>(0);
+
+const playing = ref<any>(false);
+
+const repeatMode = ref<any>('off');
+
+const lastStateAt = ref(Date.now());
+
+const lyricLines = ref<any[]>([]);
+
+const lyricState = ref<any>('idle');
+
+const highlightIndex = ref(-1);
+
+const renderedIdx = ref<any>(null);
+
+const animRoll = ref<any>(false);
+
+// rAF / 兜底定时器句柄（非响应式）：同 lyrics.vue 的 _lyricRaf 一样用普通变量避免响应式开销，onBeforeUnmount 统一清理
+let _tickTimer: ReturnType<typeof setInterval> | null = null;
+
+let _rafId = 0;
+
+const showRoller = computed(function showRoller() {
+  return lyricLines.value.length > 0 && highlightIndex.value >= 0;
+});
+
+const rollerStyle = computed(function rollerStyle() {
+  const idx = renderedIdx.value == null ? 0 : renderedIdx.value;
+  return {
+    transform: `translateY(${LINE_H * (1 - idx)}px)`,
+    transition: animRoll.value
+      ? 'transform 0.5s cubic-bezier(0.2, 0.8, 0.2, 1)'
+      : 'none',
+  };
+});
+
+const currentText = computed(function currentText() {
+  if (!trackName.value) return '未在播放';
+  if (lyricState.value === 'loading') {
+    return `《${trackName.value}》 正在获取歌词…`;
+  }
+  // 无词/纯音乐，或前奏空档：与 lyrics.vue 一致画音符
+  return '♪ ♪ ♪';
+});
+
+const modeTitle = computed(function modeTitle() {
+  return {
+    off: '列表播放（点击切换）',
+    on: '列表循环（点击切换）',
+    one: '单曲循环（点击切换）',
+  }[repeatMode.value];
+});
+
+function handleState(event, payload) {
+  progress.value = payload.progress ?? 0;
+  playing.value = !!payload.playing;
+  repeatMode.value = payload.repeatMode || 'off';
+  lastStateAt.value = Date.now();
+  trackName.value = payload.trackName || '';
+  if (payload.trackId !== trackId.value) {
+    trackId.value = payload.trackId;
+    lyricLines.value = [];
+    lyricState.value = 'idle';
+    highlightIndex.value = -1;
+    renderedIdx.value = null;
+    fetchLyrics(trackId.value);
+  }
+}
+
+function fetchLyrics(id) {
+  if (!id) return;
+  lyricState.value = 'loading';
+  getLyric(id)
+    .then(data => {
+      if (id !== trackId.value) return; // 已切歌，丢弃过期结果
+      const { lyric } = lyricParser(data || {});
+      lyricLines.value = lyric.filter(l => l.content && l.content.trim());
+      lyricState.value = lyricLines.value.length > 0 ? 'ok' : 'none';
+      updateHighlight();
+    })
+    .catch(() => {
+      if (id !== trackId.value) return;
+      lyricLines.value = [];
+      lyricState.value = 'none';
     });
-    // rAF 逐帧检测切句（延迟 ≤16ms）；窗口被遮挡时 rAF 会停摆，留个低频定时器兜底
-    const loop = () => {
-      this.updateHighlight();
-      this.rafId = requestAnimationFrame(loop);
-    };
-    this.rafId = requestAnimationFrame(loop);
-    this.tickTimer = setInterval(this.updateHighlight, 250);
-    this.reportHitArea();
-    this.ipcRenderer.send('desktopLyrics:setLock', this.locked);
-    window.addEventListener('resize', this.reportHitArea);
-  },
-  beforeDestroy() {
-    cancelAnimationFrame(this.rafId);
-    clearInterval(this.tickTimer);
-    window.removeEventListener('resize', this.reportHitArea);
-    if (this.ipcRenderer) {
-      this.ipcRenderer.removeListener('desktopLyrics:state', this.handleState);
-      this.ipcRenderer.removeAllListeners('desktopLyrics:hover');
-    }
-  },
-  methods: {
-    handleState(event, payload) {
-      this.progress = payload.progress ?? 0;
-      this.playing = !!payload.playing;
-      this.repeatMode = payload.repeatMode || 'off';
-      this.lastStateAt = Date.now();
-      this.trackName = payload.trackName || '';
-      if (payload.trackId !== this.trackId) {
-        this.trackId = payload.trackId;
-        this.lyricLines = [];
-        this.lyricState = 'idle';
-        this.highlightIndex = -1;
-        this.renderedIdx = null;
-        this.fetchLyrics(this.trackId);
-      }
-    },
-    fetchLyrics(id) {
-      if (!id) return;
-      this.lyricState = 'loading';
-      getLyric(id)
-        .then(data => {
-          if (id !== this.trackId) return; // 已切歌，丢弃过期结果
-          const { lyric } = lyricParser(data || {});
-          this.lyricLines = lyric.filter(l => l.content && l.content.trim());
-          this.lyricState = this.lyricLines.length > 0 ? 'ok' : 'none';
-          this.updateHighlight();
-        })
-        .catch(() => {
-          if (id !== this.trackId) return;
-          this.lyricLines = [];
-          this.lyricState = 'none';
-        });
-    },
-    updateHighlight() {
-      if (this.lyricLines.length === 0) return;
-      // 上次同步进度 + 流逝时间插值，避免 500ms 同步间隔造成跳变；
-      // 不能用 computed（Date.now 非响应式会被缓存住）
-      const progress = this.playing
-        ? this.progress + (Date.now() - this.lastStateAt) / 1000
-        : this.progress;
-      const index = this.lyricLines.findIndex((l, i) => {
-        const next = this.lyricLines[i + 1];
-        return progress >= l.time && (next ? progress < next.time : true);
-      });
-      if (index !== this.highlightIndex) {
-        this.highlightIndex = index;
-        this.slideTo(index);
-      }
-    },
-    slideTo(index) {
-      const prev = this.renderedIdx;
-      // 只在相邻换行时滚动；新歌就位、拖动进度条等大幅跳变瞬间落位
-      this.animRoll = prev !== null && Math.abs(index - prev) === 1;
-      this.renderedIdx = index;
-    },
-    // 上报解锁按钮热区（窗口相对坐标，含外扩边距）给主进程做光标轮询
-    reportHitArea() {
-      const el = this.$refs.lockBtn;
-      if (!el || !this.ipcRenderer) return;
-      const r = el.getBoundingClientRect();
-      this.ipcRenderer.send('desktopLyrics:hitArea', {
-        x: Math.max(0, r.left - HIT_MARGIN),
-        y: Math.max(0, r.top - HIT_MARGIN),
-        w: r.width + HIT_MARGIN * 2,
-        h: r.height + HIT_MARGIN * 2,
-      });
-    },
-    sendControl(cmd) {
-      this.ipcRenderer.send('desktopLyrics:control', cmd);
-    },
-    toggleLock() {
-      this.locked = !this.locked;
-      localStorage.setItem('desktopLyricsLocked', this.locked ? '1' : '0');
-      // 工具栏按钮数量随 locked 变化，布局更新后重新上报热区再交给主进程
-      this.$nextTick(() => {
-        this.reportHitArea();
-        this.ipcRenderer.send('desktopLyrics:setLock', this.locked);
-      });
-    },
-    handleMouseEnter() {
-      this.hovering = true;
-    },
-    handleMouseLeave() {
-      this.hovering = false;
-    },
-    closeWindow() {
-      window.close();
-    },
-  },
-};
+}
+
+function updateHighlight() {
+  if (lyricLines.value.length === 0) return;
+  // 上次同步进度 + 流逝时间插值，避免 500ms 同步间隔造成跳变；不能用 computed（Date.now 非响应式会被缓存住）
+  const currentProgress = playing.value
+    ? progress.value + (Date.now() - lastStateAt.value) / 1000
+    : progress.value;
+  const index = lyricLines.value.findIndex((l, i) => {
+    const next = lyricLines.value[i + 1];
+    return (
+      currentProgress >= l.time && (next ? currentProgress < next.time : true)
+    );
+  });
+  if (index !== highlightIndex.value) {
+    highlightIndex.value = index;
+    slideTo(index);
+  }
+}
+
+function slideTo(index) {
+  const prev = renderedIdx.value;
+  // 只在相邻换行时滚动；新歌就位、拖动进度条等大幅跳变瞬间落位
+  animRoll.value = prev !== null && Math.abs(index - prev) === 1;
+  renderedIdx.value = index;
+}
+
+function reportHitArea() {
+  const el = lockBtnRef.value;
+  if (!el || !hasIpc()) return;
+  const r = el.getBoundingClientRect();
+  ipcBridge.send('desktopLyrics:hitArea', {
+    x: Math.max(0, r.left - HIT_MARGIN),
+    y: Math.max(0, r.top - HIT_MARGIN),
+    w: r.width + HIT_MARGIN * 2,
+    h: r.height + HIT_MARGIN * 2,
+  });
+}
+
+function sendControl(cmd) {
+  ipcBridge.send('desktopLyrics:control', cmd);
+}
+
+function toggleLock() {
+  locked.value = !locked.value;
+  localStorage.setItem('desktopLyricsLocked', locked.value ? '1' : '0');
+  // 工具栏按钮数量随 locked 变化，布局更新后重新上报热区再交给主进程
+  nextTick(() => {
+    reportHitArea();
+    ipcBridge.send('desktopLyrics:setLock', locked.value);
+  });
+}
+
+function handleMouseEnter() {
+  hovering.value = true;
+}
+
+function handleMouseLeave() {
+  hovering.value = false;
+}
+
+function closeWindow() {
+  window.close();
+}
+
+onMounted(function mounted() {
+  document.documentElement.classList.add('desktop-lyrics-view');
+  ipcBridge.on('desktopLyrics:state', handleState);
+  // 主进程热区轮询的回执：光标进入/离开解锁按钮区域
+  ipcBridge.on('desktopLyrics:hover', (event, hot) => {
+    btnHot.value = hot;
+  });
+  // rAF 逐帧检测切句（延迟 ≤16ms）；窗口被遮挡时 rAF 会停摆，留个低频定时器兜底
+  const loop = () => {
+    updateHighlight();
+    _rafId = requestAnimationFrame(loop);
+  };
+  _rafId = requestAnimationFrame(loop);
+  _tickTimer = setInterval(updateHighlight, 250);
+  reportHitArea();
+  ipcBridge.send('desktopLyrics:setLock', locked.value);
+  window.addEventListener('resize', reportHitArea);
+});
+
+onBeforeUnmount(function beforeUnmount() {
+  cancelAnimationFrame(_rafId);
+  clearInterval(_tickTimer);
+  window.removeEventListener('resize', reportHitArea);
+  if (hasIpc()) {
+    ipcBridge.removeListener('desktopLyrics:state', handleState);
+    ipcBridge.removeAllListeners('desktopLyrics:hover');
+  }
+});
 </script>
 
 <style lang="scss">
-// 透明窗口：清掉主题背景（global.scss 把背景色挂在 html 上）。
-// 注意：webpack 会把本组件样式并进主窗口共享的 chunk（可视化面板），
-// 必须用歌词窗专属类名门控，否则主窗口深色主题背景会被打穿成白色。
+// 透明窗口：清掉主题背景（global.scss 把背景色挂在 html 上）；本组件样式可能与主窗口共享 chunk，必须用歌词窗专属类名门控，否则主窗口深色主题背景会被打穿成白色
 html.desktop-lyrics-view,
 html.desktop-lyrics-view body,
 html.desktop-lyrics-view #app {
@@ -406,7 +418,7 @@ html.desktop-lyrics-view #app {
 .soft-leave-active {
   transition: opacity 0.3s ease;
 }
-.soft-enter,
+.soft-enter-from,
 .soft-leave-to {
   opacity: 0;
 }

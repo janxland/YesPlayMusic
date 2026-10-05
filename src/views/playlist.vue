@@ -6,14 +6,14 @@
     >
       <Cover
         :id="parseInt(playlist.id)"
-        :image-url="playlist.picUrl || playlist.coverImgUrl | resizeImage(1024)"
+        :image-url="resizeImage(playlist.picUrl || playlist.coverImgUrl, 1024)"
         :show-play-button="true"
         :always-show-shadow="true"
         :click-cover-to-play="true"
         type="playlist"
         :cover-hover="false"
         :play-button-size="18"
-        @click.right.native="openMenu"
+        @click.right="openMenu"
       />
       <div class="info">
         <div class="title" @click.right="openMenu"
@@ -41,7 +41,7 @@
         </div>
         <div class="date-and-count">
           {{ $t('playlist.updatedAt') }}
-          {{ playlist.updateTime | formatDate }} · {{ playlist.trackCount }}
+          {{ formatDate(playlist.updateTime) }} · {{ playlist.trackCount }}
           {{ $t('common.songs') }}
         </div>
         <div
@@ -51,7 +51,7 @@
         >
         </div>
         <div class="buttons">
-          <ButtonTwoTone icon-class="play" @click.native="playPlaylistByID()">
+          <ButtonTwoTone icon-class="play" @click="playPlaylistByID()">
             {{ $t('common.play') }}
           </ButtonTwoTone>
           <ButtonTwoTone
@@ -64,7 +64,7 @@
             :background-color="
               playlist.subscribed ? 'var(--color-secondary-bg)' : ''
             "
-            @click.native="likePlaylist"
+            @click="likePlaylist"
           >
           </ButtonTwoTone>
           <ButtonTwoTone
@@ -73,7 +73,7 @@
             :icon-button="true"
             :horizontal-padding="0"
             color="grey"
-            @click.native="openMenu"
+            @click="openMenu"
           >
           </ButtonTwoTone>
         </div>
@@ -100,7 +100,7 @@
         :class="specialPlaylistInfo.gradient"
         @click.right="openMenu"
       >
-        <!-- <img :src="playlist.coverImgUrl | resizeImage" /> -->
+        <!-- <img :src="resizeImage(playlist.coverImgUrl)" /> -->
         {{ specialPlaylistInfo.name }}
       </div>
       <div class="subtitle"
@@ -112,7 +112,7 @@
           class="play-button"
           icon-class="play"
           color="grey"
-          @click.native="playPlaylistByID()"
+          @click="playPlaylistByID()"
         >
           {{ $t('common.play') }}
         </ButtonTwoTone>
@@ -126,7 +126,7 @@
           :background-color="
             playlist.subscribed ? 'var(--color-secondary-bg)' : ''
           "
-          @click.native="likePlaylist"
+          @click="likePlaylist"
         >
         </ButtonTwoTone>
         <ButtonTwoTone
@@ -134,7 +134,7 @@
           :icon-button="true"
           :horizontal-padding="0"
           color="grey"
-          @click.native="openMenu"
+          @click="openMenu"
         >
         </ButtonTwoTone>
       </div>
@@ -144,7 +144,7 @@
       <h1>
         <LazyImage
           class="avatar"
-          :src="data.user.avatarUrl | resizeImage"
+          :src="resizeImage(data.user.avatarUrl)"
           referrerpolicy="no-referrer"
         />
         {{ data.user.nickname }}{{ $t('library.sLikedSongs') }}
@@ -175,6 +175,7 @@
       :extra-context-menu-item="
         isUserOwnPlaylist ? ['removeTrackFromPlaylist'] : []
       "
+      @remove-track="removeTrack"
     />
 
     <div class="load-more">
@@ -182,21 +183,20 @@
         v-show="hasMore"
         color="grey"
         :loading="loadingMore"
-        @click.native="loadMore(100)"
+        @click="loadMore(100)"
         >{{ $t('explore.loadMore') }}</ButtonTwoTone
       >
     </div>
 
     <Modal
-      :show="showFullDescription"
-      :close="toggleFullDescription"
+      v-model:show="showFullDescription"
       :show-footer="false"
       :click-outside-hide="true"
       title="歌单介绍"
       >{{ playlist.description }}</Modal
     >
 
-    <ContextMenu ref="playlistMenu">
+    <ContextMenu ref="playlistMenuRef">
       <!-- <div class="item">{{ $t('contextMenu.addToQueue') }}</div> -->
       <div class="item" @click="likePlaylist(true)">{{
         playlist.subscribed
@@ -222,26 +222,40 @@
   </div>
 </template>
 
-<script>
-import { mapMutations, mapActions, mapState } from 'vuex';
+<script setup lang="ts">
+const router = useRouter();
+
+// 原 Vue2 实例字段：记录当前歌单 id，路由复用组件时取消陈旧请求
+let id; // Vue2 时代挂在实例上的私有句柄（非响应式），降为模块级变量
+let _loadingMore = null;
+
 import NProgress from 'nprogress';
 import { loadWithProgress } from '@/utils/pageLoad';
 import {
   getPlaylistDetail,
   subscribePlaylist,
-  deletePlaylist,
+  // 与同名本地函数撞名，导入改名（Options API 时代的 this 遮蔽在 setup 里不成立）
+  deletePlaylist as deletePlaylistApi,
 } from '@/api/playlist';
 import { getTrackDetail } from '@/api/track';
 import { isAccountLoggedIn } from '@/utils/auth';
 import nativeAlert from '@/utils/nativeAlert';
-import locale from '@/locale';
+import { getI18n } from '@/locale';
 import { cancelRequestsByTag } from '@/utils/request';
-
 import ButtonTwoTone from '@/components/ButtonTwoTone.vue';
 import ContextMenu from '@/components/ContextMenu.vue';
 import TrackList from '@/components/TrackList.vue';
 import Cover from '@/components/Cover.vue';
 import Modal from '@/components/Modal.vue';
+import { formatDate, resizeImage } from '@/utils/formatters';
+import { ref, computed, onBeforeUnmount } from 'vue';
+import { useDataStore, usePlayerStore, useUiStore } from '@/stores';
+import { storeToRefs } from 'pinia';
+import { onBeforeRouteUpdate } from 'vue-router';
+import { useDescriptionToggle } from '@/composables/useDescriptionToggle';
+import { useCrossPlatformPlay } from '@/composables/useCrossPlatformPlay';
+
+import { useRoute, useRouter } from 'vue-router';
 
 const specialPlaylist = {
   2829816518: {
@@ -334,280 +348,268 @@ const specialPlaylist = {
   },
 };
 
-export default {
-  name: 'Playlist',
-  components: {
-    Cover,
-    ButtonTwoTone,
-    TrackList,
-    Modal,
-    ContextMenu,
+const playlistMenuRef = ref<any>(null);
+const route = useRoute();
+const dataStore = useDataStore();
+const playerStore = usePlayerStore();
+const uiStore = useUiStore();
+
+const { data } = storeToRefs(dataStore);
+
+const showToast = uiStore.showToast;
+
+const show = ref<any>(false);
+
+const playlist = ref<any>({
+  id: 0,
+  coverImgUrl: '',
+  creator: {
+    userId: '',
   },
-  directives: {
-    focus: {
-      inserted: function (el) {
-        el.focus();
-      },
-    },
-  },
-  // 从 /playlist/A 跳到 /playlist/B 时组件被复用，不会重走 created。缺了
-  // 这个钩子，页面会一直停在上一个歌单的内容上，观感就是「跳转后加载不出来」。
-  beforeRouteUpdate(to, from, next) {
-    this.show = false;
-    this.tracks = [];
-    if (to.name === 'likedSongs') {
-      this.loadData(this.data.likedSongPlaylistID, next);
-    } else {
-      this.loadData(to.params.id, next);
-    }
-  },
-  data() {
-    return {
-      show: false,
-      playlist: {
-        id: 0,
-        coverImgUrl: '',
-        creator: {
-          userId: '',
-        },
-        trackIds: [],
-      },
-      showFullDescription: false,
-      tracks: [],
-      loadingMore: false,
-      hasMore: false,
-      lastLoadedTrackIndex: 9,
-      displaySearchInPlaylist: false, // 是否显示搜索框
-      searchKeyWords: '', // 搜索使用的关键字
-      inputSearchKeyWords: '', // 搜索框中正在输入的关键字
-      inputFocus: false,
-      debounceTimeout: null,
-      searchInputWidth: '0px', // 搜索框宽度
-    };
-  },
-  computed: {
-    ...mapState(['player', 'data']),
-    isLikeSongsPage() {
-      return this.$route.name === 'likedSongs';
-    },
-    specialPlaylistInfo() {
-      return specialPlaylist[this.playlist.id];
-    },
-    isUserOwnPlaylist() {
-      return (
-        this.playlist.creator.userId === this.data.user.userId &&
-        this.playlist.id !== this.data.likedSongPlaylistID
-      );
-    },
-    filteredTracks() {
-      return this.tracks.filter(
-        track =>
-          (track.name &&
-            track.name
-              .toLowerCase()
-              .includes(this.searchKeyWords.toLowerCase())) ||
-          (track.al.name &&
-            track.al.name
-              .toLowerCase()
-              .includes(this.searchKeyWords.toLowerCase())) ||
-          track.ar.find(
-            artist =>
-              artist.name &&
-              artist.name
-                .toLowerCase()
-                .includes(this.searchKeyWords.toLowerCase())
-          )
-      );
-    },
-  },
-  created() {
-    if (this.$route.name === 'likedSongs') {
-      this.loadData(this.data.likedSongPlaylistID);
-    } else {
-      this.loadData(this.$route.params.id);
-    }
-  },
-  beforeDestroy() {
-    if (this.id) cancelRequestsByTag(`playlist:${this.id}`);
-    NProgress.done();
-  },
-  methods: {
-    ...mapMutations(['appendTrackToPlayerList']),
-    ...mapActions(['playFirstTrackOnList', 'playTrackOnListByID', 'showToast']),
-    playPlaylistByID(trackID = 'first') {
-      if (this.$route.query.server) {
-        this.playThisListByTrack(this.playlist.id);
-        return;
-      }
-      let trackIDs = this.playlist.trackIds.map(t => t.id);
-      this.$store.state.player.replacePlaylist(
-        trackIDs,
-        this.playlist.id,
-        'playlist',
-        trackID
-      );
-    },
-    playThisListByTrack(id) {
-      this.showToast('Playlist:正在进行其他平台播放');
-      getPlaylistDetail(id, true, this.$route.query.server).then(data => {
-        console.log(data);
-        let playlist = data.playlist;
-        let tracks = playlist.tracks.filter(_track => {
-          return _track.playable == 1;
-        });
-        this.$store.state.player.replacePlaylist(
-          tracks,
-          tracks[0],
-          'artist',
-          tracks[0]
+  trackIds: [],
+});
+
+// 简介弹窗开关 + 页面滚动锁定（原与 album/artist 重复的实现收敛于此）
+const { showFullDescription, toggleFullDescription } = useDescriptionToggle();
+
+// 第三方平台歌单播放（与 album/coSearch 同款逻辑收敛于此，仅文案不同）
+const { playThisListByTrack: playCrossPlatformList } = useCrossPlatformPlay();
+
+const tracks = ref<any>([]);
+
+const loadingMore = ref<any>(false);
+
+const hasMore = ref<any>(false);
+
+const lastLoadedTrackIndex = ref<any>(9);
+
+const displaySearchInPlaylist = ref<any>(false);
+
+const searchKeyWords = ref<any>('');
+
+const inputSearchKeyWords = ref<any>('');
+
+const inputFocus = ref<any>(false);
+
+// 搜索防抖定时器句柄（非响应式）：同 lyrics.vue 的 _clockTimer 一样
+// 用普通变量，避免无意义的响应式开销
+let _searchDebounceTimeout: ReturnType<typeof setTimeout> | null = null;
+
+const searchInputWidth = ref<any>('0px');
+
+const isLikeSongsPage = computed(function isLikeSongsPage() {
+  return route.name === 'likedSongs';
+});
+
+const specialPlaylistInfo = computed(function specialPlaylistInfo() {
+  return specialPlaylist[playlist.value.id];
+});
+
+const isUserOwnPlaylist = computed(function isUserOwnPlaylist() {
+  return (
+    playlist.value.creator.userId === data.value.user.userId &&
+    playlist.value.id !== data.value.likedSongPlaylistID
+  );
+});
+
+const filteredTracks = computed(function filteredTracks() {
+  return tracks.value.filter(
+    track =>
+      (track.name &&
+        track.name
+          .toLowerCase()
+          .includes(searchKeyWords.value.toLowerCase())) ||
+      (track.al.name &&
+        track.al.name
+          .toLowerCase()
+          .includes(searchKeyWords.value.toLowerCase())) ||
+      track.ar.find(
+        artist =>
+          artist.name &&
+          artist.name.toLowerCase().includes(searchKeyWords.value.toLowerCase())
+      )
+  );
+});
+
+function playPlaylistByID(trackID = 'first') {
+  if (route.query.server) {
+    playCrossPlatformList(
+      playlist.value.id,
+      route.query.server,
+      'Playlist:正在进行其他平台播放'
+    );
+    return;
+  }
+  let trackIDs = playlist.value.trackIds.map(t => t.id);
+  playerStore.player.replacePlaylist(
+    trackIDs,
+    playlist.value.id,
+    'playlist',
+    trackID
+  );
+}
+
+function likePlaylist(toast = false) {
+  if (!isAccountLoggedIn()) {
+    showToast((getI18n() as any).global.t('toast.needToLogin'));
+    return;
+  }
+  subscribePlaylist({
+    id: playlist.value.id,
+    t: playlist.value.subscribed ? 2 : 1,
+  }).then(data => {
+    if (data.code === 200) {
+      playlist.value.subscribed = !playlist.value.subscribed;
+      if (toast === true)
+        showToast(
+          playlist.value.subscribed ? '已保存到音乐库' : '已从音乐库删除'
         );
-      });
-    },
-    likePlaylist(toast = false) {
-      if (!isAccountLoggedIn()) {
-        this.showToast(locale.t('toast.needToLogin'));
-        return;
-      }
-      subscribePlaylist({
-        id: this.playlist.id,
-        t: this.playlist.subscribed ? 2 : 1,
-      }).then(data => {
-        if (data.code === 200) {
-          this.playlist.subscribed = !this.playlist.subscribed;
-          if (toast === true)
-            this.showToast(
-              this.playlist.subscribed ? '已保存到音乐库' : '已从音乐库删除'
-            );
+    }
+    getPlaylistDetail(id, true).then(data => {
+      playlist.value = data.playlist;
+    });
+  });
+}
+
+function loadData(newId, next = undefined) {
+  // 切换歌单时先取消上一次未完成的详情请求，避免旧请求晚到覆盖新页面
+  if (id && id !== newId) {
+    cancelRequestsByTag(`playlist:${id}`);
+  }
+  id = newId;
+  // 默认走缓存（带 30s 内存缓存 + 后端 apicache）；只有 server 跨平台时才打时间戳
+  const noCache = !!route.query.server;
+  loadWithProgress(
+    getPlaylistDetail(id, noCache, route.query.server || undefined)
+      .then(data => {
+        playlist.value = data.playlist;
+        tracks.value = data.playlist.tracks;
+        if (next !== undefined) next();
+        show.value = true;
+        lastLoadedTrackIndex.value = data.playlist.tracks.length - 1;
+        return data;
+      })
+      .then(() => {
+        if (playlist.value.trackCount > tracks.value.length) {
+          loadingMore.value = true;
+          loadMore();
         }
-        getPlaylistDetail(this.id, true).then(data => {
-          this.playlist = data.playlist;
-        });
-      });
-    },
-    loadData(id, next = undefined) {
-      // 切换歌单时先取消上一次未完成的详情请求，避免旧请求晚到覆盖新页面
-      if (this.id && this.id !== id) {
-        cancelRequestsByTag(`playlist:${this.id}`);
-      }
-      this.id = id;
-      // 默认走缓存（带 30s 内存缓存 + 后端 apicache）；只有 server 跨平台时才打时间戳
-      const noCache = !!this.$route.query.server;
-      loadWithProgress(
-        getPlaylistDetail(
-          this.id,
-          noCache,
-          this.$route.query.server || undefined
-        )
-          .then(data => {
-            this.playlist = data.playlist;
-            this.tracks = data.playlist.tracks;
-            if (next !== undefined) next();
-            this.show = true;
-            this.lastLoadedTrackIndex = data.playlist.tracks.length - 1;
-            return data;
-          })
-          .then(() => {
-            if (this.playlist.trackCount > this.tracks.length) {
-              this.loadingMore = true;
-              this.loadMore();
-            }
-          }),
-        {
-          onError: () => {
-            // 失败也要交出页面壳（返回可点、导航在位），并复位忙态
-            this.show = true;
-            this.loadingMore = false;
-          },
-        }
-      );
-    },
-    loadMore(loadNum = 100) {
-      let trackIDs = this.playlist.trackIds.filter((t, index) => {
-        if (
-          index > this.lastLoadedTrackIndex &&
-          index <= this.lastLoadedTrackIndex + loadNum
-        ) {
-          return t;
-        }
-      });
-      // 并发锁 + 兜底：按钮原本既无 disabled 也无 in-flight 判断，连点会把
-      // 同一批 trackIds 请求多次；请求一失败 loadingMore 就永远停在 true，
-      // 按钮转圈不止且再也无法重试。
-      if (this._loadingMore) return;
-      this._loadingMore = true;
-      trackIDs = trackIDs.map(t => t.id);
-      getTrackDetail(trackIDs.join(','))
-        .then(data => {
-          this.tracks.push(...(data?.songs ?? []));
-          this.lastLoadedTrackIndex += trackIDs.length;
-          this.hasMore =
-            this.lastLoadedTrackIndex + 1 < this.playlist.trackIds.length;
-        })
-        .catch(() => {
-          this.showToast('加载更多歌曲失败，请重试');
-        })
-        .finally(() => {
-          this._loadingMore = false;
-          this.loadingMore = false;
-        });
-    },
-    openMenu(e) {
-      this.$refs.playlistMenu.openMenu(e);
-    },
-    deletePlaylist() {
-      if (!isAccountLoggedIn()) {
-        this.showToast(locale.t('toast.needToLogin'));
-        return;
-      }
-      let confirmation = confirm(`确定要删除歌单 ${this.playlist.name}？`);
-      if (confirmation === true) {
-        deletePlaylist(this.playlist.id).then(data => {
-          if (data.code === 200) {
-            nativeAlert(`已删除歌单 ${this.playlist.name}`);
-            this.$router.go(-1);
-          } else {
-            nativeAlert('发生错误');
-          }
-        });
-      }
-    },
-    editPlaylist() {
-      nativeAlert('此功能开发中');
-    },
-    searchInPlaylist() {
-      this.displaySearchInPlaylist =
-        !this.displaySearchInPlaylist || this.isLikeSongsPage;
-      if (this.displaySearchInPlaylist == false) {
-        this.searchKeyWords = '';
-        this.inputSearchKeyWords = '';
+      }),
+    {
+      // pageLoad.ts 的 options 参数类型暂未包含 onError，utils 层收窄前局部断言
+      onError: () => {
+        // 失败也要交出页面壳（返回可点、导航在位），并复位忙态
+        show.value = true;
+        loadingMore.value = false;
+      },
+    }
+  );
+}
+
+function loadMore(loadNum = 100) {
+  let trackIDs = playlist.value.trackIds.filter((t, index) => {
+    if (
+      index > lastLoadedTrackIndex.value &&
+      index <= lastLoadedTrackIndex.value + loadNum
+    ) {
+      return t;
+    }
+  });
+  // 并发锁 + 兜底：按钮原本既无 disabled 也无 in-flight 判断，连点会把
+  // 同一批 trackIds 请求多次；请求一失败 loadingMore 就永远停在 true，
+  // 按钮转圈不止且再也无法重试。
+  if (_loadingMore) return;
+  _loadingMore = true;
+  trackIDs = trackIDs.map(t => t.id);
+  getTrackDetail(trackIDs.join(','))
+    .then(data => {
+      tracks.value.push(...(data?.songs ?? []));
+      lastLoadedTrackIndex.value += trackIDs.length;
+      hasMore.value =
+        lastLoadedTrackIndex.value + 1 < playlist.value.trackIds.length;
+    })
+    .catch(() => {
+      showToast('加载更多歌曲失败，请重试');
+    })
+    .finally(() => {
+      _loadingMore = false;
+      loadingMore.value = false;
+    });
+}
+
+function openMenu(e) {
+  playlistMenuRef.value.openMenu(e);
+}
+
+function deletePlaylist() {
+  if (!isAccountLoggedIn()) {
+    showToast((getI18n() as any).global.t('toast.needToLogin'));
+    return;
+  }
+  let confirmation = confirm(`确定要删除歌单 ${playlist.value.name}？`);
+  if (confirmation === true) {
+    deletePlaylistApi(playlist.value.id).then(data => {
+      if (data.code === 200) {
+        nativeAlert(`已删除歌单 ${playlist.value.name}`);
+        router.go(-1);
       } else {
-        this.searchInputWidth = '172px';
-        this.loadMore(500);
+        nativeAlert('发生错误');
       }
-    },
-    removeTrack(trackID) {
-      if (!isAccountLoggedIn()) {
-        this.showToast(locale.t('toast.needToLogin'));
-        return;
-      }
-      this.tracks = this.tracks.filter(t => t.id !== trackID);
-    },
-    inputDebounce() {
-      if (this.debounceTimeout) clearTimeout(this.debounceTimeout);
-      this.debounceTimeout = setTimeout(() => {
-        this.searchKeyWords = this.inputSearchKeyWords;
-      }, 600);
-    },
-    toggleFullDescription() {
-      this.showFullDescription = !this.showFullDescription;
-      if (this.showFullDescription) {
-        this.$store.commit('enableScrolling', false);
-      } else {
-        this.$store.commit('enableScrolling', true);
-      }
-    },
-  },
-};
+    });
+  }
+}
+
+function editPlaylist() {
+  nativeAlert('此功能开发中');
+}
+
+function searchInPlaylist() {
+  displaySearchInPlaylist.value =
+    !displaySearchInPlaylist.value || isLikeSongsPage.value;
+  if (displaySearchInPlaylist.value == false) {
+    searchKeyWords.value = '';
+    inputSearchKeyWords.value = '';
+  } else {
+    searchInputWidth.value = '172px';
+    loadMore(500);
+  }
+}
+
+function removeTrack(trackID) {
+  if (!isAccountLoggedIn()) {
+    showToast((getI18n() as any).global.t('toast.needToLogin'));
+    return;
+  }
+  tracks.value = tracks.value.filter(t => t.id !== trackID);
+}
+
+function inputDebounce() {
+  if (_searchDebounceTimeout) clearTimeout(_searchDebounceTimeout);
+  _searchDebounceTimeout = setTimeout(() => {
+    searchKeyWords.value = inputSearchKeyWords.value;
+  }, 600);
+}
+
+if (route.name === 'likedSongs') {
+  loadData(data.value.likedSongPlaylistID);
+} else {
+  loadData(route.params.id);
+}
+
+onBeforeUnmount(function beforeUnmount() {
+  if (id) cancelRequestsByTag(`playlist:${id}`);
+  NProgress.done();
+});
+
+onBeforeRouteUpdate((to, from, next) => {
+  show.value = false;
+  tracks.value = [];
+  if (to.name === 'likedSongs') {
+    loadData(data.value.likedSongPlaylistID, next);
+  } else {
+    loadData(to.params.id, next);
+  }
+});
 </script>
 
 <style lang="scss" scoped>

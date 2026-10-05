@@ -1,7 +1,7 @@
 <template>
   <span class="artist-in-line">
     {{ computedPrefix }}
-    <span v-for="(ar, index) in filteredArtists" :key="index">
+    <span v-for="(ar, index) in filteredArtists" :key="ar.id ?? ar.name">
       <router-link
         v-if="ar.id !== 0"
         :to="otherServerAccess ? `/artist/${ar.id}` : { path: $route.fullPath }"
@@ -15,37 +15,38 @@
   </span>
 </template>
 
-<script>
-export default {
-  name: 'ArtistInLine',
-  props: {
-    artists: {
-      type: Array,
-      required: true,
-    },
-    exclude: {
-      type: String,
-      default: '',
-    },
-    prefix: {
-      type: String,
-      default: '',
-    },
-    otherServerAccess: {
-      type: Boolean,
-      default: true,
-    },
+<script setup lang="ts">
+import { computed } from 'vue';
+import type { PropType } from 'vue';
+import type { Artist } from '@/types/entities';
+
+const props = defineProps({
+  artists: {
+    type: Array as PropType<Artist[]>,
+    required: true,
   },
-  computed: {
-    filteredArtists() {
-      return this.artists.filter(a => a.name !== this.exclude);
-    },
-    computedPrefix() {
-      if (this.filteredArtists.length !== 0) return this.prefix;
-      else return '';
-    },
+  exclude: {
+    type: String,
+    default: '',
   },
-};
+  prefix: {
+    type: String,
+    default: '',
+  },
+  otherServerAccess: {
+    type: Boolean,
+    default: true,
+  },
+});
+
+const filteredArtists = computed(function filteredArtists() {
+  return props.artists.filter(a => a.name !== props.exclude);
+});
+
+const computedPrefix = computed(function computedPrefix() {
+  if (filteredArtists.value.length !== 0) return props.prefix;
+  else return '';
+});
 </script>
 
 <style lang="scss" scoped>

@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import {
   paletteFromHistogram,
   shadowFromHex,
-} from '../../components/visualizer/coverColor.js';
-import { hexToRgb, rgbToHsl } from '../core/ColorPalette.js';
+} from '../../components/visualizer/coverColor.ts';
+import { hexToRgb, rgbToHsl } from '../core/ColorPalette.ts';
 
 /** 构造 RGBA 平铺数据：按 [颜色, 像素数] 重复填充。 */
 function pixels(entries) {

@@ -1,6 +1,6 @@
 /* BeatDetector 单元测试 */
 import assert from 'node:assert/strict';
-import { BeatDetector } from '../core/BeatDetector.js';
+import { BeatDetector } from '../core/BeatDetector.ts';
 
 function spec(n, fill) {
   const a = new Float32Array(n);

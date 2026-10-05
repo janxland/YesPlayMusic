@@ -35,19 +35,12 @@
   </div>
 </template>
 
-<script>
+<script setup lang="ts">
 import pkg from '../../package.json';
 import Changelog from '@/components/Changelog.vue';
+import { ref } from 'vue';
 
-export default {
-  name: 'About',
-  components: { Changelog },
-  data() {
-    return {
-      version: pkg.version,
-    };
-  },
-};
+const version = ref(pkg.version);
 </script>
 
 <style lang="scss" scoped>

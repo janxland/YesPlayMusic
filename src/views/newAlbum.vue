@@ -14,32 +14,22 @@
   </div>
 </template>
 
-<script>
+<script setup lang="ts">
 import { newAlbums } from '@/api/album';
 import { loadWithProgress } from '@/utils/pageLoad';
-
 import CoverRow from '@/components/CoverRow.vue';
+import { ref } from 'vue';
 
-export default {
-  components: {
-    CoverRow,
-  },
-  data() {
-    return {
-      albums: [],
-    };
-  },
-  created() {
-    loadWithProgress(
-      newAlbums({
-        area: 'EA',
-        limit: 100,
-      }).then(data => {
-        this.albums = data.albums;
-      })
-    );
-  },
-};
+const albums = ref<any>([]);
+
+loadWithProgress(
+  newAlbums({
+    area: 'EA',
+    limit: 100,
+  }).then(data => {
+    albums.value = data.albums;
+  })
+);
 </script>
 
 <style lang="scss" scoped>

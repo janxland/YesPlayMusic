@@ -1,8 +1,8 @@
 <template>
-  <div ref="contextMenu" class="context-menu">
+  <div class="context-menu">
     <div
       v-if="showMenu"
-      ref="menu"
+      ref="menuRef"
       class="menu"
       tabindex="-1"
       :style="{ top: top, left: left }"
@@ -14,55 +14,55 @@
   </div>
 </template>
 
-<script>
-/* eslint-disable */
-import { mapState } from 'vuex';
+<script setup lang="ts">
+// 关闭时通过 @close 通知宿主重置其右键状态，不再依赖 $parent 桥（Vue3 script setup 下不可靠，已移除）
+const emit = defineEmits(['close']);
 
-export default {
-  name: 'ContextMenu',
-  data() {
-    return {
-      showMenu: false,
-      top: '0px',
-      left: '0px',
-    };
-  },
-  computed: {
-    ...mapState(['player']),
-  },
-  methods: {
-    setMenu(top, left) {
-      let heightOffset = this.player.enabled ? 64 : 0;
-      let largestHeight =
-        window.innerHeight - this.$refs.menu.offsetHeight - heightOffset;
-      let largestWidth = window.innerWidth - this.$refs.menu.offsetWidth - 25;
-      if (top > largestHeight) top = largestHeight;
-      if (left > largestWidth) left = largestWidth;
-      this.top = top + 'px';
-      this.left = left + 'px';
-    },
+import { nextTick, ref, useTemplateRef } from 'vue';
+import { usePlayerStore } from '@/stores/player';
+import { useUiStore } from '@/stores/ui';
+import { storeToRefs } from 'pinia';
 
-    closeMenu() {
-      this.showMenu = false;
-      if (this.$parent.closeMenu !== undefined) {
-        this.$parent.closeMenu();
-      }
-      this.$store.commit('enableScrolling', true);
-    },
+const menuRef = useTemplateRef<HTMLElement>('menuRef');
+const uiStore = useUiStore();
 
-    openMenu(e) {
-      this.showMenu = true;
-      this.$nextTick(
-        function () {
-          this.$refs.menu.focus();
-          this.setMenu(e.y, e.x);
-        }.bind(this)
-      );
-      e.preventDefault();
-      this.$store.commit('enableScrolling', false);
-    },
-  },
-};
+const { player } = storeToRefs(usePlayerStore());
+
+const showMenu = ref(false);
+
+const top = ref('0px');
+
+const left = ref('0px');
+
+function setMenu(inTop: number, inLeft: number) {
+  let heightOffset = player.value.enabled ? 64 : 0;
+  let largestHeight =
+    window.innerHeight - menuRef.value.offsetHeight - heightOffset;
+  let largestWidth = window.innerWidth - menuRef.value.offsetWidth - 25;
+  if (inTop > largestHeight) inTop = largestHeight;
+  if (inLeft > largestWidth) inLeft = largestWidth;
+  // 参数改名为 inTop/inLeft：原迁移版被同名参数遮蔽 ref，赋值落空（与迁移前 this.top = top 语义不一致）
+  top.value = inTop + 'px';
+  left.value = inLeft + 'px';
+}
+
+function closeMenu() {
+  showMenu.value = false;
+  emit('close');
+  uiStore.toggleScrolling(true);
+}
+
+function openMenu(e: MouseEvent) {
+  showMenu.value = true;
+  nextTick(function () {
+    menuRef.value.focus();
+    setMenu(e.y, e.x);
+  });
+  e.preventDefault();
+  uiStore.toggleScrolling(false);
+}
+
+defineExpose({ openMenu, closeMenu });
 </script>
 
 <style lang="scss" scoped>
@@ -101,7 +101,7 @@ export default {
     border: 1px solid rgba(255, 255, 255, 0.08);
     box-shadow: 0 0 6px rgba(255, 255, 255, 0.08);
   }
-  .menu .item:hover {
+  .menu :deep(.item:hover) {
     color: var(--color-text);
   }
 }
@@ -112,7 +112,8 @@ export default {
   }
 }
 
-.menu .item {
+// 菜单项由宿主插槽传入，Vue3 下只带宿主 scope 属性不带本组件 data-v，必须 :deep() 才能命中
+.menu :deep(.item) {
   font-weight: 600;
   font-size: 14px;
   padding: 10px 14px;
@@ -138,7 +139,7 @@ export default {
   }
 }
 
-hr {
+.menu :deep(hr) {
   margin: 4px 10px;
   background: rgba(128, 128, 128, 0.18);
   height: 1px;
@@ -146,7 +147,7 @@ hr {
   border: none;
 }
 
-.item-info {
+.menu :deep(.item-info) {
   padding: 10px 10px;
   display: flex;
   align-items: center;

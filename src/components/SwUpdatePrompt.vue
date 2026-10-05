@@ -7,19 +7,17 @@
   </transition>
 </template>
 
-<script>
-import { mapState } from 'vuex';
+<script setup lang="ts">
+import { useUiStore } from '@/stores/ui';
+import { storeToRefs } from 'pinia';
 
-export default {
-  name: 'SwUpdatePrompt',
-  computed: mapState(['swNeedsRefresh']),
-  methods: {
-    // 新 SW 已 skipWaiting + clientsClaim 接管，重载一次即拿到全部新资源
-    refresh() {
-      window.location.reload();
-    },
-  },
-};
+const uiStore = useUiStore();
+
+const { swNeedsRefresh } = storeToRefs(uiStore);
+
+function refresh() {
+  window.location.reload();
+}
 </script>
 
 <style lang="scss" scoped>
@@ -62,7 +60,7 @@ export default {
   transition: opacity 0.2s;
 }
 
-.fade-enter,
+.fade-enter-from,
 .fade-leave-to {
   opacity: 0;
 }

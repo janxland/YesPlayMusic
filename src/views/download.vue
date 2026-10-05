@@ -49,7 +49,13 @@
   </div>
 </template>
 
-<script>
+<script setup lang="ts">
+const router = useRouter();
+
+import { ref, computed } from 'vue';
+
+import { useRouter } from 'vue-router';
+
 const RELEASES = {
   version: '0.4.12',
   mac: {
@@ -64,47 +70,40 @@ const RELEASES = {
   },
 };
 
-export default {
-  name: 'DownloadPage',
-  data() {
-    return {
-      version: RELEASES.version,
-      detected: this.detect(),
-    };
-  },
-  computed: {
-    platforms() {
-      return [
-        {
-          key: 'mac',
-          short: 'macOS',
-          req: 'macOS 10.11 或更高 · Apple 芯片 / Intel 通用',
-          ext: '.dmg',
-          ...RELEASES.mac,
-        },
-        {
-          key: 'win',
-          short: 'Windows',
-          req: 'Windows 10 / 11 · 64 位',
-          ext: '.exe',
-          ...RELEASES.win,
-        },
-      ];
+const version = ref(RELEASES.version);
+
+const detected = ref(detect());
+
+const platforms = computed(function platforms() {
+  return [
+    {
+      key: 'mac',
+      short: 'macOS',
+      req: 'macOS 10.11 或更高 · Apple 芯片 / Intel 通用',
+      ext: '.dmg',
+      ...RELEASES.mac,
     },
-  },
-  methods: {
-    detect() {
-      const ua = navigator.userAgent;
-      if (/Windows NT/.test(ua)) return 'win';
-      if (/Macintosh|Mac OS X/.test(ua)) return 'mac';
-      return '';
+    {
+      key: 'win',
+      short: 'Windows',
+      req: 'Windows 10 / 11 · 64 位',
+      ext: '.exe',
+      ...RELEASES.win,
     },
-    goBack() {
-      if (window.history.length > 1) this.$router.back();
-      else this.$router.push('/');
-    },
-  },
-};
+  ];
+});
+
+function detect() {
+  const ua = navigator.userAgent;
+  if (/Windows NT/.test(ua)) return 'win';
+  if (/Macintosh|Mac OS X/.test(ua)) return 'mac';
+  return '';
+}
+
+function goBack() {
+  if (window.history.length > 1) router.back();
+  else router.push('/');
+}
 </script>
 
 <style lang="scss" scoped>

@@ -9,7 +9,7 @@
     />
     <LazyImage
       class="cover"
-      :src="track.album && track.album.picUrl | resizeImage(512)"
+      :src="resizeImage(track.album && track.album.picUrl, 512)"
       referrerpolicy="no-referrer"
       @click="goToAlbum"
     />
@@ -20,20 +20,17 @@
       </div>
       <div class="controls">
         <div class="buttons">
-          <button-icon
-            :title="$t('player.previous')"
-            @click.native="playPrevTrack"
-          >
+          <button-icon :title="$t('player.previous')" @click="playPrevTrack">
             <svg-icon icon-class="previous" />
           </button-icon>
           <button-icon
             :title="$t(isPlaying ? 'player.pause' : 'player.play')"
             class="play"
-            @click.native="play"
+            @click="play"
           >
             <svg-icon :icon-class="isPlaying ? 'pause' : 'play'" />
           </button-icon>
-          <button-icon :title="$t('player.next')" @click.native="next">
+          <button-icon :title="$t('player.next')" @click="next">
             <svg-icon icon-class="next" />
           </button-icon>
         </div>
@@ -43,93 +40,89 @@
   </div>
 </template>
 
-<script>
+<script setup lang="ts">
+const router = useRouter();
+
 import ButtonIcon from '@/components/ButtonIcon.vue';
 import ArtistsInLine from '@/components/ArtistsInLine.vue';
-import { mapState } from 'vuex';
 import { getCoverPalette } from '@/utils/coverPalette';
+import { resizeImage } from '@/utils/formatters';
 import Color from 'color';
+import { ref, computed, watch } from 'vue';
+import { usePlayerStore } from '@/stores/player';
+import { storeToRefs } from 'pinia';
 
-export default {
-  name: 'FMCard',
-  components: { ButtonIcon, ArtistsInLine },
-  data() {
-    return {
-      background: '',
-    };
-  },
-  computed: {
-    ...mapState(['player']),
-    track() {
-      return this.player.personalFMTrack;
-    },
-    isPlaying() {
-      return this.player.playing && this.player.isPersonalFM;
-    },
-    artists() {
-      return this.track.artists || this.track.ar || [];
-    },
-    nextTrackCover() {
-      return `${this.player._personalFMNextTrack?.album?.picUrl.replace(
+import { useRouter } from 'vue-router';
+const { player } = storeToRefs(usePlayerStore());
+
+const background = ref<any>('');
+
+const track = computed(function track() {
+  return player.value.personalFMTrack;
+});
+
+const isPlaying = computed(function isPlaying() {
+  return player.value.playing && player.value.isPersonalFM;
+});
+
+const artists = computed(function artists() {
+  return track.value.artists || track.value.ar || [];
+});
+
+const nextTrackCover = computed(function nextTrackCover() {
+  return `${player.value._personalFMNextTrack?.album?.picUrl.replace(
+    'http://',
+    'https://'
+  )}?param=512y512`;
+});
+
+function play() {
+  player.value.playPersonalFM();
+}
+
+function next() {
+  player.value.playNextFMTrack();
+}
+
+function playPrevTrack() {
+  player.value.playPrevTrack();
+}
+
+function goToAlbum() {
+  if (track.value.album.id === 0) return;
+  router.push({ path: '/album/' + track.value.album.id });
+}
+
+function getColor() {
+  if (!player.value.personalFMTrack?.album?.picUrl) return;
+  const cover = `${player.value.personalFMTrack.album.picUrl.replace(
+    'http://',
+    'https://'
+  )}?param=512y512`;
+  getCoverPalette(cover).then(palette => {
+    // 快速切 FM 时旧取色后到达，不能覆盖新歌的背景
+    if (
+      `${player.value.personalFMTrack?.album?.picUrl?.replace(
         'http://',
         'https://'
-      )}?param=512y512`;
-    },
-  },
-  watch: {
-    track() {
-      this.getColor();
-    },
-  },
-  created() {
-    this.getColor();
-  },
-  methods: {
-    play() {
-      this.player.playPersonalFM();
-    },
-    next() {
-      this.player.playNextFMTrack();
-    },
-    playPrevTrack() {
-      this.player.playPrevTrack();
-    },
-    goToAlbum() {
-      if (this.track.album.id === 0) return;
-      this.$router.push({ path: '/album/' + this.track.album.id });
-    },
-    moveToFMTrash() {
-      this.player.moveToFMTrash();
-    },
-    getColor() {
-      if (!this.player.personalFMTrack?.album?.picUrl) return;
-      const cover = `${this.player.personalFMTrack.album.picUrl.replace(
-        'http://',
-        'https://'
-      )}?param=512y512`;
-      getCoverPalette(cover).then(palette => {
-        // 快速切 FM 时旧取色后到达，不能覆盖新歌的背景
-        if (
-          `${this.player.personalFMTrack?.album?.picUrl?.replace(
-            'http://',
-            'https://'
-          )}?param=512y512` !== cover
-        )
-          return;
-        const color = Color.rgb(palette.Vibrant._rgb)
-          .darken(0.1)
-          .rgb()
-          .string();
-        const color2 = Color.rgb(palette.Vibrant._rgb)
-          .lighten(0.28)
-          .rotate(-30)
-          .rgb()
-          .string();
-        this.background = `linear-gradient(to top left, ${color}, ${color2})`;
-      });
-    },
-  },
-};
+      )}?param=512y512` !== cover
+    )
+      return;
+    const color = Color.rgb(palette.Vibrant._rgb).darken(0.1).rgb().string();
+    const color2 = Color.rgb(palette.Vibrant._rgb)
+      .lighten(0.28)
+      .rotate(-30)
+      .rgb()
+      .string();
+    background.value = `linear-gradient(to top left, ${color}, ${color2})`;
+  });
+}
+
+getColor();
+
+watch(track, function () {
+  getColor();
+});
 </script>
 
 <style lang="scss" scoped>

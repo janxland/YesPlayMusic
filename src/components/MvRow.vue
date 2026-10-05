@@ -1,85 +1,96 @@
 <template>
   <div class="mv-row" :class="{ 'without-padding': withoutPadding }">
-    <div v-for="mv in mvs" :key="getID(mv)" class="mv">
+    <div v-for="row in rows" :key="row.id" class="mv">
       <div
         class="cover"
-        @mouseover="hoverVideoID = getID(mv)"
+        @mouseover="hoverVideoID = row.id"
         @mouseleave="hoverVideoID = 0"
-        @click="goToMv(getID(mv))"
+        @click="goToMv(row.id)"
       >
-        <LazyImage :src="getUrl(mv)" referrerpolicy="no-referrer" />
+        <LazyImage :src="row.url" referrerpolicy="no-referrer" />
         <transition name="fade">
           <div
-            v-show="hoverVideoID === getID(mv)"
+            v-show="hoverVideoID === row.id"
             class="shadow"
-            :style="{ background: 'url(' + getUrl(mv) + ')' }"
+            :style="{ background: 'url(' + row.url + ')' }"
           ></div>
         </transition>
       </div>
       <div class="info">
         <div class="title">
-          <router-link :to="'/mv/' + getID(mv)">{{ getTitle(mv) }}</router-link>
+          <router-link :to="'/mv/' + row.id">{{ row.title }}</router-link>
         </div>
-        <div class="artist" v-html="getSubtitle(mv)"></div>
+        <div class="artist" v-html="row.subtitle"></div>
       </div>
     </div>
   </div>
 </template>
 
-<script>
-export default {
-  name: 'CoverVideo',
-  props: {
-    mvs: Array,
-    subtitle: {
-      type: String,
-      default: 'artist',
-    },
-    withoutPadding: { type: Boolean, default: false },
+<script setup lang="ts">
+const router = useRouter();
+// 跳 MV 时带上当前播放态做 autoplay 参数；原 $parent.player 与 store.state.player 同源，直接读 store 免去父级暴露
+import { ref, computed } from 'vue';
+import { usePlayerStore } from '@/stores/player';
+
+import { useRouter } from 'vue-router';
+
+const props = defineProps({
+  mvs: Array,
+  subtitle: {
+    type: String,
+    default: 'artist',
   },
-  data() {
-    return {
-      hoverVideoID: 0,
-    };
-  },
-  methods: {
-    goToMv(id) {
-      let query = {};
-      if (this.$parent.player !== undefined) {
-        query = { autoplay: this.$parent.player.playing };
-      }
-      this.$router.push({ path: '/mv/' + id, query });
-    },
-    getUrl(mv) {
-      let url = mv.imgurl16v9 ?? mv.cover ?? mv.coverUrl;
-      return url.replace(/^http:/, 'https:') + '?param=464y260';
-    },
-    getID(mv) {
-      if (mv.id !== undefined) return mv.id;
-      if (mv.vid !== undefined) return mv.vid;
-    },
-    getTitle(mv) {
-      if (mv.name !== undefined) return mv.name;
-      if (mv.title !== undefined) return mv.title;
-    },
-    getSubtitle(mv) {
-      if (this.subtitle === 'artist') {
-        let artistName = 'null';
-        let artistID = 0;
-        if (mv.artistName !== undefined) {
-          artistName = mv.artistName;
-          artistID = mv.artistId;
-        } else if (mv.creator !== undefined) {
-          artistName = mv.creator[0].userName;
-          artistID = mv.creator[0].userId;
-        }
-        return `<a href="/artist/${artistID}">${artistName}</a>`;
-      } else if (this.subtitle === 'publishTime') {
-        return mv.publishTime;
-      }
-    },
-  },
-};
+  withoutPadding: { type: Boolean, default: false },
+});
+
+const hoverVideoID = ref<any>(0);
+
+function goToMv(id) {
+  const query = { autoplay: usePlayerStore().player.playing };
+  router.push({ path: '/mv/' + id, query });
+}
+
+function getUrl(mv) {
+  let url = mv.imgurl16v9 ?? mv.cover ?? mv.coverUrl;
+  return url.replace(/^http:/, 'https:') + '?param=464y260';
+}
+
+function getID(mv) {
+  if (mv.id !== undefined) return mv.id;
+  if (mv.vid !== undefined) return mv.vid;
+}
+
+function getTitle(mv) {
+  if (mv.name !== undefined) return mv.name;
+  if (mv.title !== undefined) return mv.title;
+}
+
+function getSubtitle(mv) {
+  if (props.subtitle === 'artist') {
+    let artistName = 'null';
+    let artistID = 0;
+    if (mv.artistName !== undefined) {
+      artistName = mv.artistName;
+      artistID = mv.artistId;
+    } else if (mv.creator !== undefined) {
+      artistName = mv.creator[0].userName;
+      artistID = mv.creator[0].userId;
+    }
+    return `<a href="/artist/${artistID}">${artistName}</a>`;
+  } else if (props.subtitle === 'publishTime') {
+    return mv.publishTime;
+  }
+}
+
+// 行内展示字段一次算齐：原 getID 在每行模板里最多被调 5 次、getUrl 2 次，mvs 不变的重渲染全部白算
+const rows = computed(function rows() {
+  return (props.mvs || []).map(mv => ({
+    id: getID(mv),
+    url: getUrl(mv),
+    title: getTitle(mv),
+    subtitle: getSubtitle(mv),
+  }));
+});
 </script>
 
 <style lang="scss" scoped>
@@ -171,7 +182,8 @@ img {
 .fade-leave-active {
   transition: opacity 0.3s;
 }
-.fade-enter, .fade-leave-to /* .fade-leave-active below version 2.1.8 */ {
+.fade-enter-from,
+.fade-leave-to {
   opacity: 0;
 }
 </style>

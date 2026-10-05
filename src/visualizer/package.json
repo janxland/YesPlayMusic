@@ -1,4 +1,4 @@
 {
   "type": "module",
-  "//": "Local scope marker — lets Node treat visualizer/*.js as native ESM during unit tests. Webpack/Babel ignore this field and continue using their own module resolution."
+  "//": "Local scope marker — lets Node treat visualizer/*.ts and __tests__/*.js as native ESM during unit tests. Vite/vue-tsc ignore this field and keep their own module resolution. Do NOT add \"type\":\"module\" to the root package.json: scripts/*.js are CommonJS."
 }

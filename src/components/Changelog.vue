@@ -23,34 +23,46 @@
   </div>
 </template>
 
-<script>
+<script setup lang="ts">
 import changelogEntries from '@/utils/changelog';
+import { computed } from 'vue';
+import type { PropType } from 'vue';
 
-export default {
-  name: 'Changelog',
-  props: {
-    title: { type: String, default: '更新日志' },
-    entries: { type: Array, default: null },
+/** 与 src/utils/changelog.ts 的条目结构对齐 */
+interface ChangelogItem {
+  type: string;
+  text: string;
+}
+interface ChangelogEntry {
+  version: string;
+  branch: string;
+  date: string;
+  summary: string;
+  items: ChangelogItem[];
+}
+
+const props = defineProps({
+  title: { type: String, default: '更新日志' },
+  entries: {
+    type: Array as PropType<ChangelogEntry[]>,
+    default: null,
   },
-  data() {
-    return {
-      typeLabels: {
-        feat: '新功能',
-        fix: '修复',
-        perf: '性能',
-        refactor: '重构',
-        chore: '清理',
-        ci: '构建',
-        docs: '文档',
-      },
-    };
-  },
-  computed: {
-    list() {
-      return this.entries || changelogEntries;
-    },
-  },
+});
+
+// 纯静态映射表，不进响应式系统（原 ref 无意义的深度代理开销）
+const typeLabels: Record<string, string> = {
+  feat: '新功能',
+  fix: '修复',
+  perf: '性能',
+  refactor: '重构',
+  chore: '清理',
+  ci: '构建',
+  docs: '文档',
 };
+
+const list = computed(function list() {
+  return props.entries || changelogEntries;
+});
 </script>
 
 <style lang="scss" scoped>

@@ -56,182 +56,205 @@
         v-show="showLoadMoreButton && hasMore"
         color="grey"
         :loading="loadingMore"
-        @click.native="getPlaylist"
+        @click="getPlaylist"
         >{{ $t('explore.loadMore') }}</ButtonTwoTone
       >
     </div>
   </div>
 </template>
 
-<script>
-import { mapState, mapMutations } from 'vuex';
+<script setup lang="ts">
+const router = useRouter();
+
 import { loadWithProgress } from '@/utils/pageLoad';
 import { topPlaylist, highQualityPlaylist, toplists } from '@/api/playlist';
 import { playlistCategories } from '@/utils/staticData';
-import { getRecommendPlayList } from '@/utils/playList';
-
+// 与同名本地函数撞名，导入改名（Options API 时代的 this 遮蔽在 setup 里不成立）
+import { getRecommendPlayList as fetchRecommendPlayList } from '@/utils/playList';
 import ButtonTwoTone from '@/components/ButtonTwoTone.vue';
 import CoverRow from '@/components/CoverRow.vue';
 import SvgIcon from '@/components/SvgIcon.vue';
+import { computed, ref } from 'vue';
+import { useSettingsStore } from '@/stores';
+import { storeToRefs } from 'pinia';
+import { onBeforeRouteUpdate } from 'vue-router';
+import { useKeepAliveLoad } from '@/composables/useKeepAliveLoad';
 
-export default {
-  name: 'Explore',
-  components: {
-    CoverRow,
-    ButtonTwoTone,
-    SvgIcon,
-  },
-  beforeRouteUpdate(to, from, next) {
-    this.showLoadMoreButton = false;
-    this.hasMore = true;
-    this.playlists = [];
-    this.offset = 1;
-    this.activeCategory = to.query.category;
-    this.reqToken++; // 作废所有在飞请求
-    this.getPlaylist();
-    next();
-  },
-  data() {
-    return {
-      show: false,
-      playlists: [],
-      activeCategory: '全部',
-      loadingMore: false,
-      showLoadMoreButton: false,
-      hasMore: true,
-      allBigCats: ['语种', '风格', '场景', '情感', '主题'],
-      showCatOptions: false,
-      reqToken: 0,
-    };
-  },
-  computed: {
-    ...mapState(['settings']),
-    subText() {
-      if (this.activeCategory === '排行榜') return 'updateFrequency';
-      if (this.activeCategory === '推荐歌单') return 'copywriter';
-      return 'none';
-    },
-  },
-  activated() {
-    this.loadData();
-    this.$parent.$refs.scrollbar.restorePosition();
-  },
-  methods: {
-    ...mapMutations(['togglePlaylistCategory']),
-    loadData() {
-      const queryCategory = this.$route.query.category;
-      if (queryCategory === undefined) {
-        this.playlists = [];
-        this.activeCategory = '全部';
-      } else {
-        this.activeCategory = queryCategory;
-      }
-      this.reqToken++;
-      this.getPlaylist();
-    },
-    goToCategory(Category) {
-      this.showCatOptions = false;
-      this.$router.push({ name: 'explore', query: { category: Category } });
-    },
-    updatePlaylist(playlists, token) {
-      // 丢弃已过期（分类切换前）的响应
-      if (token !== this.reqToken) return;
-      const incoming = Array.isArray(playlists) ? playlists : [];
-      const existingIds = new Set(this.playlists.map(p => p.id));
-      const deduped = [];
-      const seen = new Set();
-      for (const p of incoming) {
-        if (!p || p.id == null) continue;
-        if (existingIds.has(p.id) || seen.has(p.id)) continue;
-        seen.add(p.id);
-        deduped.push(p);
-      }
-      if (deduped.length === 0 && incoming.length > 0) {
-        // 后端返回的全是重复项，视为没有更多
-        this.hasMore = false;
-      }
-      if (deduped.length > 0) {
-        this.playlists.push(...deduped);
-      }
-      this.loadingMore = false;
-      this.showLoadMoreButton = true;
-      this.show = true;
-    },
-    // 失败时也要交出页面（分类栏可点、可重试），并把「加载更多」的忙态放回去
-    onLoadFailed() {
-      this.loadingMore = false;
-      this.show = true;
-    },
-    pageLoad(promise) {
-      return loadWithProgress(promise, { onError: () => this.onLoadFailed() });
-    },
-    getPlaylist() {
-      this.loadingMore = true;
-      if (this.activeCategory === '推荐歌单') {
-        return this.getRecommendPlayList();
-      }
-      if (this.activeCategory === '精品歌单') {
-        return this.getHighQualityPlaylist();
-      }
-      if (this.activeCategory === '排行榜') {
-        return this.getTopLists();
-      }
-      return this.getTopPlayList();
-    },
-    getRecommendPlayList() {
-      const token = this.reqToken;
-      this.pageLoad(
-        getRecommendPlayList(100, true).then(list => {
-          if (token !== this.reqToken) return;
-          this.playlists = [];
-          this.updatePlaylist(list, token);
-        })
-      );
-    },
-    getHighQualityPlaylist() {
-      const token = this.reqToken;
-      let playlists = this.playlists;
-      let before =
-        playlists.length !== 0 ? playlists[playlists.length - 1].updateTime : 0;
-      this.pageLoad(
-        highQualityPlaylist({ limit: 50, before }).then(data => {
-          if (token !== this.reqToken) return;
-          this.updatePlaylist(data.playlists, token);
-          this.hasMore = data.more;
-        })
-      );
-    },
-    getTopLists() {
-      const token = this.reqToken;
-      this.pageLoad(
-        toplists().then(data => {
-          if (token !== this.reqToken) return;
-          this.playlists = [];
-          this.updatePlaylist(data.list, token);
-        })
-      );
-    },
-    getTopPlayList() {
-      const token = this.reqToken;
-      this.pageLoad(
-        topPlaylist({
-          cat: this.activeCategory,
-          offset: this.playlists.length,
-        }).then(data => {
-          if (token !== this.reqToken) return;
-          this.updatePlaylist(data.playlists, token);
-          this.hasMore = data.more;
-        })
-      );
-    },
-    getCatsByBigCat(name) {
-      return playlistCategories.filter(c => c.bigCat === name);
-    },
-    toggleCat(name) {
-      this.togglePlaylistCategory(name);
-    },
-  },
-};
+import { useRoute, useRouter } from 'vue-router';
+const route = useRoute();
+const settingsStore = useSettingsStore();
+
+const { settings } = storeToRefs(settingsStore);
+
+const togglePlaylistCategory = settingsStore.togglePlaylistCategory;
+
+const show = ref<any>(false);
+
+const playlists = ref<any>([]);
+
+const activeCategory = ref<any>('全部');
+
+const loadingMore = ref<any>(false);
+
+const showLoadMoreButton = ref<any>(false);
+
+const hasMore = ref<any>(true);
+
+const allBigCats = ref<any>(['语种', '风格', '场景', '情感', '主题']);
+
+const showCatOptions = ref<any>(false);
+
+const reqToken = ref<any>(0);
+
+const subText = computed(function subText() {
+  if (activeCategory.value === '排行榜') return 'updateFrequency';
+  if (activeCategory.value === '推荐歌单') return 'copywriter';
+  return 'none';
+});
+
+function loadData() {
+  const queryCategory = route.query.category;
+  if (queryCategory === undefined) {
+    playlists.value = [];
+    activeCategory.value = '全部';
+  } else {
+    activeCategory.value = queryCategory;
+  }
+  reqToken.value++;
+  getPlaylist();
+}
+
+function goToCategory(Category) {
+  showCatOptions.value = false;
+  router.push({ name: 'explore', query: { category: Category } });
+}
+
+function updatePlaylist(incomingPlaylists, token) {
+  // 丢弃已过期（分类切换前）的响应
+  if (token !== reqToken.value) return;
+  // 参数改名避免遮蔽同名 ref（原 this.playlists 与参数 playlists 是两个东西）
+  const incoming = Array.isArray(incomingPlaylists) ? incomingPlaylists : [];
+  const existingIds = new Set(playlists.value.map(p => p.id));
+  const deduped = [];
+  const seen = new Set();
+  for (const p of incoming) {
+    if (!p || p.id == null) continue;
+    if (existingIds.has(p.id) || seen.has(p.id)) continue;
+    seen.add(p.id);
+    deduped.push(p);
+  }
+  if (deduped.length === 0 && incoming.length > 0) {
+    // 后端返回的全是重复项，视为没有更多
+    hasMore.value = false;
+  }
+  if (deduped.length > 0) {
+    playlists.value.push(...deduped);
+  }
+  loadingMore.value = false;
+  showLoadMoreButton.value = true;
+  show.value = true;
+}
+
+function onLoadFailed() {
+  loadingMore.value = false;
+  show.value = true;
+}
+
+function pageLoad(promise) {
+  return loadWithProgress(promise, {
+    onError: () => onLoadFailed(),
+  });
+}
+
+function getPlaylist() {
+  loadingMore.value = true;
+  if (activeCategory.value === '推荐歌单') {
+    return getRecommendPlayList();
+  }
+  if (activeCategory.value === '精品歌单') {
+    return getHighQualityPlaylist();
+  }
+  if (activeCategory.value === '排行榜') {
+    return getTopLists();
+  }
+  return getTopPlayList();
+}
+
+function getRecommendPlayList() {
+  const token = reqToken.value;
+  pageLoad(
+    fetchRecommendPlayList(100, true).then(list => {
+      if (token !== reqToken.value) return;
+      playlists.value = [];
+      updatePlaylist(list, token);
+    })
+  );
+}
+
+function getHighQualityPlaylist() {
+  const token = reqToken.value;
+  // 局部改名避免遮蔽同名 ref（原 this.playlists 与本地 playlists 是两个东西）
+  let currentPlaylists = playlists.value;
+  let before =
+    currentPlaylists.length !== 0
+      ? currentPlaylists[currentPlaylists.length - 1].updateTime
+      : 0;
+  pageLoad(
+    highQualityPlaylist({ limit: 50, before }).then(data => {
+      if (token !== reqToken.value) return;
+      updatePlaylist(data.playlists, token);
+      hasMore.value = data.more;
+    })
+  );
+}
+
+function getTopLists() {
+  const token = reqToken.value;
+  pageLoad(
+    toplists().then(data => {
+      if (token !== reqToken.value) return;
+      playlists.value = [];
+      updatePlaylist(data.list, token);
+    })
+  );
+}
+
+function getTopPlayList() {
+  const token = reqToken.value;
+  pageLoad(
+    topPlaylist({
+      cat: activeCategory.value,
+      offset: playlists.value.length,
+    }).then(data => {
+      if (token !== reqToken.value) return;
+      updatePlaylist(data.playlists, token);
+      hasMore.value = data.more;
+    })
+  );
+}
+
+function getCatsByBigCat(name) {
+  return playlistCategories.filter(c => c.bigCat === name);
+}
+
+function toggleCat(name) {
+  togglePlaylistCategory(name);
+}
+
+// /explore 是 keepAlive 路由：Vue3 首挂会同帧先后触发 onMounted 与 onActivated，两处都注册 loadData 会把歌单列表拉两遍；useKeepAliveLoad 保证「首挂载 + 缓存重入」各执行一次
+useKeepAliveLoad(function loadExploreData() {
+  loadData();
+});
+
+onBeforeRouteUpdate((to, from, next) => {
+  showLoadMoreButton.value = false;
+  hasMore.value = true;
+  playlists.value = [];
+  activeCategory.value = to.query.category;
+  reqToken.value++; // 作废所有在飞请求
+  getPlaylist();
+  next();
+});
 </script>
 
 <style lang="scss" scoped>
@@ -297,7 +320,6 @@ h1 {
     user-select: none;
     margin: 4px 0px 0 0;
     display: flex;
-    // justify-content: center;
     align-items: center;
     font-weight: 500;
     font-size: 16px;

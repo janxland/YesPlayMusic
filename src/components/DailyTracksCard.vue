@@ -17,12 +17,19 @@
   </div>
 </template>
 
-<script>
-import locale from '@/locale';
-import { mapMutations, mapState, mapActions } from 'vuex';
+<script setup lang="ts">
+const router = useRouter();
+
+import { getI18n } from '@/locale';
 import { dailyRecommendTracks } from '@/api/playlist';
 import { isAccountLoggedIn } from '@/utils/auth';
 import sample from 'lodash/sample';
+import { computed } from 'vue';
+import { usePlayerStore } from '@/stores/player';
+import { useUiStore } from '@/stores/ui';
+import { storeToRefs } from 'pinia';
+
+import { useRouter } from 'vue-router';
 
 const defaultCovers = [
   'https://p2.music.126.net/0-Ybpa8FrDfRgKYCTJD8Xg==/109951164796696795.jpg',
@@ -30,51 +37,48 @@ const defaultCovers = [
   'https://p1.music.126.net/AhYP9TET8l-VSGOpWAKZXw==/109951165134386387.jpg',
 ];
 
-export default {
-  name: 'DailyTracksCard',
-  data() {
-    return { useAnimation: false };
-  },
-  computed: {
-    ...mapState(['dailyTracks']),
-    coverUrl() {
-      return `${
-        this.dailyTracks[0]?.al.picUrl || sample(defaultCovers)
-      }?param=1024y1024`;
-    },
-  },
-  created() {
-    if (this.dailyTracks.length === 0) this.loadDailyTracks();
-  },
-  methods: {
-    ...mapActions(['showToast']),
-    ...mapMutations(['updateDailyTracks']),
-    loadDailyTracks() {
-      if (!isAccountLoggedIn()) return;
-      dailyRecommendTracks()
-        .then(result => {
-          this.updateDailyTracks(result.data.dailySongs);
-        })
-        .catch(() => {});
-    },
-    goToDailyTracks() {
-      this.$router.push({ name: 'dailySongs' });
-    },
-    playDailyTracks() {
-      if (!isAccountLoggedIn()) {
-        this.showToast(locale.t('toast.needToLogin'));
-        return;
-      }
-      let trackIDs = this.dailyTracks.map(t => t.id);
-      this.$store.state.player.replacePlaylist(
-        trackIDs,
-        '/daily/songs',
-        'url',
-        this.dailyTracks[0].id
-      );
-    },
-  },
-};
+const uiStore = useUiStore();
+
+const showToast = (text: string) => uiStore.showToast(text);
+
+const { dailyTracks } = storeToRefs(uiStore);
+
+const coverUrl = computed(function coverUrl() {
+  return `${
+    dailyTracks.value[0]?.al.picUrl || sample(defaultCovers)
+  }?param=1024y1024`;
+});
+
+function loadDailyTracks() {
+  if (!isAccountLoggedIn()) return;
+  dailyRecommendTracks()
+    .then(result => {
+      uiStore.updateDailyTracks(result.data.dailySongs);
+    })
+    .catch(() => {});
+}
+
+function goToDailyTracks() {
+  router.push({ name: 'dailySongs' });
+}
+
+function playDailyTracks() {
+  if (!isAccountLoggedIn()) {
+    showToast((getI18n() as any).global.t('toast.needToLogin'));
+    return;
+  }
+  let trackIDs = dailyTracks.value.map(t => t.id);
+  usePlayerStore().player.replacePlaylist(
+    trackIDs,
+    '/daily/songs',
+    'url',
+    dailyTracks.value[0].id
+  );
+}
+
+if (dailyTracks.value.length === 0) loadDailyTracks();
+
+defineExpose({ loadDailyTracks });
 </script>
 
 <style lang="scss" scoped>

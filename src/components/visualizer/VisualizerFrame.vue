@@ -5,7 +5,7 @@
     :class="{ window: isWindowMode, editing: editing && isWindowMode }"
     :style="frameStyle"
   >
-    <canvas ref="canvas" class="vis-canvas"></canvas>
+    <canvas ref="canvasRef" class="vis-canvas"></canvas>
     <template v-if="editing && isWindowMode">
       <div
         class="frame-handle drag"
@@ -41,57 +41,45 @@
   </div>
 </template>
 
-<script>
-/**
- * VisualizerFrame
- * --------------------------------------------------------------
- * 仅负责呈现可视化画布容器（全屏 / 窗口）与编辑手柄。
- * 不持有音频/设置状态；通过 props 输入、events 输出，便于复用与测试。
- *
- * - 暴露 canvas DOM 给父级（`ref` 转发）：父级负责把它交给 AudioVisual。
- * - position:fixed 独立层，z-index 直接受 setting.zIndex 控制；
- *   FAB / 面板不在本组件内，因此不会被一起压到底层。
- */
-export default {
-  name: 'VisualizerFrame',
-  props: {
-    setting: { type: Object, required: true },
-    editing: { type: Boolean, default: false },
-  },
-  computed: {
-    isWindowMode() {
-      return this.setting.mode === 'window';
-    },
-    frameStyle() {
-      // 编辑模式临时提升 z 到 399（低于 FAB/Panel 400，高于歌词），
-      // 否则用户低 z（如 0）会被歌词覆盖导致无法点击拖手柄。
-      const z = this.editing && this.isWindowMode ? 399 : this.setting.zIndex;
-      if (!this.isWindowMode) return { inset: 0, zIndex: z };
-      const b = this.setting.bounds || { x: 0.1, y: 0.1, w: 0.5, h: 0.5 };
-      return {
-        left: (b.x * 100).toFixed(3) + '%',
-        top: (b.y * 100).toFixed(3) + '%',
-        width: (b.w * 100).toFixed(3) + '%',
-        height: (b.h * 100).toFixed(3) + '%',
-        zIndex: z,
-      };
-    },
-  },
-  methods: {
-    /** 父级通过 ref 获取真实 canvas 元素以建立 Web Audio 图。 */
-    getCanvas() {
-      return this.$refs.canvas;
-    },
-  },
-};
+<script setup lang="ts">
+import { ref, computed } from 'vue';
+
+const canvasRef = ref<any>(null);
+const props = defineProps({
+  setting: { type: Object, required: true },
+  editing: { type: Boolean, default: false },
+});
+
+const isWindowMode = computed(function isWindowMode() {
+  return props.setting.mode === 'window';
+});
+
+const frameStyle = computed(function frameStyle() {
+  // 编辑模式临时提升 z 到 399（低于 FAB/Panel 400，高于歌词），否则用户低 z（如 0）会被歌词覆盖导致无法点击拖手柄
+  const z = props.editing && isWindowMode.value ? 399 : props.setting.zIndex;
+  if (!isWindowMode.value) return { inset: 0, zIndex: z };
+  const b = props.setting.bounds || { x: 0.1, y: 0.1, w: 0.5, h: 0.5 };
+  return {
+    left: (b.x * 100).toFixed(3) + '%',
+    top: (b.y * 100).toFixed(3) + '%',
+    width: (b.w * 100).toFixed(3) + '%',
+    height: (b.h * 100).toFixed(3) + '%',
+    zIndex: z,
+  };
+});
+
+function getCanvas() {
+  return canvasRef.value;
+}
+// <script setup> 组件默认对外封闭，父组件 Visualization.vue 通过模板 ref 调 getCanvas() 拿画布节点，必须显式暴露
+defineExpose({ getCanvas });
 </script>
 
 <style lang="scss" scoped>
 .vis-frame {
   position: fixed;
   pointer-events: none;
-  /* 正常态彻底无边界、无圆角、无阴影 —— 画布像素直接融入背景。
-     仅 editing 时显示虚线轮廓以辅助拖拽，0.25s 平滑过渡防闪烁。 */
+  /* 正常态彻底无边界、无圆角、无阴影 —— 画布像素直接融入背景；仅 editing 时显示虚线轮廓以辅助拖拽，0.25s 平滑过渡防闪烁 */
   transition: box-shadow 0.25s ease, outline-color 0.25s ease,
     background 0.25s ease;
   outline: 0 dashed transparent;
@@ -111,8 +99,7 @@ export default {
   pointer-events: none;
   /* canvas 本身保持矩形，不裁剪，便于像素融入周围 */
   display: block;
-  /* 切歌 / seek 时由父级临时把 opacity 设为 0，再恢复 1，
-     250ms 过渡形成丝滑淡出淡入，规避 AV 重建瞬间的画面突变。 */
+  /* 切歌 / seek 时由父级临时把 opacity 设为 0，再恢复 1，250ms 过渡形成丝滑淡出淡入，规避 AV 重建瞬间的画面突变 */
   opacity: 1;
   transition: opacity 0.25s ease;
 }

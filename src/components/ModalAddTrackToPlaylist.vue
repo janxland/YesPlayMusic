@@ -1,13 +1,13 @@
 <template>
   <Modal
     class="add-track-to-playlist-modal"
-    :show="show"
-    :close="close"
+    v-model:show="show"
     :show-footer="false"
     title="添加到歌单"
     width="25vw"
   >
-    <template slot="default">
+    <!-- Vue2 的 slot="default" 在 Vue3 会编译成惰性 <template> 元素（内容不渲染），改用 v-slot 语法恢复迁移前行为 -->
+    <template #default>
       <div class="new-playlist-button" @click="newPlaylist"
         ><svg-icon icon-class="plus" />新建歌单</div
       >
@@ -18,7 +18,7 @@
         @click="addTrackToPlaylist(playlist.id)"
       >
         <LazyImage
-          :src="playlist.coverImgUrl | resizeImage(224)"
+          :src="resizeImage(playlist.coverImgUrl, 224)"
           referrerpolicy="no-referrer"
         />
         <div class="info">
@@ -30,84 +30,81 @@
   </Modal>
 </template>
 
-<script>
-import { mapActions, mapMutations, mapState } from 'vuex';
+<script setup lang="ts">
 import Modal from '@/components/Modal.vue';
-import locale from '@/locale';
+import { getI18n } from '@/locale';
+import { resizeImage } from '@/utils/formatters';
 import { addOrRemoveTrackFromPlaylist } from '@/api/playlist';
+import { computed } from 'vue';
+import { useDataStore } from '@/stores/data';
+import { useLikedStore } from '@/stores/liked';
+import { useUiStore } from '@/stores/ui';
+import { storeToRefs } from 'pinia';
 
-export default {
-  name: 'ModalAddTrackToPlaylist',
-  components: {
-    Modal,
+const uiStore = useUiStore();
+
+const { modals } = storeToRefs(uiStore);
+const { data } = storeToRefs(useDataStore());
+const { liked } = storeToRefs(useLikedStore());
+
+const show = computed({
+  get() {
+    return modals.value.addTrackToPlaylistModal.show;
   },
-  data() {
-    return {
-      playlists: [],
-    };
+  set(value) {
+    uiStore.updateModal({
+      modalName: 'addTrackToPlaylistModal',
+      key: 'show',
+      value,
+    });
+    if (value) {
+      uiStore.toggleScrolling(false);
+    } else {
+      uiStore.toggleScrolling(true);
+    }
   },
-  computed: {
-    ...mapState(['modals', 'data', 'liked']),
-    show: {
-      get() {
-        return this.modals.addTrackToPlaylistModal.show;
-      },
-      set(value) {
-        this.updateModal({
-          modalName: 'addTrackToPlaylistModal',
-          key: 'show',
-          value,
-        });
-        if (value) {
-          this.$store.commit('enableScrolling', false);
-        } else {
-          this.$store.commit('enableScrolling', true);
-        }
-      },
-    },
-    ownPlaylists() {
-      return this.liked.playlists.filter(
-        p =>
-          p.creator.userId === this.data.user.userId &&
-          p.id !== this.data.likedSongPlaylistID
-      );
-    },
-  },
-  methods: {
-    ...mapMutations(['updateModal']),
-    ...mapActions(['showToast']),
-    close() {
-      this.show = false;
-    },
-    addTrackToPlaylist(playlistID) {
-      addOrRemoveTrackFromPlaylist({
-        op: 'add',
-        pid: playlistID,
-        tracks: this.modals.addTrackToPlaylistModal.selectedTrackID,
-      }).then(data => {
-        if (data.body.code === 200) {
-          this.show = false;
-          this.showToast(locale.t('toast.savedToPlaylist'));
-        } else {
-          this.showToast(data.body.message);
-        }
-      });
-    },
-    newPlaylist() {
-      this.updateModal({
-        modalName: 'newPlaylistModal',
-        key: 'afterCreateAddTrackID',
-        value: this.modals.addTrackToPlaylistModal.selectedTrackID,
-      });
-      this.close();
-      this.updateModal({
-        modalName: 'newPlaylistModal',
-        key: 'show',
-        value: true,
-      });
-    },
-  },
-};
+});
+
+const ownPlaylists = computed(function ownPlaylists() {
+  return liked.value.playlists.filter(
+    p =>
+      p.creator.userId === data.value.user.userId &&
+      p.id !== data.value.likedSongPlaylistID
+  );
+});
+
+function close() {
+  show.value = false;
+}
+
+function addTrackToPlaylist(playlistID) {
+  addOrRemoveTrackFromPlaylist({
+    op: 'add',
+    pid: playlistID,
+    tracks: modals.value.addTrackToPlaylistModal.selectedTrackID,
+  }).then(data => {
+    if (data.body.code === 200) {
+      show.value = false;
+      uiStore.showToast((getI18n() as any).global.t('toast.savedToPlaylist'));
+    } else {
+      uiStore.showToast(data.body.message);
+    }
+  });
+}
+
+function newPlaylist() {
+  uiStore.updateModal({
+    modalName: 'newPlaylistModal',
+    key: 'afterCreateAddTrackID',
+    value: modals.value.addTrackToPlaylistModal.selectedTrackID,
+  });
+  close();
+  uiStore.updateModal({
+    modalName: 'newPlaylistModal',
+    key: 'show',
+    value: true,
+  });
+}
 </script>
 
 <style lang="scss" scoped>

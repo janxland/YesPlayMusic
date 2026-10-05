@@ -393,36 +393,36 @@
         <div class="row">
           <label>歌词透视</label>
           <input
-            v-model.number="$store.state.visualSet.perspective"
+            v-model.number="visualSet.perspective"
             type="range"
             min="100"
             max="1000"
             step="50"
           />
-          <span class="val">{{ $store.state.visualSet.perspective }}</span>
+          <span class="val">{{ visualSet.perspective }}</span>
         </div>
         <div class="row">
           <label>歌词旋转</label>
           <input
-            v-model.number="$store.state.visualSet.rotateY"
+            v-model.number="visualSet.rotateY"
             type="range"
             min="-180"
             max="180"
             step="1"
           />
-          <span class="val">{{ $store.state.visualSet.rotateY }}°</span>
+          <span class="val">{{ visualSet.rotateY }}°</span>
         </div>
         <div class="row">
           <label>歌词大小</label>
           <input
-            v-model.number="$store.state.visualSet.lyricsScale"
+            v-model.number="visualSet.lyricsScale"
             type="range"
             min="0.5"
             max="3"
             step="0.05"
           />
           <span class="val"
-            >{{ Number($store.state.visualSet.lyricsScale).toFixed(2) }}×</span
+            >{{ Number(visualSet.lyricsScale).toFixed(2) }}×</span
           >
         </div>
         <p class="tip">设置自动保存到本地（含布局、调色）。</p>
@@ -431,173 +431,159 @@
   </aside>
 </template>
 
-<script>
+<script setup lang="ts">
 import { VISUAL_TYPES } from '@/visualizer/AudioVisual';
 import { AUTO_PALETTE, PALETTES, iconFor } from './visualizerConfig';
 import { extractCoverPalette, shadowFromHex } from './coverColor';
+import { ref, computed, watch, onBeforeUnmount } from 'vue';
+import { usePlayerStore } from '@/stores/player';
+import { useUiStore } from '@/stores/ui';
+import { storeToRefs } from 'pinia';
 
-/** 忽略大小写的 HEX 比较（color input 与提取结果均为小写 hex）。 */
+// Vue2 时代挂在实例上的私有句柄（非响应式），降为模块级变量
+let _hintTimer = null;
+
 const sameColor = (a, b) =>
   String(a || '').toLowerCase() === String(b || '').toLowerCase();
 
-/**
- * VisualizerPanel —— 设置面板。
- * - 通过 prop 接收 setting，直接 mutate 其字段（同一 reactive 对象），
- *   父级 deep watcher 会感知变化并下发到 AudioVisual。
- * - 异步加载入口在 Visualization.vue：仅打开面板时才会拉取此 chunk。
- */
-export default {
-  name: 'VisualizerPanel',
-  props: {
-    setting: { type: Object, required: true },
-    enabled: { type: Boolean, default: false },
-    editLayout: { type: Boolean, default: false },
-  },
-  data() {
-    return {
-      activeTab: 'basic',
-      visualTypes: VISUAL_TYPES,
-      palettes: PALETTES,
-      autoPaletteMark: AUTO_PALETTE,
-      // 自动识别的加载态与提示文案
-      autoBusy: false,
-      autoHint: '',
-      tabs: [
-        { id: 'basic', label: '基础' },
-        { id: 'color', label: '颜色' },
-        { id: 'layout', label: '布局' },
-        { id: 'advanced', label: '高级' },
-      ],
-    };
-  },
-  computed: {
-    isWindowMode() {
-      return this.setting.mode === 'window';
+const { visualSet } = storeToRefs(useUiStore());
+const { player } = storeToRefs(usePlayerStore());
+
+const props = defineProps({
+  setting: { type: Object, required: true },
+  enabled: { type: Boolean, default: false },
+  editLayout: { type: Boolean, default: false },
+});
+
+const activeTab = ref<any>('basic');
+
+// 以下均为初始化后不再变化的静态数据：用普通常量而非 ref，免去不必要的响应式包装（源数据本身也是 Object.freeze 的）
+const visualTypes = VISUAL_TYPES;
+
+const palettes = PALETTES;
+
+const autoPaletteMark = AUTO_PALETTE;
+
+const autoBusy = ref<any>(false);
+
+const autoHint = ref<any>('');
+
+const tabs = [
+  { id: 'basic', label: '基础' },
+  { id: 'color', label: '颜色' },
+  { id: 'layout', label: '布局' },
+  { id: 'advanced', label: '高级' },
+];
+
+const isWindowMode = computed(function isWindowMode() {
+  return props.setting.mode === 'window';
+});
+
+const coverUrl = computed(function coverUrl() {
+  const url = player.value?.currentTrack?.al?.picUrl;
+  if (!url) return '';
+  const https = url.slice(0, 5) === 'https' ? url : 'https' + url.slice(4);
+  return `${https}?param=512y512`;
+});
+
+const isAutoActive = computed(function isAutoActive() {
+  const ap = props.setting.autoPalette;
+  return (
+    !!ap &&
+    sameColor(props.setting.lineColor, ap.line) &&
+    sameColor(props.setting.shadowColor, ap.shadow)
+  );
+});
+
+const autoColorItems = computed(function autoColorItems() {
+  const ap = props.setting.autoPalette;
+  if (!ap || !Array.isArray(ap.colors) || ap.colors.length < 4) return [];
+  const c = ap.colors;
+  return [
+    {
+      name: '主色',
+      color: c[0],
+      value: c[0],
+      tip: '第一主导色，点击应用默认配对',
     },
-    /** 当前歌曲封面（缩到 512 便于 canvas 采样），与 resizeImage 滤镜同规则。 */
-    coverUrl() {
-      const url = this.$store.state.player?.currentTrack?.al?.picUrl;
-      if (!url) return '';
-      const https = url.slice(0, 5) === 'https' ? url : 'https' + url.slice(4);
-      return `${https}?param=512y512`;
+    {
+      name: '阴影色',
+      color: ap.shadow,
+      value: c[0],
+      tip: '由第二主导色派生的深色，点击恢复默认配对',
     },
-    /** 当前主/阴影色与最近一次封面取色结果一致，即视为处于「自动识别」。 */
-    isAutoActive() {
-      const ap = this.setting.autoPalette;
-      return (
-        !!ap &&
-        sameColor(this.setting.lineColor, ap.line) &&
-        sameColor(this.setting.shadowColor, ap.shadow)
-      );
-    },
-    /**
-     * 封面取色 4 色的展示项（两行两列）：
-     * 主色 / 阴影色按当前配对展示，三四色为备选，点选任意色作为主色。
-     * 旧数据可能没有 colors，此时不展示。
-     */
-    autoColorItems() {
-      const ap = this.setting.autoPalette;
-      if (!ap || !Array.isArray(ap.colors) || ap.colors.length < 4) return [];
-      const c = ap.colors;
-      return [
-        {
-          name: '主色',
-          color: c[0],
-          value: c[0],
-          tip: '第一主导色，点击应用默认配对',
-        },
-        {
-          name: '阴影色',
-          color: ap.shadow,
-          value: c[0],
-          tip: '由第二主导色派生的深色，点击恢复默认配对',
-        },
-        { name: '三色', color: c[2], value: c[2], tip: '点击作为主色应用' },
-        { name: '四色', color: c[3], value: c[3], tip: '点击作为主色应用' },
-      ];
-    },
-  },
-  watch: {
-    // 歌词透视 / 旋转由面板直接改 $store.state.visualSet（不走 mutation，
-    // 默认的 localStorage 插件不会触发保存）——这里手动持久化，避免刷新回默认。
-    '$store.state.visualSet': {
-      deep: true,
-      handler(v) {
-        try {
-          localStorage.setItem('visualSet', JSON.stringify(v));
-        } catch (_) {
-          /* noop */
-        }
-      },
-    },
-    // 切歌：若当前处于「自动识别」状态，跟随新封面重新取色。
-    '$store.state.player.currentTrack.id'() {
-      if (this.isAutoActive && this.coverUrl) this.applyAutoPalette();
-    },
-  },
-  beforeDestroy() {
-    clearTimeout(this._hintTimer);
-  },
-  methods: {
-    iconFor,
-    sameColor,
-    isActive(p) {
-      return (
-        sameColor(this.setting.lineColor, p.line) &&
-        sameColor(this.setting.shadowColor, p.shadow)
-      );
-    },
-    applyPalette(p) {
-      this.setting.lineColor = p.line;
-      this.setting.shadowColor = p.shadow;
-    },
-    /** 点选封面取色色板：该色作为主色，同色相深色派生为阴影色。 */
-    applyAutoColor(c) {
-      const ap = this.setting.autoPalette;
-      // 选回第一主导色时还原提取时的原始配对（阴影取第二主导色深色），
-      // 其余颜色则派生同色相深色为阴影
-      const isDefault = ap && ap.colors && sameColor(c, ap.colors[0]);
-      const shadow =
-        isDefault && ap.baseShadow ? ap.baseShadow : shadowFromHex(c);
-      this.setting.lineColor = c;
-      this.setting.shadowColor = shadow;
-      // 同步 autoPalette 的当前值，保持「自动识别」高亮与切歌跟随
-      if (ap) {
-        this.setting.autoPalette = { ...ap, line: c, shadow };
-      }
-    },
-    /** 从当前封面提取主色调并应用；失败时保留现有配色并给出提示。 */
-    async applyAutoPalette() {
-      if (this.autoBusy) return;
-      if (!this.coverUrl) {
-        this._showAutoHint('当前没有可识别的封面');
-        return;
-      }
-      this.autoBusy = true;
-      try {
-        const palette = await extractCoverPalette(this.coverUrl);
-        if (!palette) {
-          this._showAutoHint('封面取色失败：图片源不支持读取');
-          return;
-        }
-        // 先记录提取结果（供高亮回显 / 切歌跟随），再应用到主/阴影色；
-        // baseShadow 保存原始配对，点选「主色/阴影色」格时可还原
-        this.setting.autoPalette = { ...palette, baseShadow: palette.shadow };
-        this.setting.lineColor = palette.line;
-        this.setting.shadowColor = palette.shadow;
-      } finally {
-        this.autoBusy = false;
-      }
-    },
-    _showAutoHint(msg) {
-      this.autoHint = msg;
-      clearTimeout(this._hintTimer);
-      this._hintTimer = setTimeout(() => {
-        this.autoHint = '';
-      }, 2600);
-    },
-  },
-};
+    { name: '三色', color: c[2], value: c[2], tip: '点击作为主色应用' },
+    { name: '四色', color: c[3], value: c[3], tip: '点击作为主色应用' },
+  ];
+});
+
+function isActive(p) {
+  return (
+    sameColor(props.setting.lineColor, p.line) &&
+    sameColor(props.setting.shadowColor, p.shadow)
+  );
+}
+
+function applyPalette(p) {
+  props.setting.lineColor = p.line;
+  props.setting.shadowColor = p.shadow;
+}
+
+function applyAutoColor(c) {
+  const ap = props.setting.autoPalette;
+  // 选回第一主导色时还原提取时的原始配对（阴影取第二主导色深色），其余颜色则派生同色相深色为阴影
+  const isDefault = ap && ap.colors && sameColor(c, ap.colors[0]);
+  const shadow = isDefault && ap.baseShadow ? ap.baseShadow : shadowFromHex(c);
+  props.setting.lineColor = c;
+  props.setting.shadowColor = shadow;
+  // 同步 autoPalette 的当前值，保持「自动识别」高亮与切歌跟随
+  if (ap) {
+    props.setting.autoPalette = { ...ap, line: c, shadow };
+  }
+}
+
+async function applyAutoPalette() {
+  if (autoBusy.value) return;
+  if (!coverUrl.value) {
+    _showAutoHint('当前没有可识别的封面');
+    return;
+  }
+  autoBusy.value = true;
+  try {
+    const palette = await extractCoverPalette(coverUrl.value);
+    if (!palette) {
+      _showAutoHint('封面取色失败：图片源不支持读取');
+      return;
+    }
+    // 先记录提取结果（供高亮回显 / 切歌跟随），再应用到主/阴影色；baseShadow 保存原始配对，点选「主色/阴影色」格时可还原
+    props.setting.autoPalette = { ...palette, baseShadow: palette.shadow };
+    props.setting.lineColor = palette.line;
+    props.setting.shadowColor = palette.shadow;
+  } finally {
+    autoBusy.value = false;
+  }
+}
+
+function _showAutoHint(msg) {
+  autoHint.value = msg;
+  clearTimeout(_hintTimer);
+  _hintTimer = setTimeout(() => {
+    autoHint.value = '';
+  }, 2600);
+}
+
+// visualSet 的持久化由 ui store 统一负责（ui.ts deep watch），组件内不再重复写
+
+watch(
+  () => player.value.currentTrack.id,
+  function () {
+    if (isAutoActive.value && coverUrl.value) applyAutoPalette();
+  }
+);
+
+onBeforeUnmount(function beforeUnmount() {
+  clearTimeout(_hintTimer);
+});
 </script>
 
 <style lang="scss" scoped>
@@ -626,8 +612,7 @@ export default {
   --vp-shadow: 0 16px 56px rgba(0, 0, 0, 0.5);
 
   position: fixed;
-  /* FAB \u5728 top:80 right:24 \u5904\uff0c\u9762\u677f\u4e0b\u79fb 56px \u907f\u5f00\uff1b
-     z=401 \u9ad8\u4e8e FAB(400) \u4ee5\u9632\u88ab FAB \u906e\u4f4f\u53f3\u4e0a\u89d2\u4ea4\u4e92 */
+  /* FAB 在 top:80 right:24 处，面板下移 56px 避开；z=401 高于 FAB(400) 以防被 FAB 遮住右上角交互 */
   top: 136px;
   right: 16px;
   z-index: 401;
@@ -698,7 +683,7 @@ export default {
 .vis-panel-leave-active {
   transition: transform 0.25s cubic-bezier(0.2, 0.9, 0.25, 1), opacity 0.2s ease;
 }
-.vis-panel-enter,
+.vis-panel-enter-from,
 .vis-panel-leave-to {
   opacity: 0;
   transform: translateX(24px) scale(0.96);

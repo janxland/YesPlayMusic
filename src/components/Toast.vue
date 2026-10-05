@@ -4,15 +4,13 @@
   </transition>
 </template>
 
-<script>
-import { mapState } from 'vuex';
+<script setup lang="ts">
+import { useUiStore } from '@/stores/ui';
+import { storeToRefs } from 'pinia';
 
-export default {
-  name: 'Toast',
-  computed: {
-    ...mapState(['toast']),
-  },
-};
+const uiStore = useUiStore();
+
+const { toast } = storeToRefs(uiStore);
 </script>
 
 <style lang="scss" scoped>
@@ -45,7 +43,8 @@ export default {
 .fade-leave-active {
   transition: opacity 0.2s;
 }
-.fade-enter, .fade-leave-to /* .fade-leave-active below version 2.1.8 */ {
+.fade-enter-from,
+.fade-leave-to {
   opacity: 0;
 }
 </style>

@@ -8,7 +8,7 @@ import {
   hslToRgb,
   shiftHue,
   adjustLightness,
-} from '../core/ColorPalette.js';
+} from '../core/ColorPalette.ts';
 
 export default function run() {
   // hexToRgb

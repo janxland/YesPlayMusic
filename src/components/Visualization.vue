@@ -10,7 +10,7 @@
   <div class="vis-host">
     <VisualizerFrame
       v-show="enabled"
-      ref="frame"
+      ref="frameRef"
       :setting="setting"
       :editing="editLayout"
       @drag-start="onDragWindow"
@@ -36,9 +36,21 @@
   </div>
 </template>
 
-<script>
-/* eslint-disable */
-import { mapState } from 'vuex';
+<script setup lang="ts">
+// Vue2 时代挂在实例上的私有句柄（非响应式），降为模块级变量
+let _audioOff = null;
+let _fadeSafetyTimer = null;
+let _fadeTimer = null;
+let _onVis = null;
+let _readyOff = null;
+let _rebindTimer = null;
+// 轮询/防抖计时器同样只是私有句柄，从不进模板：普通变量即可，不必进 ref
+let _bootTimer: ReturnType<typeof setInterval> | null = null;
+let _saveTimer: ReturnType<typeof setTimeout> | null = null;
+
+// 仅本组件读写的私有全局开关（env.d.ts 归全局，这里组件内局部收敛类型）
+const globalFlags = window as { __YPM_AV_ENABLED__?: boolean };
+
 import { isLoggedIn } from '@/utils/auth';
 import { AudioVisual } from '@/visualizer/AudioVisual';
 import {
@@ -50,402 +62,389 @@ import {
 } from './visualizer/visualizerConfig';
 import VisualizerFrame from './visualizer/VisualizerFrame.vue';
 import VisualizerFab from './visualizer/VisualizerFab.vue';
+// Panel 保持异步 chunk：不打开面板就不下载这 1000+ 行的组件
+const VisualizerPanel = defineAsyncComponent(
+  () => import('./visualizer/VisualizerPanel.vue')
+);
+import {
+  ref,
+  shallowRef,
+  computed,
+  watch,
+  onMounted,
+  onBeforeUnmount,
+  defineAsyncComponent,
+  useTemplateRef,
+} from 'vue';
+import { usePlayerStore } from '@/stores/player';
+import { useUiStore } from '@/stores/ui';
+import { storeToRefs } from 'pinia';
+import { player as playerInstance } from '@/player/singleton';
 
-/**
- * Visualization
- * --------------------------------------------------------------
- * 仅承担三件事：
- *   1) 加载/保存 setting；deep-watch 后下发到 AudioVisual + refresh()
- *   2) 启动/销毁 AudioVisual（持有 player._howler 内部 audio 节点）
- *   3) 维护「自由布局编辑」的 drag/resize 交互
- * UI 全部委派给 Frame / Fab / Panel 三个高内聚子组件。
- *
- * Panel 通过 webpack dynamic import 异步加载 —— 用户从不打开面板时
- * 不会下载这部分代码，达到按需加载效果。
- */
-export default {
-  name: 'Visualization',
-  components: {
-    VisualizerFrame,
-    VisualizerFab,
-    VisualizerPanel: () =>
-      import(
-        /* webpackChunkName: "visualizer-panel" */ './visualizer/VisualizerPanel.vue'
-      ),
-  },
-  data() {
-    const ui = loadUiState();
-    return {
-      AV: null,
-      enabled: ui.enabled,
-      panelOpen: ui.panelOpen,
-      editLayout: false,
-      setting: loadSetting(),
-      _bootTimer: null,
-      _saveTimer: null,
-      docHidden: typeof document !== 'undefined' ? !!document.hidden : false,
-    };
-  },
-  computed: {
-    ...mapState(['player', 'showLyrics']),
-    isWindowMode() {
-      return this.setting.mode === 'window';
-    },
-    /**
-     * 是否应当实际跑可视化：
-     *   - 用户开启（enabled）
-     *   - 当前在歌词页（showLyrics）—— Visualization 只在歌词页内可见，
-     *     歌词页隐藏后继续跑 RAF/FFT 完全是浪费 CPU
-     *   - 页面处于 visible 状态（标签切走/最小化后依然暂停）
-     *
-     * 注意：暂停 (player.playing=false) 时仍然继续渲染——AnalyserNode
-     * 会输出 0 数据，画面静止/淡出，符合“暂停音乐≠停止可视化”的语义。
-     */
-    shouldRun() {
-      return this.enabled && this.showLyrics && !this.docHidden;
-    },
-  },
-  watch: {
-    setting: {
-      deep: true,
-      handler(v) {
-        if (this.AV) {
-          this.AV.setSetting(v);
-          this.AV.refresh();
-        }
-        clearTimeout(this._saveTimer);
-        this._saveTimer = setTimeout(() => saveSetting(v), 300);
-      },
-    },
-    enabled(v) {
-      saveUiState({ enabled: v, panelOpen: this.panelOpen });
-    },
-    panelOpen(v) {
-      saveUiState({ enabled: this.enabled, panelOpen: v });
-    },
-    // 核心：隐藏 / 暂停 / 离页 时停掉 RAF，避免白白吃 CPU
-    shouldRun(v) {
-      if (v) this._resume();
-      else this._pause();
-    },
-    // 切歌：旧 audio 节点已被 Howler.unload() 销毁，必须把可视化指向新节点。
-    'player.currentTrack.id'() {
-      if (!this.shouldRun) return;
-      // 切歌一律完整重建 AV（与刷新等价），力度/状态完全一致。
-      this._rebindToNewAudio();
-    },
-  },
-  mounted() {
-    try {
-      window.__YPM_AV_ENABLED__ = !!this.enabled;
-    } catch (_) {}
-    this._onVis = () => {
-      this.docHidden = !!document.hidden;
-    };
-    document.addEventListener('visibilitychange', this._onVis);
-    if (this.shouldRun) this.start();
-  },
-  beforeDestroy() {
-    clearTimeout(this._saveTimer);
-    if (this._onVis) {
-      document.removeEventListener('visibilitychange', this._onVis);
-      this._onVis = null;
+// 模板 ref 用 useTemplateRef：类型更准，避免被当成数据 ref 误用
+const frameRef =
+  useTemplateRef<{ getCanvas: () => HTMLCanvasElement }>('frameRef');
+
+const { player } = storeToRefs(usePlayerStore());
+const { showLyrics } = storeToRefs(useUiStore());
+
+// AudioVisual 内含 canvas ctx / AudioNode / Worker / RAF 循环等重对象且从不进模板渲染：shallowRef 避免实例被深度 reactive 代理（同为非响应式句柄）
+const AV = shallowRef<AudioVisual | null>(null);
+
+const ui = loadUiState();
+const enabled = ref(ui.enabled);
+
+const panelOpen = ref(ui.panelOpen);
+
+const editLayout = ref<any>(false);
+
+const setting = ref(loadSetting());
+
+const docHidden = ref(
+  typeof document !== 'undefined' ? !!document.hidden : false
+);
+
+const isWindowMode = computed(function isWindowMode() {
+  return setting.value.mode === 'window';
+});
+
+const shouldRun = computed(function shouldRun() {
+  return enabled.value && showLyrics.value && !docHidden.value;
+});
+
+function toggleEnabled() {
+  enabled.value ? stop() : start();
+}
+
+function toggleLayoutEdit() {
+  if (!editLayout.value && !isWindowMode.value) setting.value.mode = 'window';
+  editLayout.value = !editLayout.value;
+}
+
+function resetBounds() {
+  setting.value.bounds = { ...DEFAULT_BOUNDS };
+}
+
+function stop() {
+  enabled.value = false;
+  try {
+    globalFlags.__YPM_AV_ENABLED__ = false;
+  } catch (_) {}
+  _teardown();
+}
+
+function _pause() {
+  _clearBootTimer();
+  _clearReadyListener();
+  if (AV.value) AV.value.stop();
+}
+
+function _resume() {
+  if (!enabled.value) return;
+  if (AV.value) {
+    AV.value.refresh();
+    AV.value.start();
+  } else {
+    start();
+  }
+}
+
+function _teardown() {
+  _clearBootTimer();
+  _clearRebindTimer();
+  _clearReadyListener();
+  _unbindAudioEvents();
+  if (_fadeTimer) {
+    clearTimeout(_fadeTimer);
+    _fadeTimer = null;
+  }
+  if (_fadeSafetyTimer) {
+    clearTimeout(_fadeSafetyTimer);
+    _fadeSafetyTimer = null;
+  }
+  if (AV.value) {
+    AV.value.destroy();
+    AV.value = null;
+  }
+}
+
+function _clearBootTimer() {
+  if (_bootTimer) {
+    clearInterval(_bootTimer);
+    _bootTimer = null;
+  }
+}
+
+function _clearRebindTimer() {
+  if (_rebindTimer) {
+    clearInterval(_rebindTimer);
+    _rebindTimer = null;
+  }
+}
+
+function _clearReadyListener() {
+  if (_readyOff) {
+    _readyOff();
+    _readyOff = null;
+  }
+}
+
+function _waitAudioReady(node, retry) {
+  _clearReadyListener();
+  const handler = () => {
+    _clearReadyListener();
+    if (!shouldRun.value) return;
+    retry();
+  };
+  node.addEventListener('playing', handler, { once: true });
+  node.addEventListener('loadeddata', handler, { once: true });
+  _readyOff = () => {
+    node.removeEventListener('playing', handler);
+    node.removeEventListener('loadeddata', handler);
+  };
+}
+
+function start() {
+  enabled.value = true;
+  try {
+    globalFlags.__YPM_AV_ENABLED__ = true;
+  } catch (_) {}
+  if (!shouldRun.value) return;
+  _tryAttach();
+}
+
+function _tryAttach() {
+  if (AV.value) return;
+  _clearBootTimer();
+  let tries = 0;
+  _bootTimer = setInterval(() => {
+    tries++;
+    if (AV.value || !shouldRun.value) {
+      _clearBootTimer();
+      return;
     }
-    this._teardown();
-  },
-  methods: {
-    toggleEnabled() {
-      this.enabled ? this.stop() : this.start();
-    },
-    toggleLayoutEdit() {
-      if (!this.editLayout && !this.isWindowMode) this.setting.mode = 'window';
-      this.editLayout = !this.editLayout;
-    },
-    resetBounds() {
-      this.setting.bounds = { ...DEFAULT_BOUNDS };
-    },
-    stop() {
-      this.enabled = false;
-      try {
-        window.__YPM_AV_ENABLED__ = false;
-      } catch (_) {}
-      this._teardown();
-    },
-    /**
-     * 轻量暂停：仅停 RAF，不销毁 AudioVisual / Worker / AudioContext，
-     * 以便重新进歌词页时能零成本恢复。
-     */
-    _pause() {
-      this._clearBootTimer();
-      this._clearReadyListener();
-      if (this.AV) this.AV.stop();
-    },
-    _resume() {
-      if (!this.enabled) return;
-      if (this.AV) {
-        this.AV.refresh();
-        this.AV.start();
-      } else {
-        this.start();
-      }
-    },
-    _teardown() {
-      this._clearBootTimer();
-      this._clearRebindTimer();
-      this._clearReadyListener();
-      this._unbindAudioEvents();
-      if (this._fadeTimer) {
-        clearTimeout(this._fadeTimer);
-        this._fadeTimer = null;
-      }
-      if (this._fadeSafetyTimer) {
-        clearTimeout(this._fadeSafetyTimer);
-        this._fadeSafetyTimer = null;
-      }
-      if (this.AV) {
-        this.AV.destroy();
-        this.AV = null;
-      }
-    },
-    _clearBootTimer() {
-      if (this._bootTimer) {
-        clearInterval(this._bootTimer);
-        this._bootTimer = null;
-      }
-    },
-    _clearRebindTimer() {
-      if (this._rebindTimer) {
-        clearInterval(this._rebindTimer);
-        this._rebindTimer = null;
-      }
-    },
-    /**
-     * 取消挂在某 audio 节点上的“等就绪再重试”监听，避免重复绑定。
-     */
-    _clearReadyListener() {
-      if (this._readyOff) {
-        this._readyOff();
-        this._readyOff = null;
-      }
-    },
-    /**
-     * 在 audio 元素上一次性监听 'playing' / 'loadeddata' —— 一旦真正开始
-     * 出声，captureStream 才会有音轨可拿。回调里再尝试 attach / rebind。
-     */
-    _waitAudioReady(node, retry) {
-      this._clearReadyListener();
-      const handler = () => {
-        this._clearReadyListener();
-        if (!this.shouldRun) return;
-        retry();
-      };
-      node.addEventListener('playing', handler, { once: true });
-      node.addEventListener('loadeddata', handler, { once: true });
-      this._readyOff = () => {
-        node.removeEventListener('playing', handler);
-        node.removeEventListener('loadeddata', handler);
-      };
-    },
-    start() {
-      this.enabled = true;
-      try {
-        window.__YPM_AV_ENABLED__ = true;
-      } catch (_) {}
-      if (!this.shouldRun) return;
-      this._tryAttach();
-    },
-    /**
-     * 等待 howler 的 _node 与 canvas 就绪后调用 _attachTo。
-     * 使用短轮询是因为 Howler 在 html5 模式下异步创建 _node。
-     */
-    _tryAttach() {
-      if (this.AV) return;
-      this._clearBootTimer();
-      let tries = 0;
-      this._bootTimer = setInterval(() => {
-        tries++;
-        if (this.AV || !this.shouldRun) {
-          this._clearBootTimer();
-          return;
-        }
-        const node = this.player?._howler?._sounds?.[0]?._node;
-        const canvas = this.$refs.frame?.getCanvas();
-        if (node && canvas && isLoggedIn()) {
-          this._clearBootTimer();
-          this._attachTo(node, canvas);
-        } else if (tries > 25) {
-          this._clearBootTimer();
-        }
-      }, 200);
-    },
-    _attachTo(node, canvas) {
-      // 不设置 crossOrigin：第三方音源 (kuwo / qq / migu / joox 等) 不返回
-      // Access-Control-Allow-Origin，一旦带 Origin 头将被 CORS 拦截，导致无法播放。
-      // 播放优先；可视化对这些源会因为 captureStream tainted 而无声/失败，已可接受。
-      try {
-        this.AV = new AudioVisual(canvas, node, this.setting);
-        this.AV.loadMusic(node.context, node);
-        this._bindAudioEvents(node);
-        this._fadeInCanvas();
-      } catch (err) {
-        this._handleAttachError(err, node, () => this._attachTo(node, canvas));
-      }
-    },
+    // _howler 不进 store 镜像（类实例不入响应式系统，见 player/singleton.ts），必须从单例直读；本函数本就是 setInterval 轮询，无需响应性
+    const node = playerInstance._howler?._sounds?.[0]?._node;
+    const canvas = frameRef.value?.getCanvas();
+    if (node && canvas && isLoggedIn()) {
+      _clearBootTimer();
+      _attachTo(node, canvas);
+    } else if (tries > 25) {
+      _clearBootTimer();
+    }
+  }, 200);
+}
 
-    /** 为当前 audio 节点挂 seeking/seeked 事件，实现拖动进度时丝滑过渡。 */
-    _bindAudioEvents(node) {
-      this._unbindAudioEvents();
-      const onSeeking = () => this._fadeOutCanvas();
-      const onSeeked = () => this._fadeInCanvas();
-      node.addEventListener('seeking', onSeeking);
-      node.addEventListener('seeked', onSeeked);
-      this._audioOff = () => {
-        try {
-          node.removeEventListener('seeking', onSeeking);
-          node.removeEventListener('seeked', onSeeked);
-        } catch (_) {}
-      };
-    },
-    _unbindAudioEvents() {
-      if (this._audioOff) {
-        this._audioOff();
-        this._audioOff = null;
-      }
-    },
-    _getCanvas() {
-      return this.$refs.frame?.getCanvas();
-    },
-    /** 立刻深度 0 × 0。 */
-    _fadeOutCanvas() {
-      const c = this._getCanvas();
-      if (!c) return;
-      c.style.opacity = '0';
-      // 取消已有的恢复计时，防止快速 seek 连击调乱状态
-      if (this._fadeTimer) {
-        clearTimeout(this._fadeTimer);
-        this._fadeTimer = null;
-      }
-      // 兜底：1.2s 内若仍未触发 fadeIn（attach 失败 / NOT_SUPPORTED 等），
-      // 强制恢复显示，避免画布永远透明造成"黑屏"。
-      if (this._fadeSafetyTimer) clearTimeout(this._fadeSafetyTimer);
-      this._fadeSafetyTimer = setTimeout(() => {
-        this._fadeSafetyTimer = null;
-        const cc = this._getCanvas();
-        if (cc && cc.style.opacity === '0') cc.style.opacity = '1';
-      }, 1200);
-    },
-    /** 下一帧 RAF 后设 opacity=1，CSS transition 接手。 */
-    _fadeInCanvas() {
-      const c = this._getCanvas();
-      if (!c) return;
-      // 给 AV 一小段充分时间走完重建（captureStream + worker AGC 冷启动），
-      // 避免淑入后第一帧仍是"质变"画面。
-      if (this._fadeTimer) clearTimeout(this._fadeTimer);
-      if (this._fadeSafetyTimer) {
-        clearTimeout(this._fadeSafetyTimer);
-        this._fadeSafetyTimer = null;
-      }
-      this._fadeTimer = setTimeout(() => {
-        this._fadeTimer = null;
-        const cc = this._getCanvas();
-        if (cc) cc.style.opacity = '1';
-      }, 60);
-    },
-    _handleAttachError(err, node, retry) {
-      if (this.AV) {
-        try {
-          this.AV.destroy();
-        } catch (_) {}
-        this.AV = null;
-      }
-      const code = err && err.code;
-      if (code === 'AV_NOT_READY') {
-        // 新 audio 还没真正出声，等 'playing' 后再来一次
-        this._waitAudioReady(node, retry);
-        return;
-      }
-      if (code === 'AV_NOT_SUPPORTED') {
-        console.warn(
-          '[Visualization] 当前环境不支持 captureStream，已跳过可视化以保证播放。'
-        );
-        return;
-      }
-      console.error('[Visualization] AV init failed', err);
-    },
-    /**
-     * 切歌后重建可视化，让"切歌"与"刷新"走完全相同的初始化路径。
-     *
-     * 旧实现走 changeMediaElementSource 试图复用 AV 实例，
-     * 但 worker AGC / runPeak 等内部状态在新旧歌之间无法平滑迁移，
-     * 用户感知就是「切歌力度与刷新不一致 + 切换瞬间卡顿」。
-     *
-     * 现做法：一刀切——destroy 旧 AV，再用 _tryAttach 等新 _node 出来后
-     * 按刷新路径全新构造 AudioVisual + Worker + AGC，状态白板，
-     * 视觉表现与刷新完全一致。
-     */
-    _rebindToNewAudio() {
-      this._clearRebindTimer();
-      this._clearReadyListener();
-      this._unbindAudioEvents();
-      // 立即淑出当前画面。后续 _attachTo 成功后会淑入。
-      this._fadeOutCanvas();
-      // 立刻把旧 AV 整个拆掉：worker terminate / source disconnect /
-      // stream tracks stop —— 与 destroy() 完全一致。
-      if (this.AV) {
-        try {
-          this.AV.destroy();
-        } catch (_) {}
-        this.AV = null;
-      }
-      // 走与刷新相同的"等 _node + canvas 就绪 → _attachTo"路径。
-      this._tryAttach();
-    },
+function _attachTo(node, canvas) {
+  // 不设置 crossOrigin：第三方音源 (kuwo/qq/migu/joox 等) 不返回 Access-Control-Allow-Origin，带 Origin 头将被 CORS 拦截导致无法播放；
+  // 播放优先，可视化对这些源因 captureStream tainted 而无声/失败，已可接受
+  try {
+    AV.value = new AudioVisual(canvas, node, setting.value);
+    AV.value.loadMusic(node.context, node);
+    _bindAudioEvents(node);
+    _fadeInCanvas();
+  } catch (err) {
+    _handleAttachError(err, node, () => _attachTo(node, canvas));
+  }
+}
 
-    /* ---------- 自由布局 drag / resize ---------- */
-    _beginDrag(e, mutate) {
-      const startX = e.clientX;
-      const startY = e.clientY;
-      const sb = { ...this.setting.bounds };
-      const W = window.innerWidth;
-      const H = window.innerHeight;
-      const prevSel = document.body.style.userSelect;
-      document.body.style.userSelect = 'none';
-      const move = ev => {
-        this.setting.bounds = mutate(
-          sb,
-          (ev.clientX - startX) / W,
-          (ev.clientY - startY) / H
-        );
-      };
-      const up = () => {
-        document.removeEventListener('mousemove', move);
-        document.removeEventListener('mouseup', up);
-        document.body.style.userSelect = prevSel;
-      };
-      document.addEventListener('mousemove', move);
-      document.addEventListener('mouseup', up);
-    },
-    onDragWindow(e) {
-      this._beginDrag(e, (sb, dx, dy) => ({
-        ...sb,
-        x: Math.max(0, Math.min(1 - sb.w, sb.x + dx)),
-        y: Math.max(0, Math.min(1 - sb.h, sb.y + dy)),
-      }));
-    },
-    onResizeWindow(e) {
-      this._beginDrag(e, (sb, dx, dy) => ({
-        ...sb,
-        w: Math.max(0.1, Math.min(1 - sb.x, sb.w + dx)),
-        h: Math.max(0.1, Math.min(1 - sb.y, sb.h + dy)),
-      }));
-    },
+function _bindAudioEvents(node) {
+  _unbindAudioEvents();
+  const onSeeking = () => _fadeOutCanvas();
+  const onSeeked = () => _fadeInCanvas();
+  node.addEventListener('seeking', onSeeking);
+  node.addEventListener('seeked', onSeeked);
+  _audioOff = () => {
+    try {
+      node.removeEventListener('seeking', onSeeking);
+      node.removeEventListener('seeked', onSeeked);
+    } catch (_) {}
+  };
+}
+
+function _unbindAudioEvents() {
+  if (_audioOff) {
+    _audioOff();
+    _audioOff = null;
+  }
+}
+
+function _getCanvas() {
+  return frameRef.value?.getCanvas();
+}
+
+function _fadeOutCanvas() {
+  const c = _getCanvas();
+  if (!c) return;
+  c.style.opacity = '0';
+  // 取消已有的恢复计时，防止快速 seek 连击调乱状态
+  if (_fadeTimer) {
+    clearTimeout(_fadeTimer);
+    _fadeTimer = null;
+  }
+  // 兜底：1.2s 内若仍未触发 fadeIn（attach 失败 / NOT_SUPPORTED 等），强制恢复显示避免画布永远透明造成"黑屏"
+  if (_fadeSafetyTimer) clearTimeout(_fadeSafetyTimer);
+  _fadeSafetyTimer = setTimeout(() => {
+    _fadeSafetyTimer = null;
+    const cc = _getCanvas();
+    if (cc && cc.style.opacity === '0') cc.style.opacity = '1';
+  }, 1200);
+}
+
+function _fadeInCanvas() {
+  const c = _getCanvas();
+  if (!c) return;
+  // 给 AV 一小段充分时间走完重建（captureStream + worker AGC 冷启动），避免淑入后第一帧仍是"质变"画面
+  if (_fadeTimer) clearTimeout(_fadeTimer);
+  if (_fadeSafetyTimer) {
+    clearTimeout(_fadeSafetyTimer);
+    _fadeSafetyTimer = null;
+  }
+  _fadeTimer = setTimeout(() => {
+    _fadeTimer = null;
+    const cc = _getCanvas();
+    if (cc) cc.style.opacity = '1';
+  }, 60);
+}
+
+function _handleAttachError(err, node, retry) {
+  if (AV.value) {
+    try {
+      AV.value.destroy();
+    } catch (_) {}
+    AV.value = null;
+  }
+  const code = err && err.code;
+  if (code === 'AV_NOT_READY') {
+    // 新 audio 还没真正出声，等 'playing' 后再来一次
+    _waitAudioReady(node, retry);
+    return;
+  }
+  if (code === 'AV_NOT_SUPPORTED') {
+    console.warn(
+      '[Visualization] 当前环境不支持 captureStream，已跳过可视化以保证播放。'
+    );
+    return;
+  }
+  console.error('[Visualization] AV init failed', err);
+}
+
+function _rebindToNewAudio() {
+  _clearRebindTimer();
+  _clearReadyListener();
+  _unbindAudioEvents();
+  _fadeOutCanvas();
+  // 立刻把旧 AV 整个拆掉：worker terminate / source disconnect / stream tracks stop —— 与 destroy() 完全一致
+  if (AV.value) {
+    try {
+      AV.value.destroy();
+    } catch (_) {}
+    AV.value = null;
+  }
+  // 走与刷新相同的"等 _node + canvas 就绪 → _attachTo"路径。
+  _tryAttach();
+}
+
+function _beginDrag(e, mutate) {
+  const startX = e.clientX;
+  const startY = e.clientY;
+  const sb = { ...setting.value.bounds };
+  const W = window.innerWidth;
+  const H = window.innerHeight;
+  const prevSel = document.body.style.userSelect;
+  document.body.style.userSelect = 'none';
+  const move = ev => {
+    setting.value.bounds = mutate(
+      sb,
+      (ev.clientX - startX) / W,
+      (ev.clientY - startY) / H
+    );
+  };
+  const up = () => {
+    document.removeEventListener('mousemove', move);
+    document.removeEventListener('mouseup', up);
+    document.body.style.userSelect = prevSel;
+  };
+  document.addEventListener('mousemove', move);
+  document.addEventListener('mouseup', up);
+}
+
+function onDragWindow(e) {
+  _beginDrag(e, (sb, dx, dy) => ({
+    ...sb,
+    x: Math.max(0, Math.min(1 - sb.w, sb.x + dx)),
+    y: Math.max(0, Math.min(1 - sb.h, sb.y + dy)),
+  }));
+}
+
+function onResizeWindow(e) {
+  _beginDrag(e, (sb, dx, dy) => ({
+    ...sb,
+    w: Math.max(0.1, Math.min(1 - sb.x, sb.w + dx)),
+    h: Math.max(0.1, Math.min(1 - sb.y, sb.h + dy)),
+  }));
+}
+
+watch(
+  setting,
+  function (v) {
+    if (AV.value) {
+      AV.value.setSetting(v);
+      AV.value.refresh();
+    }
+    if (_saveTimer) clearTimeout(_saveTimer);
+    _saveTimer = setTimeout(() => saveSetting(v), 300);
   },
-};
+  {
+    deep: true,
+  }
+);
+
+watch(enabled, function (v) {
+  saveUiState({ enabled: v, panelOpen: panelOpen.value });
+});
+
+watch(panelOpen, function (v) {
+  saveUiState({ enabled: enabled.value, panelOpen: v });
+});
+
+watch(shouldRun, function (v) {
+  if (v) _resume();
+  else _pause();
+});
+
+watch(
+  () => player.value.currentTrack.id,
+  function () {
+    if (!shouldRun.value) return;
+    // 切歌一律完整重建 AV（与刷新等价），力度/状态完全一致
+    _rebindToNewAudio();
+  }
+);
+
+onMounted(function mounted() {
+  try {
+    globalFlags.__YPM_AV_ENABLED__ = !!enabled.value;
+  } catch (_) {}
+  _onVis = () => {
+    docHidden.value = !!document.hidden;
+  };
+  document.addEventListener('visibilitychange', _onVis);
+  if (shouldRun.value) start();
+});
+
+onBeforeUnmount(function beforeUnmount() {
+  if (_saveTimer) clearTimeout(_saveTimer);
+  if (_onVis) {
+    document.removeEventListener('visibilitychange', _onVis);
+    _onVis = null;
+  }
+  _teardown();
+});
 </script>
 
 <style lang="scss" scoped>
-/* display:contents：宿主元素不参与布局/堆叠，避免在歌词页内
-   产生新的 stacking context；三个子层各自 fixed 定位、独立 z-index。 */
+/* display:contents：宿主元素不参与布局/堆叠，避免在歌词页内产生新的 stacking context；三个子层各自 fixed 定位、独立 z-index */
 .vis-host {
   display: contents;
 }

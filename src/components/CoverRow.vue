@@ -1,14 +1,14 @@
 <template>
   <div class="cover-row no-scrollbar" :style="rowStyles">
     <div
-      v-for="item in items"
-      :key="item.id"
+      v-for="row in rows"
+      :key="row.id"
       class="item"
       :class="{ artist: type === 'artist' }"
     >
       <Cover
-        :id="parseInt(item.id)"
-        :image-url="getImageUrl(item)"
+        :id="row.coverId"
+        :image-url="row.imageUrl"
         :type="type"
         :click-cover-to-play="clickCoverToPlay"
         :click-cover-to-play-fun="clickCoverToPlayFun"
@@ -17,109 +17,128 @@
       <div class="text">
         <div v-if="showPlayCount" class="info">
           <span class="play-count"
-            ><svg-icon icon-class="play" />{{
-              item.playCount | formatPlayCount
-            }}
+            ><svg-icon icon-class="play" />{{ row.playCount }}
           </span>
         </div>
         <div class="title" :style="{ fontSize: subTextFontSize }">
-          <span v-if="isExplicit(item)" class="explicit-symbol"
+          <span v-if="row.explicit" class="explicit-symbol"
             ><ExplicitSymbol
           /></span>
-          <span v-if="isPrivacy(item)" class="lock-icon">
+          <span v-if="row.privacy" class="lock-icon">
             <svg-icon icon-class="lock"
           /></span>
-          <router-link :to="getTitleLink(item)">{{ item.name }}</router-link>
+          <router-link :to="row.titleLink">{{ row.name }}</router-link>
         </div>
         <div v-if="type !== 'artist' && subText !== 'none'" class="info">
-          <span v-html="getSubText(item)"></span>
+          <span v-html="row.subText"></span>
         </div>
       </div>
     </div>
   </div>
 </template>
 
-<script>
+<script setup lang="ts">
+const route = useRoute();
+
 import Cover from '@/components/Cover.vue';
 import ExplicitSymbol from '@/components/ExplicitSymbol.vue';
+import { formatPlayCount } from '@/utils/formatters';
+import { computed } from 'vue';
+import type { PropType } from 'vue';
+import type { Album, Artist, MV, Playlist } from '@/types/entities';
 
-export default {
-  name: 'CoverRow',
-  components: {
-    Cover,
-    ExplicitSymbol,
+import { useRoute } from 'vue-router';
+const props = defineProps({
+  // 歌单/专辑/歌手/MV 混用，实体字段均有索引签名兜底
+  items: {
+    type: Array as PropType<(Playlist | Album | Artist | MV)[]>,
+    required: true,
   },
-  props: {
-    items: { type: Array, required: true },
-    type: { type: String, required: true },
-    subText: { type: String, default: 'none' },
-    subTextFontSize: { type: String, default: '16px' },
-    showPlayCount: { type: Boolean, default: false },
-    columnNumber: { type: Number, default: 5 },
-    gap: { type: String, default: '44px 16px' },
-    playButtonSize: { type: Number, default: 22 },
-    clickCoverToPlay: { type: Boolean, default: false },
-    clickCoverToPlayFun: { type: Function, default: undefined },
-  },
-  computed: {
-    rowStyles() {
-      return {
-        'grid-template-columns': `repeat(${this.columnNumber}, 1fr)`,
-        gap: this.gap,
-      };
-    },
-  },
-  methods: {
-    getSubText(item) {
-      if (this.subText === 'copywriter') return item.copywriter;
-      if (this.subText === 'description') return item.description;
-      if (this.subText === 'updateFrequency') return item.updateFrequency;
-      if (this.subText === 'creator') return 'by ' + item.creator.nickname;
-      if (this.subText === 'releaseYear')
-        return new Date(item.publishTime).getFullYear();
-      if (this.subText === 'artist') {
-        if (item.artist !== undefined)
-          return `<a href="/artist/${item.artist.id}">${item.artist.name}</a>`;
-        if (item.artists !== undefined)
-          return `<a href="/artist/${item.artists[0].id}">${item.artists[0].name}</a>`;
-      }
-      if (this.subText === 'albumType+releaseYear') {
-        let albumType = item.type;
-        if (item.type === 'EP/Single') {
-          albumType = item.size === 1 ? 'Single' : 'EP';
-        } else if (item.type === 'Single') {
-          albumType = 'Single';
-        } else if (item.type === '专辑') {
-          albumType = 'Album';
-        }
-        return `${albumType} · ${new Date(item.publishTime).getFullYear()}`;
-      }
-      if (this.subText === 'appleMusic') return 'by Apple Music';
-    },
-    isPrivacy(item) {
-      return this.type === 'playlist' && item.privacy === 10;
-    },
-    isExplicit(item) {
-      return this.type === 'album' && (item.mark & 1048576) === 1048576;
-    },
-    getTitleLink(item) {
-      let server = this.$route.query.server;
-      return `/${this.type}/${item.id}?${server ? 'server=' + server : ''}`;
-    },
-    getImageUrl(item) {
-      if (item.img1v1Url) {
-        let img1v1ID = item.img1v1Url.split('/');
-        img1v1ID = img1v1ID[img1v1ID.length - 1];
-        if (img1v1ID === '5639395138885805.jpg') {
-          // 没有头像的歌手，网易云返回的img1v1Url并不是正方形的 😅😅😅
-          return 'https://p2.music.126.net/VnZiScyynLG7atLIZ2YPkw==/18686200114669622.jpg?param=512y512';
-        }
-      }
-      let img = item.img1v1Url || item.picUrl || item.coverImgUrl;
-      return `${img?.replace('http://', 'https://')}?param=512y512`;
-    },
-  },
-};
+  type: { type: String, required: true },
+  subText: { type: String, default: 'none' },
+  subTextFontSize: { type: String, default: '16px' },
+  showPlayCount: { type: Boolean, default: false },
+  columnNumber: { type: Number, default: 5 },
+  gap: { type: String, default: '44px 16px' },
+  playButtonSize: { type: Number, default: 22 },
+  clickCoverToPlay: { type: Boolean, default: false },
+  clickCoverToPlayFun: { type: Function, default: undefined },
+});
+
+const rowStyles = computed(function rowStyles() {
+  return {
+    'grid-template-columns': `repeat(${props.columnNumber}, 1fr)`,
+    gap: props.gap,
+  };
+});
+
+// 行内展示字段在 computed 里一次算齐：原方法每次重渲染对每行重复执行，items 不变时纯属浪费
+const rows = computed(function rows() {
+  return props.items.map(item => ({
+    id: item.id,
+    name: item.name,
+    coverId: parseInt(String(item.id)),
+    imageUrl: getImageUrl(item),
+    playCount: formatPlayCount(item.playCount),
+    explicit: isExplicit(item),
+    privacy: isPrivacy(item),
+    titleLink: getTitleLink(item),
+    subText: getSubText(item),
+  }));
+});
+
+function getSubText(item) {
+  if (props.subText === 'copywriter') return item.copywriter;
+  if (props.subText === 'description') return item.description;
+  if (props.subText === 'updateFrequency') return item.updateFrequency;
+  if (props.subText === 'creator') return 'by ' + item.creator.nickname;
+  if (props.subText === 'releaseYear')
+    return new Date(item.publishTime).getFullYear();
+  if (props.subText === 'artist') {
+    if (item.artist !== undefined)
+      return `<a href="/artist/${item.artist.id}">${item.artist.name}</a>`;
+    if (item.artists !== undefined)
+      return `<a href="/artist/${item.artists[0].id}">${item.artists[0].name}</a>`;
+  }
+  if (props.subText === 'albumType+releaseYear') {
+    let albumType = item.type;
+    if (item.type === 'EP/Single') {
+      albumType = item.size === 1 ? 'Single' : 'EP';
+    } else if (item.type === 'Single') {
+      albumType = 'Single';
+    } else if (item.type === '专辑') {
+      albumType = 'Album';
+    }
+    return `${albumType} · ${new Date(item.publishTime).getFullYear()}`;
+  }
+  if (props.subText === 'appleMusic') return 'by Apple Music';
+}
+
+function isPrivacy(item) {
+  return props.type === 'playlist' && item.privacy === 10;
+}
+
+function isExplicit(item) {
+  return props.type === 'album' && (item.mark & 1048576) === 1048576;
+}
+
+function getTitleLink(item) {
+  let server = route.query.server;
+  return `/${props.type}/${item.id}?${server ? 'server=' + server : ''}`;
+}
+
+function getImageUrl(item) {
+  if (item.img1v1Url) {
+    let img1v1ID = item.img1v1Url.split('/');
+    img1v1ID = img1v1ID[img1v1ID.length - 1];
+    if (img1v1ID === '5639395138885805.jpg') {
+      // 没有头像的歌手，网易云返回的img1v1Url并不是正方形的 😅😅😅
+      return 'https://p2.music.126.net/VnZiScyynLG7atLIZ2YPkw==/18686200114669622.jpg?param=512y512';
+    }
+  }
+  let img = item.img1v1Url || item.picUrl || item.coverImgUrl;
+  return `${img?.replace('http://', 'https://')}?param=512y512`;
+}
 </script>
 
 <style lang="scss" scoped>
@@ -190,7 +209,6 @@ export default {
   opacity: 0.28;
   color: var(--color-text);
   margin-right: 4px;
-  // float: right;
   .svg-icon {
     height: 12px;
     width: 12px;

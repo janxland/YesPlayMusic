@@ -38,30 +38,21 @@
   </div>
 </template>
 
-<script>
+<script setup lang="ts">
+const router = useRouter();
+
 import NProgress from 'nprogress';
-
 import SvgIcon from '@/components/SvgIcon.vue';
+import { ref } from 'vue';
 
-export default {
-  name: 'Login',
-  components: {
-    SvgIcon,
-  },
-  data() {
-    return {
-      activeCard: 0,
-    };
-  },
-  created() {
-    NProgress.done();
-  },
-  methods: {
-    goTo(path) {
-      this.$router.push({ path: '/login/' + path });
-    },
-  },
-};
+import { useRouter } from 'vue-router';
+const activeCard = ref<any>(0);
+
+function goTo(path) {
+  router.push({ path: '/login/' + path });
+}
+
+NProgress.done();
 </script>
 
 <style lang="scss" scoped>
@@ -121,7 +112,6 @@ export default {
 
   .container {
     display: flex;
-    // justify-content: space-around;
     align-items: center;
 
     color: #335eea;

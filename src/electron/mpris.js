@@ -46,13 +46,17 @@ export function createMpris(window) {
     player.getPosition = () => position * 1000 * 1000;
     try {
       player.seeked(position * 1000 * 1000);
-    } catch {}
+    } catch {
+      // 曲目尚未就绪时 mpris 会抛，下一个 5s tick 自然补上，这里不处理
+    }
   });
 
   ipcMain.on('seeked', (e, position) => {
     try {
       player.seeked(position * 1000 * 1000);
-    } catch {}
+    } catch {
+      // 同上：seeked 只在已就绪的曲目上有意义
+    }
   });
 
   ipcMain.on('switchRepeatMode', (e, mode) => {

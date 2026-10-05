@@ -9,7 +9,7 @@
           <div class="dropdown-content">
             <button
               v-for="(val, key, i) in serverNameTable"
-              :key="{ val: val, i: i }"
+              :key="key"
               @click="tranSearchType(undefined, key)"
               >{{ serverNameTable[key] }}</button
             >
@@ -23,7 +23,7 @@
           <div class="dropdown-content">
             <button
               v-for="(val, key, i) in typeNameTable"
-              :key="{ val: val, i: i }"
+              :key="key"
               @click="tranSearchType(key, undefined)"
               >{{ typeNameTable[key] }}</button
             >
@@ -36,7 +36,7 @@
       <TrackList
         :tracks="result"
         type="playlist"
-        :max-size="100"
+        :max-size="'100'"
         :other-server-access="false"
         dbclick-track-func="none"
       />
@@ -50,169 +50,155 @@
       />
     </div>
     <div class="load-more">
-      <ButtonTwoTone
-        v-show="hasMore"
-        color="grey"
-        @click.native="fetchData(true)"
-        >{{ $t('explore.loadMore') }}</ButtonTwoTone
-      >
+      <ButtonTwoTone v-show="hasMore" color="grey" @click="fetchData(true)">{{
+        $t('explore.loadMore')
+      }}</ButtonTwoTone>
     </div>
   </div>
 </template>
 
-<script>
-import { getTrackDetail } from '@/api/track';
-import { getPlaylistDetail } from '@/api/playlist';
-import locale from '@/locale';
-import { mapState, mapActions } from 'vuex';
+<script setup lang="ts">
+const router = useRouter();
+
+import { getI18n } from '@/locale';
 import { camelCase } from 'change-case';
 import request from '@/utils/request';
 import TrackList from '@/components/TrackList.vue';
 import CoverRow from '@/components/CoverRow.vue';
 import ButtonTwoTone from '@/components/ButtonTwoTone.vue';
-export default {
-  name: 'Search',
-  components: {
-    TrackList,
-    CoverRow,
-    ButtonTwoTone,
-  },
-  data() {
-    return { show: false, result: [], hasMore: true, curpage: 1 };
-  },
-  computed: {
-    ...mapState(['player']),
-    keywords() {
-      return this.$route.query.keywords;
+import { ref, computed, watch, onWatcherCleanup } from 'vue';
+import { useCrossPlatformPlay } from '@/composables/useCrossPlatformPlay';
+
+import { useRoute, useRouter } from 'vue-router';
+const route = useRoute();
+
+const result = ref<any>([]);
+
+const hasMore = ref<any>(true);
+
+const curpage = ref<any>(1);
+
+const keywords = computed(function keywords() {
+  return route.query.keywords;
+});
+
+const type = computed(function type() {
+  // 路由 query 是 string | string[]，单值语义，取首元素收窄
+  const rawType = route.query.type || 'tracks';
+  return camelCase(Array.isArray(rawType) ? rawType[0] : rawType);
+});
+
+const server = computed(function server() {
+  const rawServer = route.query.server || 'tencent';
+  return camelCase(Array.isArray(rawServer) ? rawServer[0] : rawServer);
+});
+
+const typeNameTable = computed(function typeNameTable() {
+  return {
+    musicVideos: (getI18n() as any).global.t('search.mv'),
+    tracks: (getI18n() as any).global.t('search.song'),
+    albums: (getI18n() as any).global.t('search.album'),
+    artists: (getI18n() as any).global.t('search.artist'),
+    playlists: (getI18n() as any).global.t('search.playlist'),
+  };
+});
+
+const serverNameTable = computed(function serverNameTable() {
+  return {
+    tencent: (getI18n() as any).global.t('server.tencent'),
+    kugou: (getI18n() as any).global.t('server.kugou'),
+  };
+});
+
+// 第三方平台歌单播放（与 playlist/album 同款逻辑，收敛在 useCrossPlatformPlay）：模板只传 id，这里包一层补上 server 与提示文案
+const { playThisListByTrack: playCrossPlatformList } = useCrossPlatformPlay();
+
+function playThisListByTrack(id) {
+  playCrossPlatformList(
+    id,
+    route.query.server,
+    'coSearch 正在进行其他平台播放'
+  );
+}
+
+function tranSearchType(type, server) {
+  if (type) {
+    router.replace({ query: { ...route.query, type } });
+  }
+  if (server) {
+    router.replace({ query: { ...route.query, server } });
+  }
+}
+
+// 路由代次：watch(route) 的 onWatcherCleanup 在下次路由变化时推进它，旧 keywords/type 的响应晚到即被丢弃（翻页 push 请求捕获当时 token，路由一变同样作废）
+const reqToken = ref(0);
+
+function fetchData(isPush = false) {
+  const token = reqToken.value;
+  const typeTable = {
+    musicVideos: 1004,
+    tracks: 1,
+    albums: 10,
+    artists: 100,
+    playlists: 1000,
+  };
+  request({
+    url: '/search',
+    method: 'get',
+    params: {
+      curpage: isPush ? (curpage.value += 1) : (curpage.value = 1),
+      ...route.query,
+      keywords: keywords.value || '群青',
+      type: typeTable[type.value],
     },
-    type() {
-      return camelCase(this.$route.query.type || 'tracks');
-    },
-    server() {
-      return camelCase(this.$route.query.server || 'tencent');
-    },
-    typeNameTable() {
-      return {
-        musicVideos: locale.t('search.mv'),
-        tracks: locale.t('search.song'),
-        albums: locale.t('search.album'),
-        artists: locale.t('search.artist'),
-        playlists: locale.t('search.playlist'),
-      };
-    },
-    serverNameTable() {
-      return {
-        tencent: locale.t('server.tencent'),
-        kugou: locale.t('server.kugou'),
-      };
-    },
-  },
-  watch: {
-    $route: {
-      immediate: true,
-      handler() {
-        this.fetchData();
-      },
-    },
-  },
-  methods: {
-    ...mapActions(['showToast']),
-    playThisListByTrack(id) {
-      this.showToast('coSearch 正在进行其他平台播放');
-      getPlaylistDetail(id, true, this.$route.query.server).then(data => {
-        console.log(data);
-        let playlist = data.playlist;
-        let tracks = playlist.tracks.filter(_track => {
-          return _track.playable == 1;
-        });
-        this.player.replacePlaylist(tracks, tracks[0], 'artist', tracks[0]);
-      });
-    },
-    tranSearchType(type, server) {
-      if (type) {
-        this.$router.replace({ query: { ...this.$route.query, type } });
-      }
-      if (server) {
-        this.$router.replace({ query: { ...this.$route.query, server } });
-      }
-    },
-    playTrack(id) {
-      this.player.playTrack(id);
-    },
-    formatTime(times) {
-      let t = '';
-      times /= 1000;
-      if (times > -1) {
-        var min = Math.floor(times / 60) % 60;
-        var sec = times % 60;
-        t += min + ':';
-        if (sec < 10) {
-          t += '0';
+  }).then(data => {
+    // 已过期代次（路由已变）的响应直接丢弃
+    if (token !== reqToken.value) return;
+    // 局部改名避免遮蔽同名 ref（原 this.result 与 then 回调的 result 是两个东西）
+    const res = data.result;
+    hasMore.value = res.hasMore ?? true;
+    switch (type.value) {
+      case 'musicVideos':
+        if (isPush) result.value.push(...res.mvs);
+        else result.value = res.mvs;
+        if (res.mvCount <= result.value.length) {
+          hasMore.value = false;
         }
-        t += sec.toFixed(2);
-      }
-      t = t.substring(0, t.length - 3);
-      return t;
-    },
-    fetchData(isPush = false) {
-      const typeTable = {
-        musicVideos: 1004,
-        tracks: 1,
-        albums: 10,
-        artists: 100,
-        playlists: 1000,
-      };
-      request({
-        url: '/search',
-        method: 'get',
-        params: {
-          curpage: isPush ? (this.curpage += 1) : (this.curpage = 1),
-          ...this.$route.query,
-          keywords: this.keywords || '群青',
-          type: typeTable[this.type],
-        },
-      }).then(result => {
-        result = result.result;
-        this.hasMore = result.hasMore ?? true;
-        switch (this.type) {
-          case 'musicVideos':
-            if (isPush) this.result.push(...result.mvs);
-            else this.result = result.mvs;
-            if (result.mvCount <= this.result.length) {
-              this.hasMore = false;
-            }
-            break;
-          case 'artists':
-            if (isPush) this.result.push(...result.artists);
-            else this.result = result.artists;
-            break;
-          case 'albums':
-            if (isPush) this.result.push(...result.albums);
-            else this.result = result.albums;
-            if (result.albumCount <= this.result.length) {
-              this.hasMore = false;
-            }
-            break;
-          case 'tracks':
-            if (isPush) this.result.push(...result.songs);
-            else this.result = result.songs;
-            break;
-          case 'playlists':
-            if (isPush) this.result.push(...result.playlists);
-            else this.result = result.playlists;
-            break;
+        break;
+      case 'artists':
+        if (isPush) result.value.push(...res.artists);
+        else result.value = res.artists;
+        break;
+      case 'albums':
+        if (isPush) result.value.push(...res.albums);
+        else result.value = res.albums;
+        if (res.albumCount <= result.value.length) {
+          hasMore.value = false;
         }
-      });
-    },
-    getTracksDetail() {
-      const trackIDs = this.result.map(t => t.id);
-      if (trackIDs.length === 0) return;
-      getTrackDetail(trackIDs.join(',')).then(result => {
-        this.result = result.songs;
-      });
-    },
+        break;
+      case 'tracks':
+        if (isPush) result.value.push(...res.songs);
+        else result.value = res.songs;
+        break;
+      case 'playlists':
+        if (isPush) result.value.push(...res.playlists);
+        else result.value = res.playlists;
+        break;
+    }
+  });
+}
+
+// onWatcherCleanup：watcher 下次重跑（路由再变）或停止时，先作废在飞请求的落地资格再发起新查询
+watch(
+  route,
+  () => {
+    onWatcherCleanup(() => reqToken.value++);
+    fetchData();
   },
-};
+  {
+    immediate: true,
+  }
+);
 </script>
 
 <style lang="scss" scoped>

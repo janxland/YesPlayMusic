@@ -11,8 +11,9 @@ import path from 'node:path';
 const dir = path.dirname(
   new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')
 );
+// 同域用例可能以 .test.js（Node 原生 ESM）或 .test.ts（strip-types）编写
 const files = readdirSync(dir)
-  .filter(f => f.endsWith('.test.js'))
+  .filter(f => f.endsWith('.test.js') || f.endsWith('.test.ts'))
   .sort();
 
 let passed = 0;

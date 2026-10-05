@@ -3,7 +3,7 @@
     <h1>
       <LazyImage
         class="avatar"
-        :src="data.user.avatarUrl | resizeImage"
+        :src="resizeImage(data.user.avatarUrl)"
         referrerpolicy="no-referrer"
       />{{ data.user.nickname }}{{ $t('library.sLibrary') }}
     </h1>
@@ -145,7 +145,7 @@
 
       <div v-show="currentTab === 'cloudDisk'">
         <TrackList
-          :id="-8"
+          :id="'-8'"
           :tracks="liked.cloudDisk"
           :column-number="3"
           type="cloudDisk"
@@ -182,13 +182,13 @@
     </div>
 
     <input
-      ref="cloudDiskUploadInput"
+      ref="cloudDiskUploadInputRef"
       type="file"
       style="display: none"
       @change="uploadSongToCloudDisk"
     />
 
-    <ContextMenu ref="playlistTabMenu">
+    <ContextMenu ref="playlistTabMenuRef">
       <div class="item" @click="changePlaylistFilter('all')">{{
         $t('contextMenu.allPlaylists')
       }}</div>
@@ -201,7 +201,7 @@
       }}</div>
     </ContextMenu>
 
-    <ContextMenu ref="playModeTabMenu">
+    <ContextMenu ref="playModeTabMenuRef">
       <div class="item" @click="playLikedSongs">{{
         $t('library.likedSongs')
       }}</div>
@@ -213,214 +213,237 @@
   </div>
 </template>
 
-<script>
-import { mapActions, mapMutations, mapState } from 'vuex';
+<script setup lang="ts">
+const router = useRouter();
+
 import { randomNum, dailyTask } from '@/utils/common';
+
+const appScroll = useAppScroll();
 import { isAccountLoggedIn } from '@/utils/auth';
 import { uploadSong } from '@/api/user';
 import { getLyric } from '@/api/track';
 import { loadWithProgress, loadOptional } from '@/utils/pageLoad';
-import locale from '@/locale';
-
+import { getI18n } from '@/locale';
 import ContextMenu from '@/components/ContextMenu.vue';
 import TrackList from '@/components/TrackList.vue';
 import CoverRow from '@/components/CoverRow.vue';
 import SvgIcon from '@/components/SvgIcon.vue';
 import MvRow from '@/components/MvRow.vue';
+import { resizeImage } from '@/utils/formatters';
+import { useAppScroll } from '@/composables/useAppScroll';
+import { computed, ref } from 'vue';
+import {
+  useDataStore,
+  useLikedStore,
+  usePlayerStore,
+  useUiStore,
+} from '@/stores';
+import { storeToRefs } from 'pinia';
+import { useKeepAliveLoad } from '@/composables/useKeepAliveLoad';
 
-/**
- * Pick the lyric part from a string formed in `[timecode] lyric`.
- *
- * @param {string} rawLyric The raw lyric string formed in `[timecode] lyric`
- * @returns {string} The lyric part
- */
+import { useRouter } from 'vue-router';
+
 function extractLyricPart(rawLyric) {
   return rawLyric.split(']').pop().trim();
 }
 
-export default {
-  name: 'Library',
-  components: { SvgIcon, CoverRow, TrackList, MvRow, ContextMenu },
-  data() {
-    return {
-      show: false,
-      likedSongs: [],
-      lyric: undefined,
-      currentTab: 'playlists',
-      playHistoryMode: 'week',
-    };
-  },
-  computed: {
-    ...mapState(['data', 'liked']),
-    /**
-     * @returns {string[]}
-     */
-    pickedLyric() {
-      /** @type {string?} */
-      const lyric = this.lyric;
+const cloudDiskUploadInputRef = ref<any>(null);
+const playModeTabMenuRef = ref<any>(null);
+const playlistTabMenuRef = ref<any>(null);
+const dataStore = useDataStore();
+const likedStore = useLikedStore();
+const playerStore = usePlayerStore();
+const uiStore = useUiStore();
 
-      // Returns [] if we got no lyrics.
-      if (!lyric) return [];
+const { data } = storeToRefs(dataStore);
+const { liked } = storeToRefs(likedStore);
 
-      const lyricLine = lyric
+// MvRow 经 $parent.player.playing 取当前播放态（跳 MV 带 autoplay 参数）
+defineExpose({ player: playerStore.player });
+
+const showToast = uiStore.showToast;
+
+const updateModal = uiStore.updateModal;
+
+const updateData = dataStore.updateData;
+
+const show = ref<any>(false);
+
+const lyric = ref(undefined);
+
+const currentTab = ref<any>('playlists');
+
+const playHistoryMode = ref<any>('week');
+
+const pickedLyric = computed(function pickedLyric() {
+  // 局部改名避免遮蔽同名 ref（原 this.lyric 与本地 lyric 是两个东西）
+  const lyricText = lyric.value;
+  if (!lyricText) return [];
+
+  const lyricLine = lyricText
+    .split('\n')
+    .filter(line => !line.includes('作词') && !line.includes('作曲'));
+
+  const lyricsToPick = Math.min(lyricLine.length, 3);
+  const randomUpperBound = lyricLine.length - lyricsToPick;
+  const startLyricLineIndex = randomNum(0, randomUpperBound - 1);
+
+  return lyricLine
+    .slice(startLyricLineIndex, startLyricLineIndex + lyricsToPick)
+    .map(extractLyricPart);
+});
+
+const playlistFilter = computed(function playlistFilter() {
+  return data.value.libraryPlaylistFilter || 'all';
+});
+
+const filterPlaylists = computed(function filterPlaylists() {
+  const playlists = liked.value.playlists.slice(1);
+  const userId = data.value.user.userId;
+  if (playlistFilter.value === 'mine') {
+    return playlists.filter(p => p.creator.userId === userId);
+  } else if (playlistFilter.value === 'liked') {
+    return playlists.filter(p => p.creator.userId !== userId);
+  }
+  return playlists;
+});
+
+const playHistoryList = computed(function playHistoryList() {
+  if (show.value && playHistoryMode.value === 'week') {
+    return liked.value.playHistory.weekData;
+  }
+  if (show.value && playHistoryMode.value === 'all') {
+    return liked.value.playHistory.allData;
+  }
+  return [];
+});
+
+function loadData() {
+  // 「我喜欢的音乐」前 12 首是本页主内容：失败要提示，不能白屏干等
+  if (liked.value.songsWithDetails.length > 0) {
+    // 已有缓存先渲染，后台静默刷新
+    show.value = true;
+    loadOptional(likedStore.fetchLikedSongsWithDetails());
+    getRandomLyric();
+  } else {
+    loadWithProgress(
+      likedStore.fetchLikedSongsWithDetails().then(() => {
+        show.value = true;
+        getRandomLyric();
+      }),
+      {
+        onError: () => {
+          show.value = true;
+        },
+      }
+    );
+  }
+  [
+    'fetchLikedSongs',
+    'fetchLikedPlaylist',
+    'fetchLikedAlbums',
+    'fetchLikedArtists',
+    'fetchLikedMVs',
+    'fetchCloudDisk',
+    'fetchPlayHistory',
+  ].forEach(name => loadOptional(likedStore[name]()));
+}
+
+function playLikedSongs() {
+  playerStore.player.playPlaylistByID(
+    liked.value.playlists[0].id,
+    'first',
+    true
+  );
+}
+
+function playIntelligenceList() {
+  playerStore.player.playIntelligenceListById(
+    liked.value.playlists[0].id,
+    'first',
+    true
+  );
+}
+
+function updateCurrentTab(tab) {
+  if (!isAccountLoggedIn() && tab !== 'playlists') {
+    showToast((getI18n() as any).global.t('toast.needToLogin'));
+    return;
+  }
+  currentTab.value = tab;
+  appScroll.scrollTo({ top: 375, behavior: 'smooth' });
+}
+
+function goToLikedSongsList() {
+  router.push({ path: '/library/liked-songs' });
+}
+
+function getRandomLyric() {
+  if (liked.value.songs.length === 0) return;
+  // server 参数在原 JS 里就是可选（调用只传 id），api 层收窄前显式传 undefined
+  getLyric(
+    liked.value.songs[randomNum(0, liked.value.songs.length - 1)],
+    undefined
+  ).then(data => {
+    if (data.lrc !== undefined) {
+      const isInstrumental = data.lrc.lyric
         .split('\n')
-        .filter(line => !line.includes('作词') && !line.includes('作曲'));
+        .filter(l => l.includes('纯音乐，请欣赏'));
+      if (isInstrumental.length === 0) {
+        lyric.value = data.lrc.lyric;
+      }
+    }
+  });
+}
 
-      // Pick 3 or fewer lyrics based on the lyric lines.
-      const lyricsToPick = Math.min(lyricLine.length, 3);
+function openAddPlaylistModal() {
+  if (!isAccountLoggedIn()) {
+    showToast((getI18n() as any).global.t('toast.needToLogin'));
+    return;
+  }
+  updateModal({
+    modalName: 'newPlaylistModal',
+    key: 'show',
+    value: true,
+  });
+}
 
-      // The upperBound of the lyric line to pick
-      const randomUpperBound = lyricLine.length - lyricsToPick;
-      const startLyricLineIndex = randomNum(0, randomUpperBound - 1);
+function openPlaylistTabMenu(e) {
+  playlistTabMenuRef.value.openMenu(e);
+}
 
-      // Pick lyric lines to render.
-      return lyricLine
-        .slice(startLyricLineIndex, startLyricLineIndex + lyricsToPick)
-        .map(extractLyricPart);
-    },
-    playlistFilter() {
-      return this.data.libraryPlaylistFilter || 'all';
-    },
-    filterPlaylists() {
-      const playlists = this.liked.playlists.slice(1);
-      const userId = this.data.user.userId;
-      if (this.playlistFilter === 'mine') {
-        return playlists.filter(p => p.creator.userId === userId);
-      } else if (this.playlistFilter === 'liked') {
-        return playlists.filter(p => p.creator.userId !== userId);
-      }
-      return playlists;
-    },
-    playHistoryList() {
-      if (this.show && this.playHistoryMode === 'week') {
-        return this.liked.playHistory.weekData;
-      }
-      if (this.show && this.playHistoryMode === 'all') {
-        return this.liked.playHistory.allData;
-      }
-      return [];
-    },
-  },
-  created() {
-    this.loadData();
-  },
-  activated() {
-    this.$parent.$refs.scrollbar.restorePosition();
-    this.loadData();
-    dailyTask();
-  },
-  methods: {
-    ...mapActions(['showToast']),
-    ...mapMutations(['updateModal', 'updateData']),
-    loadData() {
-      // 「我喜欢的音乐」前 12 首是本页主内容：失败要提示，不能白屏干等
-      if (this.liked.songsWithDetails.length > 0) {
-        // 已有缓存先渲染，后台静默刷新
-        this.show = true;
-        loadOptional(this.$store.dispatch('fetchLikedSongsWithDetails'));
-        this.getRandomLyric();
-      } else {
-        loadWithProgress(
-          this.$store.dispatch('fetchLikedSongsWithDetails').then(() => {
-            this.show = true;
-            this.getRandomLyric();
-          }),
-          {
-            onError: () => {
-              this.show = true;
-            },
-          }
-        );
-      }
-      [
-        'fetchLikedSongs',
-        'fetchLikedPlaylist',
-        'fetchLikedAlbums',
-        'fetchLikedArtists',
-        'fetchLikedMVs',
-        'fetchCloudDisk',
-        'fetchPlayHistory',
-      ].forEach(name => loadOptional(this.$store.dispatch(name)));
-    },
-    playLikedSongs() {
-      this.$store.state.player.playPlaylistByID(
-        this.liked.playlists[0].id,
-        'first',
-        true
-      );
-    },
-    playIntelligenceList() {
-      this.$store.state.player.playIntelligenceListById(
-        this.liked.playlists[0].id,
-        'first',
-        true
-      );
-    },
-    updateCurrentTab(tab) {
-      if (!isAccountLoggedIn() && tab !== 'playlists') {
-        this.showToast(locale.t('toast.needToLogin'));
-        return;
-      }
-      this.currentTab = tab;
-      this.$parent.$refs.main.scrollTo({ top: 375, behavior: 'smooth' });
-    },
-    goToLikedSongsList() {
-      this.$router.push({ path: '/library/liked-songs' });
-    },
-    getRandomLyric() {
-      if (this.liked.songs.length === 0) return;
-      getLyric(
-        this.liked.songs[randomNum(0, this.liked.songs.length - 1)]
-      ).then(data => {
-        if (data.lrc !== undefined) {
-          const isInstrumental = data.lrc.lyric
-            .split('\n')
-            .filter(l => l.includes('纯音乐，请欣赏'));
-          if (isInstrumental.length === 0) {
-            this.lyric = data.lrc.lyric;
-          }
-        }
+function openPlayModeTabMenu(e) {
+  playModeTabMenuRef.value.openMenu(e);
+}
+
+function changePlaylistFilter(type) {
+  updateData({ key: 'libraryPlaylistFilter', value: type });
+  window.scrollTo({ top: 375, behavior: 'smooth' });
+}
+
+function selectUploadFiles() {
+  cloudDiskUploadInputRef.value.click();
+}
+
+function uploadSongToCloudDisk(e) {
+  const files = e.target.files;
+  uploadSong(files[0]).then(result => {
+    if (result.code === 200) {
+      let newCloudDisk = liked.value.cloudDisk;
+      newCloudDisk.unshift(result.privateCloud);
+      likedStore.updateLikedXXX({
+        name: 'cloudDisk',
+        data: newCloudDisk,
       });
-    },
-    openAddPlaylistModal() {
-      if (!isAccountLoggedIn()) {
-        this.showToast(locale.t('toast.needToLogin'));
-        return;
-      }
-      this.updateModal({
-        modalName: 'newPlaylistModal',
-        key: 'show',
-        value: true,
-      });
-    },
-    openPlaylistTabMenu(e) {
-      this.$refs.playlistTabMenu.openMenu(e);
-    },
-    openPlayModeTabMenu(e) {
-      this.$refs.playModeTabMenu.openMenu(e);
-    },
-    changePlaylistFilter(type) {
-      this.updateData({ key: 'libraryPlaylistFilter', value: type });
-      window.scrollTo({ top: 375, behavior: 'smooth' });
-    },
-    selectUploadFiles() {
-      this.$refs.cloudDiskUploadInput.click();
-    },
-    uploadSongToCloudDisk(e) {
-      const files = e.target.files;
-      uploadSong(files[0]).then(result => {
-        if (result.code === 200) {
-          let newCloudDisk = this.liked.cloudDisk;
-          newCloudDisk.unshift(result.privateCloud);
-          this.$store.commit('updateLikedXXX', {
-            name: 'cloudDisk',
-            data: newCloudDisk,
-          });
-        }
-      });
-    },
-  },
-};
+    }
+  });
+}
+
+// /library 是 keepAlive 路由：Vue3 首挂会同帧先后触发 onMounted 与 onActivated，加上 created 一次会把 loadData 连跑三遍（每遍 ~8 个 store 请求）；改为首挂载只执行一次，缓存重入时再刷新
+useKeepAliveLoad(function loadLibraryData() {
+  loadData();
+  dailyTask();
+});
 </script>
 
 <style lang="scss" scoped>

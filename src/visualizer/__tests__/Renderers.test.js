@@ -1,8 +1,8 @@
 /* 新增 3 个 renderer 的烟雾测试：mock Canvas2D，确保 draw 不抛、生命周期正常。 */
 import assert from 'node:assert/strict';
-import { WaveformRenderer } from '../renderers/WaveformRenderer.js';
-import { ParticlesRenderer } from '../renderers/ParticlesRenderer.js';
-import { AuroraRenderer } from '../renderers/AuroraRenderer.js';
+import { WaveformRenderer } from '../renderers/WaveformRenderer.ts';
+import { ParticlesRenderer } from '../renderers/ParticlesRenderer.ts';
+import { AuroraRenderer } from '../renderers/AuroraRenderer.ts';
 
 function mockCtx() {
   const noop = () => {};

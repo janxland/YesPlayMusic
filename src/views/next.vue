@@ -29,88 +29,84 @@
   </div>
 </template>
 
-<script>
-import { mapState, mapActions } from 'vuex';
+<script setup lang="ts">
 import { getTrackDetail } from '@/api/track';
+
+const appScroll = useAppScroll();
 import TrackList from '@/components/TrackList.vue';
+import { computed, ref, watch } from 'vue';
+import { usePlayerStore } from '@/stores';
+import { useAppScroll } from '@/composables/useAppScroll';
+import { useKeepAliveLoad } from '@/composables/useKeepAliveLoad';
+import { storeToRefs } from 'pinia';
 
-export default {
-  name: 'Next',
-  components: {
-    TrackList,
-  },
-  data() {
-    return {
-      tracks: [],
-    };
-  },
-  computed: {
-    ...mapState(['player']),
-    currentTrack() {
-      return this.player.currentTrack;
-    },
-    playerShuffle() {
-      return this.player.shuffle;
-    },
-    filteredTracks() {
-      let trackIDs = this.player.list.slice(
-        this.player.current + 1,
-        this.player.current + 100
-      );
-      return trackIDs
-        .map(tid => this.tracks.find(t => t.id === tid))
-        .filter(t => t);
-    },
-    playNextList() {
-      return this.player.playNextList;
-    },
-    playNextTracks() {
-      return this.playNextList.map(tid => {
-        return this.tracks.find(t => t.id === tid);
-      });
-    },
-  },
-  watch: {
-    currentTrack() {
-      this.loadTracks();
-    },
-    playerShuffle() {
-      this.loadTracks();
-    },
-    playNextList() {
-      this.loadTracks();
-    },
-  },
-  activated() {
-    this.loadTracks();
-    this.$parent.$refs.scrollbar.restorePosition();
-  },
-  methods: {
-    ...mapActions(['playTrackOnListByID']),
-    loadTracks() {
-      // 获取播放列表当前歌曲后100首歌
-      let trackIDs = this.player.list.slice(
-        this.player.current + 1,
-        this.player.current + 100
-      );
+const playerStore = usePlayerStore();
 
-      // 将playNextList的歌曲加进trackIDs
-      trackIDs.push(...this.playNextList);
+const { player } = storeToRefs(playerStore);
 
-      // 获取已经加载了的歌曲
-      let loadedTrackIDs = this.tracks.map(t => t.id);
+const tracks = ref<any>([]);
 
-      if (trackIDs.length > 0) {
-        getTrackDetail(trackIDs.join(',')).then(data => {
-          let newTracks = data.songs.filter(
-            t => !loadedTrackIDs.includes(t.id)
-          );
-          this.tracks.push(...newTracks);
-        });
-      }
-    },
-  },
-};
+const currentTrack = computed(function currentTrack() {
+  return player.value.currentTrack;
+});
+
+const playerShuffle = computed(function playerShuffle() {
+  return player.value.shuffle;
+});
+
+const filteredTracks = computed(function filteredTracks() {
+  let trackIDs = player.value.list.slice(
+    player.value.current + 1,
+    player.value.current + 100
+  );
+  return trackIDs
+    .map(tid => tracks.value.find(t => t.id === tid))
+    .filter(t => t);
+});
+
+const playNextList = computed(function playNextList() {
+  return player.value.playNextList;
+});
+
+const playNextTracks = computed(function playNextTracks() {
+  return playNextList.value.map(tid => {
+    return tracks.value.find(t => t.id === tid);
+  });
+});
+
+function loadTracks() {
+  let trackIDs = player.value.list.slice(
+    player.value.current + 1,
+    player.value.current + 100
+  );
+  trackIDs.push(...playNextList.value);
+  let loadedTrackIDs = tracks.value.map(t => t.id);
+
+  if (trackIDs.length > 0) {
+    getTrackDetail(trackIDs.join(',')).then(data => {
+      let newTracks = data.songs.filter(t => !loadedTrackIDs.includes(t.id));
+      tracks.value.push(...newTracks);
+    });
+  }
+}
+
+watch(currentTrack, function () {
+  loadTracks();
+});
+
+watch(playerShuffle, function () {
+  loadTracks();
+});
+
+watch(playNextList, function () {
+  loadTracks();
+});
+
+// /next 是 keepAlive 路由：Vue3 首挂会同帧先后触发 onMounted 与 onActivated，两处都注册 loadTracks 会把同一批歌推两遍；useKeepAliveLoad 保证首挂载只执行一次
+useKeepAliveLoad(function loadNextData() {
+  loadTracks();
+  appScroll.restorePosition();
+});
 </script>
 
 <style lang="scss" scoped>

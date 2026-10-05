@@ -80,154 +80,142 @@
   </div>
 </template>
 
-<script>
-import { mapActions } from 'vuex';
+<script setup lang="ts">
+const route = useRoute();
+
 import { getTrackDetail } from '@/api/track';
-import { search } from '@/api/others';
+// 与同名本地函数撞名，导入改名（Options API 时代的 this 遮蔽在 setup 里不成立）
+import { search as searchApi } from '@/api/others';
 import { loadWithProgress, loadOptional } from '@/utils/pageLoad';
-// import { get } from '@/utils/metingAPI';
 import TrackList from '@/components/TrackList.vue';
 import MvRow from '@/components/MvRow.vue';
 import CoverRow from '@/components/CoverRow.vue';
+import { ref, computed, watch } from 'vue';
+import { usePlayerStore, useUiStore } from '@/stores';
 
-export default {
-  name: 'Search',
-  components: {
-    TrackList,
-    MvRow,
-    CoverRow,
-  },
-  data() {
-    return {
-      show: false,
-      tracks: [],
-      artists: [],
-      albums: [],
-      playlists: [],
-      musicVideos: [],
-    };
-  },
-  computed: {
-    keywords() {
-      return this.$route.params.keywords ?? '';
-    },
-    haveResult() {
-      return (
-        this.tracks.length +
-          this.artists.length +
-          this.albums.length +
-          this.playlists.length +
-          this.musicVideos.length >
-        0
-      );
-    },
-  },
-  watch: {
-    keywords: function (newKeywords) {
-      if (newKeywords.length === 0) return;
-      this.getData();
-    },
-  },
-  created() {
-    this.getData();
-    // get({ server: 'tencent', type: 'search',  }).then(data => {
-    //   // if (data.result?.song !== undefined)
-    //   // data.result.song.songs = mapTrackPlayableStatus(data.result.song.songs);
-    //   return data;
-    // });
-  },
-  methods: {
-    ...mapActions(['showToast']),
-    playTrackInSearchResult(id) {
-      let track = this.tracks.find(t => t.id === id);
-      this.$store.state.player.appendTrackToPlayerList(track, true);
-    },
-    search(type = 'all') {
-      let showToast = this.showToast;
-      const typeTable = {
-        all: 1018,
-        musicVideos: 1004,
-        tracks: 1,
-        albums: 10,
-        artists: 100,
-        playlists: 1000,
-      };
-      return search({
-        keywords: this.keywords,
-        type: typeTable[type],
-        limit: 16,
-      })
-        .then(result => {
-          return { result: result.result, type };
-        })
-        .catch(err => {
-          // 网络级失败（超时/断网）没有 err.response，旧写法在此处直接
-          // TypeError，让整个结果区永久隐藏
-          showToast(
-            err?.response?.data?.msg ?? '该类型搜索失败，请检查网络后重试'
-          );
+import { useRoute } from 'vue-router';
+const playerStore = usePlayerStore();
+const uiStore = useUiStore();
+
+// MvRow 经 $parent.player.playing 取当前播放态（跳 MV 带 autoplay 参数）
+defineExpose({ player: playerStore.player });
+
+const showToast = uiStore.showToast;
+
+const show = ref<any>(false);
+
+const tracks = ref<any>([]);
+
+const artists = ref<any>([]);
+
+const albums = ref<any>([]);
+
+const playlists = ref<any>([]);
+
+const musicVideos = ref<any>([]);
+
+const keywords = computed(function keywords() {
+  return route.params.keywords ?? '';
+});
+
+const haveResult = computed(function haveResult() {
+  return (
+    tracks.value.length +
+      artists.value.length +
+      albums.value.length +
+      playlists.value.length +
+      musicVideos.value.length >
+    0
+  );
+});
+
+function playTrackInSearchResult(id) {
+  let track = tracks.value.find(t => t.id === id);
+  playerStore.player.appendTrackToPlayerList(track, true);
+}
+
+function search(type = 'all') {
+  const typeTable = {
+    all: 1018,
+    musicVideos: 1004,
+    tracks: 1,
+    albums: 10,
+    artists: 100,
+    playlists: 1000,
+  };
+  return searchApi({
+    keywords: keywords.value,
+    type: typeTable[type],
+    limit: 16,
+  })
+    .then(result => {
+      return { result: result.result, type };
+    })
+    .catch(err => {
+      // 网络级失败（超时/断网）没有 err.response，旧写法在此处直接 TypeError，让整个结果区永久隐藏
+      showToast(err?.response?.data?.msg ?? '该类型搜索失败，请检查网络后重试');
+    });
+}
+
+function getData() {
+  show.value = false;
+
+  const requestAll = requests => {
+    const prevKeywords = keywords.value;
+    loadWithProgress(
+      Promise.all(requests).then(results => {
+        if (prevKeywords != keywords.value) return;
+        results.forEach(result => {
+          // 单个类型失败时 search() 的 catch 返回 undefined，跳过即可
+          if (!result || result.result === undefined) return;
+          const { type: searchType, result: data } = result;
+          switch (searchType) {
+            case 'musicVideos':
+              musicVideos.value = data.mvs ?? [];
+              break;
+            case 'artists':
+              artists.value = data.artists ?? [];
+              break;
+            case 'albums':
+              albums.value = data.albums ?? [];
+              break;
+            case 'tracks':
+              tracks.value = data.songs ?? [];
+              getTracksDetail();
+              break;
+            case 'playlists':
+              playlists.value = data.playlists ?? [];
+              break;
+          }
         });
-    },
-    getData() {
-      this.show = false;
+        show.value = true;
+      })
+    );
+  };
 
-      const requestAll = requests => {
-        const keywords = this.keywords;
-        loadWithProgress(
-          Promise.all(requests).then(results => {
-            if (keywords != this.keywords) return;
-            results.forEach(result => {
-              // 单个类型失败时 search() 的 catch 返回 undefined，跳过即可
-              if (!result || result.result === undefined) return;
-              const { type: searchType, result: data } = result;
-              switch (searchType) {
-                case 'all':
-                  this.result = data;
-                  break;
-                case 'musicVideos':
-                  this.musicVideos = data.mvs ?? [];
-                  break;
-                case 'artists':
-                  this.artists = data.artists ?? [];
-                  break;
-                case 'albums':
-                  this.albums = data.albums ?? [];
-                  break;
-                case 'tracks':
-                  this.tracks = data.songs ?? [];
-                  this.getTracksDetail();
-                  break;
-                case 'playlists':
-                  this.playlists = data.playlists ?? [];
-                  break;
-              }
-            });
-            this.show = true;
-          })
-        );
-      };
+  const requests = [search('artists'), search('albums'), search('tracks')];
+  const requests2 = [search('musicVideos'), search('playlists')];
 
-      const requests = [
-        this.search('artists'),
-        this.search('albums'),
-        this.search('tracks'),
-      ];
-      const requests2 = [this.search('musicVideos'), this.search('playlists')];
+  requestAll(requests);
+  requestAll(requests2);
+}
 
-      requestAll(requests);
-      requestAll(requests2);
-    },
-    getTracksDetail() {
-      const trackIDs = this.tracks.map(t => t.id);
-      if (trackIDs.length === 0) return;
-      loadOptional(
-        getTrackDetail(trackIDs.join(',')).then(result => {
-          this.tracks = result.songs;
-        })
-      );
-    },
-  },
-};
+function getTracksDetail() {
+  const trackIDs = tracks.value.map(t => t.id);
+  if (trackIDs.length === 0) return;
+  loadOptional(
+    getTrackDetail(trackIDs.join(',')).then(result => {
+      tracks.value = result.songs;
+    })
+  );
+}
+
+getData();
+
+watch(keywords, function (newKeywords) {
+  if (newKeywords.length === 0) return;
+  getData();
+});
 </script>
 
 <style lang="scss" scoped>

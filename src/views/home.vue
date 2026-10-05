@@ -28,7 +28,7 @@
     <div class="index-row">
       <div class="title"> For You </div>
       <div class="for-you-row no-scrollbar">
-        <DailyTracksCard ref="DailyTracksCard" />
+        <DailyTracksCard ref="DailyTracksCardRef" />
         <FMCard />
       </div>
     </div>
@@ -68,96 +68,99 @@
   </div>
 </template>
 
-<script>
+<script setup lang="ts">
 import { toplists } from '@/api/playlist';
 import { toplistOfArtists } from '@/api/artist';
 import { newAlbums } from '@/api/album';
-import { byAppleMusic } from '@/utils/staticData';
+// 与同名本地 computed 撞名，导入改名（Options API 时代的 this 遮蔽在 setup 里不成立）
+import { byAppleMusic as byAppleMusicPlaylists } from '@/utils/staticData';
 import { getRecommendPlayList } from '@/utils/playList';
 import { loadWithProgress, loadOptional } from '@/utils/pageLoad';
-import { mapState } from 'vuex';
 import CoverRow from '@/components/CoverRow.vue';
 import FMCard from '@/components/FMCard.vue';
 import DailyTracksCard from '@/components/DailyTracksCard.vue';
+import { computed, ref } from 'vue';
+import { useSettingsStore } from '@/stores';
+import { storeToRefs } from 'pinia';
+import { useKeepAliveLoad } from '@/composables/useKeepAliveLoad';
 
-export default {
-  name: 'Home',
-  components: { CoverRow, FMCard, DailyTracksCard },
-  data() {
-    return {
-      show: false,
-      recommendPlaylist: { items: [] },
-      newReleasesAlbum: { items: [] },
-      topList: {
-        items: [],
-        ids: [19723756, 180106, 60198, 3812895, 60131],
-      },
-      recommendArtists: {
-        items: [],
-        indexs: [],
-      },
-    };
-  },
-  computed: {
-    ...mapState(['settings']),
-    byAppleMusic() {
-      return byAppleMusic;
-    },
-  },
-  activated() {
-    this.loadData();
-    this.$parent.$refs.scrollbar.restorePosition();
-  },
-  methods: {
-    loadData() {
-      loadWithProgress(
-        getRecommendPlayList(10, false).then(items => {
-          this.recommendPlaylist.items = items;
-          this.show = true;
-        })
-      );
-      loadOptional(
-        newAlbums({
-          area: this.settings.musicLanguage ?? 'ALL',
-          limit: 10,
-        }).then(data => {
-          this.newReleasesAlbum.items = data.albums;
-        })
-      );
+const DailyTracksCardRef = ref<any>(null);
+const settingsStore = useSettingsStore();
 
-      const toplistOfArtistsAreaTable = {
-        all: null,
-        zh: 1,
-        ea: 2,
-        jp: 4,
-        kr: 3,
-      };
-      loadOptional(
-        toplistOfArtists(
-          toplistOfArtistsAreaTable[this.settings.musicLanguage ?? 'all']
-        ).then(data => {
-          let indexs = [];
-          while (indexs.length < 6) {
-            let tmp = ~~(Math.random() * 100);
-            if (!indexs.includes(tmp)) indexs.push(tmp);
-          }
-          this.recommendArtists.indexs = indexs;
-          this.recommendArtists.items = data.list.artists.filter((l, index) =>
-            indexs.includes(index)
-          );
-        })
+const { settings } = storeToRefs(settingsStore);
+
+const show = ref<any>(false);
+
+const recommendPlaylist = ref<any>({ items: [] });
+
+const newReleasesAlbum = ref<any>({ items: [] });
+
+const topList = ref<any>({
+  items: [],
+  ids: [19723756, 180106, 60198, 3812895, 60131],
+});
+
+const recommendArtists = ref<any>({
+  items: [],
+  indexs: [],
+});
+
+const byAppleMusic = computed(function byAppleMusic() {
+  return byAppleMusicPlaylists;
+});
+
+function loadData() {
+  loadWithProgress(
+    getRecommendPlayList(10, false).then(items => {
+      recommendPlaylist.value.items = items;
+      show.value = true;
+    })
+  );
+  loadOptional(
+    newAlbums({
+      area: settings.value.musicLanguage ?? 'ALL',
+      limit: 10,
+    }).then(data => {
+      newReleasesAlbum.value.items = data.albums;
+    })
+  );
+
+  const toplistOfArtistsAreaTable = {
+    all: null,
+    zh: 1,
+    ea: 2,
+    jp: 4,
+    kr: 3,
+  };
+  loadOptional(
+    toplistOfArtists(
+      toplistOfArtistsAreaTable[settings.value.musicLanguage ?? 'all']
+    ).then(data => {
+      let indexs = [];
+      while (indexs.length < 6) {
+        let tmp = ~~(Math.random() * 100);
+        if (!indexs.includes(tmp)) indexs.push(tmp);
+      }
+      recommendArtists.value.indexs = indexs;
+      recommendArtists.value.items = data.list.artists.filter((l, index) =>
+        indexs.includes(index)
       );
-      loadOptional(
-        toplists().then(data => {
-          this.topList.items = data.list.filter(l =>
-            this.topList.ids.includes(l.id)
-          );
-        })
+    })
+  );
+  loadOptional(
+    toplists().then(data => {
+      topList.value.items = data.list.filter(l =>
+        topList.value.ids.includes(l.id)
       );
-      this.$refs.DailyTracksCard.loadDailyTracks();
-    },
-  },
-};
+    })
+  );
+  DailyTracksCardRef.value.loadDailyTracks();
+}
+
+// /home 是 keepAlive 路由：Vue3 首挂会同帧先后触发 onMounted 与 onActivated，两处都注册会把首页接口拉两遍；useKeepAliveLoad 保证「首挂载 + 缓存重入」各执行一次
+useKeepAliveLoad(function loadHomeData() {
+  loadData();
+});
 </script>
 
 <style lang="scss" scoped>

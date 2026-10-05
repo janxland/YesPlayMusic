@@ -1,12 +1,12 @@
 <template>
   <Modal
     class="add-playlist-modal"
-    :show="show"
-    :close="close"
+    v-model:show="show"
     title="新建歌单"
     width="25vw"
   >
-    <template slot="default">
+    <!-- Vue2 的 slot="xxx" 在 Vue3 会编译成惰性 <template> 元素（内容不渲染），改用 v-slot 语法恢复迁移前行为 -->
+    <template #default>
       <input
         v-model="title"
         type="text"
@@ -22,93 +22,99 @@
         <label for="checkbox-private">设置为隐私歌单</label>
       </div>
     </template>
-    <template slot="footer">
-      <button class="primary block" @click="createPlaylist">创建</button>
+    <template #footer>
+      <button class="primary block" @click="doCreatePlaylist">创建</button>
     </template>
   </Modal>
 </template>
 
-<script>
+<script setup lang="ts">
 import Modal from '@/components/Modal.vue';
-import locale from '@/locale';
-import { mapMutations, mapState, mapActions } from 'vuex';
+import { getI18n } from '@/locale';
 import { createPlaylist, addOrRemoveTrackFromPlaylist } from '@/api/playlist';
+import { ref, computed } from 'vue';
+import { useDataStore } from '@/stores/data';
+import { useLikedStore } from '@/stores/liked';
+import { useUiStore } from '@/stores/ui';
+import { storeToRefs } from 'pinia';
 
-export default {
-  name: 'ModalNewPlaylist',
-  components: {
-    Modal,
+const uiStore = useUiStore();
+const dataStore = useDataStore();
+const likedStore = useLikedStore();
+
+const { modals } = storeToRefs(uiStore);
+
+const updateModal = uiStore.updateModal;
+
+const updateData = dataStore.updateData;
+
+const showToast = uiStore.showToast;
+
+const fetchLikedPlaylist = likedStore.fetchLikedPlaylist;
+
+const title = ref<any>('');
+
+const privatePlaylist = ref<any>(false);
+
+const show = computed({
+  get() {
+    return modals.value.newPlaylistModal.show;
   },
-  data() {
-    return {
-      title: '',
-      privatePlaylist: false,
-    };
+  set(value) {
+    updateModal({
+      modalName: 'newPlaylistModal',
+      key: 'show',
+      value,
+    });
+    if (value) {
+      uiStore.toggleScrolling(false);
+    } else {
+      uiStore.toggleScrolling(true);
+    }
   },
-  computed: {
-    ...mapState(['modals']),
-    show: {
-      get() {
-        return this.modals.newPlaylistModal.show;
-      },
-      set(value) {
-        this.updateModal({
-          modalName: 'newPlaylistModal',
-          key: 'show',
-          value,
-        });
-        if (value) {
-          this.$store.commit('enableScrolling', false);
-        } else {
-          this.$store.commit('enableScrolling', true);
-        }
-      },
-    },
-  },
-  methods: {
-    ...mapMutations(['updateModal', 'updateData']),
-    ...mapActions(['showToast', 'fetchLikedPlaylist']),
-    close() {
-      this.show = false;
-      this.title = '';
-      this.privatePlaylist = false;
-      this.resetAfterCreateAddTrackID();
-    },
-    createPlaylist() {
-      let params = { name: this.title };
-      if (this.private) params.type = 10;
-      createPlaylist(params).then(data => {
-        if (data.code === 200) {
-          if (this.modals.newPlaylistModal.afterCreateAddTrackID !== 0) {
-            addOrRemoveTrackFromPlaylist({
-              op: 'add',
-              pid: data.id,
-              tracks: this.modals.newPlaylistModal.afterCreateAddTrackID,
-            }).then(data => {
-              if (data.body.code === 200) {
-                this.showToast(locale.t('toast.savedToPlaylist'));
-              } else {
-                this.showToast(data.body.message);
-              }
-              this.resetAfterCreateAddTrackID();
-            });
+});
+
+function close() {
+  show.value = false;
+  title.value = '';
+  privatePlaylist.value = false;
+  resetAfterCreateAddTrackID();
+}
+
+function doCreatePlaylist() {
+  let params: { name: string; type?: number } = { name: title.value };
+  if (privatePlaylist.value) params.type = 10; // 修复原版 this.private 恒 undefined 的 bug
+  createPlaylist(params).then(data => {
+    if (data.code === 200) {
+      if (modals.value.newPlaylistModal.afterCreateAddTrackID !== 0) {
+        addOrRemoveTrackFromPlaylist({
+          op: 'add',
+          pid: data.id,
+          tracks: modals.value.newPlaylistModal.afterCreateAddTrackID,
+        }).then(data => {
+          if (data.body.code === 200) {
+            showToast((getI18n() as any).global.t('toast.savedToPlaylist'));
+          } else {
+            showToast(data.body.message);
           }
-          this.close();
-          this.showToast('成功创建歌单');
-          this.updateData({ key: 'libraryPlaylistFilter', value: 'mine' });
-          this.fetchLikedPlaylist();
-        }
-      });
-    },
-    resetAfterCreateAddTrackID() {
-      this.updateModal({
-        modalName: 'newPlaylistModal',
-        key: 'AfterCreateAddTrackID',
-        value: 0,
-      });
-    },
-  },
-};
+          resetAfterCreateAddTrackID();
+        });
+      }
+      close();
+      showToast('成功创建歌单');
+      updateData({ key: 'libraryPlaylistFilter', value: 'mine' });
+      fetchLikedPlaylist();
+    }
+  });
+}
+
+function resetAfterCreateAddTrackID() {
+  updateModal({
+    modalName: 'newPlaylistModal',
+    key: 'AfterCreateAddTrackID',
+    value: 0,
+  });
+}
 </script>
 
 <style lang="scss" scoped>

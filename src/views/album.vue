@@ -3,14 +3,14 @@
     <div class="playlist-info">
       <Cover
         :id="album.id"
-        :image-url="album.picUrl | resizeImage(1024)"
+        :image-url="resizeImage(album.picUrl, 1024)"
         :show-play-button="true"
         :always-show-shadow="true"
         :click-cover-to-play="true"
         type="album"
         :cover-hover="false"
         :play-button-size="18"
-        @click.right.native="openMenu"
+        @click.right="openMenu"
       />
       <div class="info">
         <div class="title" @click.right="openMenu"> {{ title }}</div>
@@ -19,7 +19,7 @@
         }}</div>
         <div class="artist">
           <span v-if="album.artist.id !== 104700">
-            <span>{{ album.type | formatAlbumType(album) }} by </span
+            <span>{{ formatAlbumType(album.type, album) }} by </span
             ><router-link :to="`/artist/${album.artist.id}`">{{
               album.artist.name
             }}</router-link></span
@@ -32,21 +32,18 @@
             class="explicit-symbol"
             ><ExplicitSymbol
           /></span>
-          <span :title="album.publishTime | formatDate">{{
+          <span :title="formatDate(album.publishTime)">{{
             new Date(album.publishTime).getFullYear()
           }}</span>
           <span> · {{ album.size }} {{ $t('common.songs') }}</span
           >,
-          {{ albumTime | formatTime('Human') }}
+          {{ formatTime(albumTime, 'Human') }}
         </div>
         <div class="description" @click="toggleFullDescription">
           {{ album.description }}
         </div>
         <div class="buttons" style="margin-top: 32px">
-          <ButtonTwoTone
-            icon-class="play"
-            @click.native="playAlbumByID(album.id)"
-          >
+          <ButtonTwoTone icon-class="play" @click="playAlbumByID(album.id)">
             {{ $t('common.play') }}
           </ButtonTwoTone>
           <ButtonTwoTone
@@ -58,7 +55,7 @@
             :background-color="
               dynamicDetail.isSub ? 'var(--color-secondary-bg)' : ''
             "
-            @click.native="likeAlbum"
+            @click="likeAlbum"
           >
           </ButtonTwoTone>
           <ButtonTwoTone
@@ -67,7 +64,7 @@
             :icon-button="true"
             :horizontal-padding="0"
             color="grey"
-            @click.native="openMenu"
+            @click="openMenu"
           >
           </ButtonTwoTone>
         </div>
@@ -96,7 +93,7 @@
       <div class="album-time"></div>
       <div class="release-date">
         {{ $t('album.released') }}
-        {{ album.publishTime | formatDate('MMMM D, YYYY') }}
+        {{ formatDate(album.publishTime, 'MMMM D, YYYY') }}
       </div>
       <div v-if="album.company !== null" class="copyright">
         © {{ album.company }}
@@ -118,8 +115,7 @@
       </div>
     </div>
     <Modal
-      :show="showFullDescription"
-      :close="toggleFullDescription"
+      v-model:show="showFullDescription"
       :show-footer="false"
       :click-outside-hide="true"
       :title="$t('album.albumDesc')"
@@ -128,8 +124,7 @@
         {{ album.description }}
       </p>
     </Modal>
-    <ContextMenu ref="albumMenu">
-      <!-- <div class="item">{{ $t('contextMenu.addToQueue') }}</div> -->
+    <ContextMenu ref="albumMenuRef">
       <div class="item" @click="likeAlbum(true)">{{
         dynamicDetail.isSub
           ? $t('contextMenu.removeFromLibrary')
@@ -146,22 +141,17 @@
   </div>
 </template>
 
-<script>
-import { mapMutations, mapActions, mapState } from 'vuex';
+<script setup lang="ts">
 import { getArtistAlbum } from '@/api/artist';
 import { getTrackDetail } from '@/api/track';
 import { getAlbum, albumDynamicDetail, likeAAlbum } from '@/api/album';
-import { getPlaylistDetail } from '@/api/playlist';
-import locale from '@/locale';
+import { getI18n } from '@/locale';
 import { splitSoundtrackAlbumTitle, splitAlbumTitle } from '@/utils/common';
 import { loadWithProgress, loadOptional } from '@/utils/pageLoad';
 import { isAccountLoggedIn } from '@/utils/auth';
-// 按名导入 lodash 会把整个 lodash（~61KB）拖进共享 chunk。lodash 是 CJS，
-// webpack 摇不掉，必须走子路径按需引（与 utils/Player.js 的用法保持一致）。
 import groupBy from 'lodash/groupBy';
 import toPairs from 'lodash/toPairs';
 import sortBy from 'lodash/sortBy';
-
 import ExplicitSymbol from '@/components/ExplicitSymbol.vue';
 import ButtonTwoTone from '@/components/ButtonTwoTone.vue';
 import ContextMenu from '@/components/ContextMenu.vue';
@@ -169,197 +159,174 @@ import TrackList from '@/components/TrackList.vue';
 import CoverRow from '@/components/CoverRow.vue';
 import Cover from '@/components/Cover.vue';
 import Modal from '@/components/Modal.vue';
+import {
+  formatAlbumType,
+  formatDate,
+  formatTime,
+  resizeImage,
+} from '@/utils/formatters';
+import { ref, computed } from 'vue';
+import { usePlayerStore, useUiStore } from '@/stores';
+import { onBeforeRouteUpdate, useRoute } from 'vue-router';
+import { useDescriptionToggle } from '@/composables/useDescriptionToggle';
+import { useNeteaseLinkActions } from '@/composables/useNeteaseLinkActions';
+import { useCrossPlatformPlay } from '@/composables/useCrossPlatformPlay';
 
-export default {
-  name: 'Album',
-  components: {
-    Cover,
-    ButtonTwoTone,
-    TrackList,
-    ExplicitSymbol,
-    CoverRow,
-    Modal,
-    ContextMenu,
-  },
-  beforeRouteUpdate(to, from, next) {
-    this.show = false;
-    this.loadData(to.params.id);
-    next();
-  },
-  data() {
-    return {
-      show: false,
-      album: {
-        id: 0,
-        picUrl: '',
-        artist: {
-          id: 0,
-        },
-      },
-      tracks: [],
-      showFullDescription: false,
-      moreAlbums: [],
-      dynamicDetail: {},
-      subtitle: '',
-      title: '',
-    };
-  },
-  computed: {
-    ...mapState(['player', 'data']),
-    albumTime() {
-      let time = 0;
-      this.tracks.map(t => (time = time + t.dt));
-      return time;
-    },
-    filteredMoreAlbums() {
-      let moreAlbums = this.moreAlbums.filter(a => a.id !== this.album.id);
-      let realAlbums = moreAlbums.filter(a => a.type === '专辑');
-      let eps = moreAlbums.filter(
-        a => a.type === 'EP' || (a.type === 'EP/Single' && a.size > 1)
-      );
-      let restItems = moreAlbums.filter(
-        a =>
-          realAlbums.find(a1 => a1.id === a.id) === undefined &&
-          eps.find(a1 => a1.id === a.id) === undefined
-      );
-      if (realAlbums.length === 0) {
-        return [...realAlbums, ...eps, ...restItems].slice(0, 5);
-      } else {
-        return [...realAlbums, ...restItems].slice(0, 5);
-      }
-    },
-    tracksByDisc() {
-      if (this.tracks.length <= 1) return [];
-      const pairs = toPairs(groupBy(this.tracks, 'cd'));
-      return sortBy(pairs, p => p[0]).map(items => ({
-        disc: items[0],
-        tracks: items[1],
-      }));
-    },
-  },
-  created() {
-    this.loadData(this.$route.params.id);
-  },
-  methods: {
-    ...mapMutations(['appendTrackToPlayerList']),
-    ...mapActions(['playFirstTrackOnList', 'playTrackOnListByID', 'showToast']),
-    playAlbumByID(id, trackID = 'first') {
-      if (this.$route.query.server) {
-        this.playThisListByTrack(id);
-        return;
-      }
-      this.$store.state.player.playAlbumByID(id, trackID);
-    },
-    playThisListByTrack(id) {
-      // this.showToast('正在进行其他平台播放');
-      getPlaylistDetail(id, true, this.$route.query.server).then(data => {
-        console.log(data);
-        let playlist = data.playlist;
-        let tracks = playlist.tracks.filter(_track => {
-          return _track.playable == 1;
-        });
-        this.$store.state.player.replacePlaylist(
-          tracks,
-          tracks[0],
-          'artist',
-          tracks[0]
-        );
-      });
-    },
-    likeAlbum(toast = false) {
-      if (!isAccountLoggedIn()) {
-        this.showToast(locale.t('toast.needToLogin'));
-        return;
-      }
-      likeAAlbum({
-        id: this.album.id,
-        t: this.dynamicDetail.isSub ? 0 : 1,
-      })
-        .then(data => {
-          if (data.code === 200) {
-            this.dynamicDetail.isSub = !this.dynamicDetail.isSub;
-            if (toast === true)
-              this.showToast(
-                this.dynamicDetail.isSub ? '已保存到音乐库' : '已从音乐库删除'
-              );
-          }
-        })
-        .catch(error => {
-          this.showToast(`${error.response.data.message || error}`);
-        });
-    },
-    formatTitle() {
-      let splitTitle = splitSoundtrackAlbumTitle(this.album.name);
-      let splitTitle2 = splitAlbumTitle(splitTitle.title);
-      this.title = splitTitle2.title;
-      if (splitTitle.subtitle !== '' && splitTitle2.subtitle !== '') {
-        this.subtitle = splitTitle.subtitle + ' · ' + splitTitle2.subtitle;
-      } else {
-        this.subtitle =
-          splitTitle.subtitle === ''
-            ? splitTitle2.subtitle
-            : splitTitle.subtitle;
-      }
-    },
-    loadData(id) {
-      loadWithProgress(
-        getAlbum(id).then(data => {
-          this.album = data.album;
-          this.tracks = data.songs;
-          this.formatTitle();
-          this.show = true;
+const albumMenuRef = ref<any>(null);
+const route = useRoute();
+const playerStore = usePlayerStore();
+const uiStore = useUiStore();
 
-          // to get explicit mark
-          let trackIDs = this.tracks.map(t => t.id);
-          loadOptional(
-            getTrackDetail(trackIDs.join(',')).then(data => {
-              this.tracks = data.songs;
-            })
+const showToast = uiStore.showToast;
+
+const show = ref<any>(false);
+
+const album = ref<any>({
+  id: 0,
+  picUrl: '',
+  artist: {
+    id: 0,
+  },
+});
+
+const tracks = ref<any>([]);
+
+const moreAlbums = ref<any>([]);
+
+const dynamicDetail = ref<any>({});
+
+const subtitle = ref<any>('');
+
+const title = ref<any>('');
+
+// 简介弹窗开关（原与 playlist/artist 重复的实现收敛于此）
+const { showFullDescription, toggleFullDescription } = useDescriptionToggle();
+
+// 复制链接 / 浏览器打开（原与 artist/mv 重复的实现收敛于此）
+const { copyUrl, openInBrowser } = useNeteaseLinkActions('album');
+
+// 第三方平台歌单播放（原与 playlist/coSearch 重复的实现收敛于此）
+const { playThisListByTrack: playCrossPlatformList } = useCrossPlatformPlay();
+
+const albumTime = computed(function albumTime() {
+  let time = 0;
+  tracks.value.map(t => (time = time + t.dt));
+  return time;
+});
+
+const filteredMoreAlbums = computed(function filteredMoreAlbums() {
+  // 局部改名避免遮蔽同名 ref（原 this.moreAlbums 与本地 moreAlbums 是两个东西）
+  let albums = moreAlbums.value.filter(a => a.id !== album.value.id);
+  let realAlbums = albums.filter(a => a.type === '专辑');
+  let eps = albums.filter(
+    a => a.type === 'EP' || (a.type === 'EP/Single' && a.size > 1)
+  );
+  let restItems = albums.filter(
+    a =>
+      realAlbums.find(a1 => a1.id === a.id) === undefined &&
+      eps.find(a1 => a1.id === a.id) === undefined
+  );
+  if (realAlbums.length === 0) {
+    return [...realAlbums, ...eps, ...restItems].slice(0, 5);
+  } else {
+    return [...realAlbums, ...restItems].slice(0, 5);
+  }
+});
+
+const tracksByDisc = computed(function tracksByDisc() {
+  if (tracks.value.length <= 1) return [];
+  const pairs = toPairs(groupBy(tracks.value, 'cd'));
+  return sortBy(pairs, p => p[0]).map(items => ({
+    disc: items[0],
+    tracks: items[1],
+  }));
+});
+
+function playAlbumByID(id, trackID = 'first') {
+  if (route.query.server) {
+    playCrossPlatformList(id, route.query.server);
+    return;
+  }
+  playerStore.player.playAlbumByID(id, trackID);
+}
+
+function likeAlbum(toast = false) {
+  if (!isAccountLoggedIn()) {
+    showToast((getI18n() as any).global.t('toast.needToLogin'));
+    return;
+  }
+  likeAAlbum({
+    id: album.value.id,
+    t: dynamicDetail.value.isSub ? 0 : 1,
+  })
+    .then(data => {
+      if (data.code === 200) {
+        dynamicDetail.value.isSub = !dynamicDetail.value.isSub;
+        if (toast === true)
+          showToast(
+            dynamicDetail.value.isSub ? '已保存到音乐库' : '已从音乐库删除'
           );
+      }
+    })
+    .catch(error => {
+      showToast(`${error.response.data.message || error}`);
+    });
+}
 
-          // get more album by this artist
-          loadOptional(
-            getArtistAlbum({ id: this.album.artist.id, limit: 100 }).then(
-              data => {
-                this.moreAlbums = data.hotAlbums;
-              }
-            )
-          );
-        })
-      );
+function formatTitle() {
+  let splitTitle = splitSoundtrackAlbumTitle(album.value.name);
+  let splitTitle2 = splitAlbumTitle(splitTitle.title);
+  title.value = splitTitle2.title;
+  if (splitTitle.subtitle !== '' && splitTitle2.subtitle !== '') {
+    subtitle.value = splitTitle.subtitle + ' · ' + splitTitle2.subtitle;
+  } else {
+    subtitle.value =
+      splitTitle.subtitle === '' ? splitTitle2.subtitle : splitTitle.subtitle;
+  }
+}
+
+function loadData(id) {
+  loadWithProgress(
+    getAlbum(id).then(data => {
+      album.value = data.album;
+      tracks.value = data.songs;
+      formatTitle();
+      show.value = true;
+
+      // to get explicit mark
+      let trackIDs = tracks.value.map(t => t.id);
       loadOptional(
-        albumDynamicDetail(id).then(data => {
-          this.dynamicDetail = data;
+        getTrackDetail(trackIDs.join(',')).then(data => {
+          tracks.value = data.songs;
         })
       );
-    },
-    toggleFullDescription() {
-      this.showFullDescription = !this.showFullDescription;
-      if (this.showFullDescription) {
-        this.$store.commit('enableScrolling', false);
-      } else {
-        this.$store.commit('enableScrolling', true);
-      }
-    },
-    openMenu(e) {
-      this.$refs.albumMenu.openMenu(e);
-    },
-    copyUrl(id) {
-      let showToast = this.showToast;
-      this.$copyText(`https://music.163.com/#/album?id=${id}`)
-        .then(function () {
-          showToast(locale.t('toast.copied'));
+
+      // get more album by this artist
+      loadOptional(
+        getArtistAlbum({ id: album.value.artist.id, limit: 100 }).then(data => {
+          moreAlbums.value = data.hotAlbums;
         })
-        .catch(error => {
-          showToast(`${locale.t('toast.copyFailed')}${error}`);
-        });
-    },
-    openInBrowser(id) {
-      const url = `https://music.163.com/#/album?id=${id}`;
-      window.open(url);
-    },
-  },
-};
+      );
+    })
+  );
+  loadOptional(
+    albumDynamicDetail(id).then(data => {
+      dynamicDetail.value = data;
+    })
+  );
+}
+
+function openMenu(e) {
+  albumMenuRef.value.openMenu(e);
+}
+
+loadData(route.params.id);
+
+onBeforeRouteUpdate((to, from, next) => {
+  show.value = false;
+  loadData(to.params.id);
+  next();
+});
 </script>
 
 <style lang="scss" scoped>

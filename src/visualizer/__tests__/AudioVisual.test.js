@@ -17,7 +17,7 @@ globalThis.requestAnimationFrame =
 globalThis.cancelAnimationFrame =
   globalThis.cancelAnimationFrame || clearTimeout;
 
-const { AudioVisual } = await import('../AudioVisual.js');
+const { AudioVisual } = await import('../AudioVisual.ts');
 
 function makeCanvas() {
   return {

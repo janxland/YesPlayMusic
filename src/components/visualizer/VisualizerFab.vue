@@ -21,19 +21,13 @@
   </button>
 </template>
 
-<script>
-/**
- * VisualizerFab —— 可视化入口浮标。
- * - 常驻 position:fixed z:400 层，不受 panelOpen / setting.zIndex 影响
- * - 不在外面用 v-if 包裹（防止点击瞬间自我卸载导致"消失"幻觉）
- */
-export default {
-  name: 'VisualizerFab',
-  props: {
-    active: { type: Boolean, default: false },
-    panelOpen: { type: Boolean, default: false },
-  },
-};
+<script setup lang="ts">
+import { ref } from 'vue';
+
+const props = defineProps({
+  active: { type: Boolean, default: false },
+  panelOpen: { type: Boolean, default: false },
+});
 </script>
 
 <style lang="scss" scoped>

@@ -10,39 +10,40 @@
   </div>
 </template>
 
-<script>
+<script setup lang="ts">
 import { authGetSession } from '@/api/lastfm';
+import { ref } from 'vue';
+import { useDataStore } from '@/stores';
 
-export default {
-  name: 'LastfmCallback',
-  data() {
-    return { message: '请稍等...', done: false };
-  },
-  created() {
-    const token = new URLSearchParams(window.location.search).get('token');
-    if (!token) {
-      this.message = '连接失败，请重试或联系开发者（无Token）';
-      this.done = true;
+const dataStore = useDataStore();
+
+const message = ref<any>('请稍等...');
+
+const done = ref<any>(false);
+
+function close() {
+  window.close();
+}
+
+(() => {
+  const token = new URLSearchParams(window.location.search).get('token');
+  if (!token) {
+    message.value = '连接失败，请重试或联系开发者（无Token）';
+    done.value = true;
+    return;
+  }
+  authGetSession(token).then(result => {
+    if (!result.data.session) {
+      message.value = '连接失败，请重试或联系开发者（无Session）';
+      done.value = true;
       return;
     }
-    authGetSession(token).then(result => {
-      if (!result.data.session) {
-        this.message = '连接失败，请重试或联系开发者（无Session）';
-        this.done = true;
-        return;
-      }
-      localStorage.setItem('lastfm', JSON.stringify(result.data.session));
-      this.$store.commit('updateLastfm', result.data.session);
-      this.message = '已成功连接到 Last.fm';
-      this.done = true;
-    });
-  },
-  methods: {
-    close() {
-      window.close();
-    },
-  },
-};
+    localStorage.setItem('lastfm', JSON.stringify(result.data.session));
+    dataStore.updateLastfm(result.data.session);
+    message.value = '已成功连接到 Last.fm';
+    done.value = true;
+  });
+})();
 </script>
 
 <style lang="scss" scoped>
