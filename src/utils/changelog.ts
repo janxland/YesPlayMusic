@@ -4,6 +4,30 @@
 // type 取值：feat 新功能 | fix 修复 | perf 性能 | refactor 重构 | chore 清理 | ci 构建 | docs 文档
 export const changelogEntries = [
   {
+    version: '2026.10.05',
+    date: '2026-10-05',
+    branch: 'master',
+    summary: 'Vue 3 迁移切流：新运行时全面上线 + 封面加载体验重做',
+    items: [
+      {
+        type: 'refactor',
+        text: 'Vue 3 + TypeScript + Pinia 迁移（M1）正式上线，构建由 webpack 切换至 Vite，产物面向现代浏览器（零 polyfill）',
+      },
+      {
+        type: 'perf',
+        text: '封面加载重做：骨架微光占位（修复暗色主题下加载区大片空白）、微缩图垫底防闪空帧、图片到达平滑淡入',
+      },
+      {
+        type: 'perf',
+        text: '视口内封面挂载即同步起载，不再等待 IntersectionObserver 派发（窗口被遮挡停帧时同样可加载）',
+      },
+      {
+        type: 'ci',
+        text: '发布链路修复：Vercel 工作流升 Node 24 适配 Vite 7、补配 COS 密钥与 Vercel Token，master push 一键覆盖境内外入口',
+      },
+    ],
+  },
+  {
     version: '2026.09.24',
     date: '2026-09-24',
     branch: 'master',
