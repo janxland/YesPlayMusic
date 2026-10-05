@@ -1,10 +1,5 @@
 <template>
-  <div
-    class="desktop-lyrics-window"
-    :class="{ locked }"
-    @mouseenter="handleMouseEnter"
-    @mouseleave="handleMouseLeave"
-  >
+  <div class="desktop-lyrics-window" :class="{ locked }">
     <div class="toolbar" :class="{ visible: locked ? btnHot : hovering }">
       <template v-if="!locked">
         <button title="上一首" @click="sendControl('prev')">
@@ -83,7 +78,9 @@ const HIT_MARGIN = 16; // 解锁按钮热区外扩像素（含在上报的 rect 
 const LINE_H = 48; // 滚动列每行固定高度（px），viewport 高 3 行
 
 const lockBtnRef = ref<any>(null);
-const locked = ref(localStorage.getItem('desktopLyricsLocked') === '1');
+// 默认锁定（鼠标穿透）：桌面歌词的存在意义就是悬浮展示，不该挡住底下的操作；
+// 显式存过 '0' 才默认解锁。工具栏显隐由主进程光标轮询驱动（拖拽区会吞 DOM 鼠标事件）
+const locked = ref(localStorage.getItem('desktopLyricsLocked') !== '0');
 
 const hovering = ref<any>(false);
 
@@ -232,14 +229,6 @@ function toggleLock() {
   });
 }
 
-function handleMouseEnter() {
-  hovering.value = true;
-}
-
-function handleMouseLeave() {
-  hovering.value = false;
-}
-
 function closeWindow() {
   window.close();
 }
@@ -247,9 +236,11 @@ function closeWindow() {
 onMounted(function mounted() {
   document.documentElement.classList.add('desktop-lyrics-view');
   ipcBridge.on('desktopLyrics:state', handleState);
-  // 主进程热区轮询的回执：光标进入/离开解锁按钮区域
-  ipcBridge.on('desktopLyrics:hover', (event, hot) => {
-    btnHot.value = hot;
+  // 主进程热区轮询的回执：inside=光标在窗口内（解锁态工具栏显隐），
+  // hot=光标在解锁按钮热区（锁定态工具栏显隐 + 鼠标已回收）
+  ipcBridge.on('desktopLyrics:hover', (event, state) => {
+    hovering.value = !!state?.inside;
+    btnHot.value = !!state?.hot;
   });
   // rAF 逐帧检测切句（延迟 ≤16ms）；窗口被遮挡时 rAF 会停摆，留个低频定时器兜底
   const loop = () => {

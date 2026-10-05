@@ -17,10 +17,14 @@ let saveBoundsTimer = null;
 // ---- 锁定穿透的热区检测 ----
 // macOS 的 setIgnoreMouseEvents(forward:true) 在真实鼠标下不可靠（转发 mousemove
 // 会丢事件），锁定后用户可能永远碰不到解锁按钮。改为主进程轮询系统光标坐标：
-// 渲染进程上报工具栏热区（窗口相对坐标），主进程每 80ms 判断光标是否命中，
-// 命中→关穿透并通知渲染显示工具栏，移出→恢复穿透。
+// 渲染进程上报工具栏热区（窗口相对坐标），主进程每 80ms 判断光标是否命中。
+// 注意：不能依赖渲染层的 DOM mouseenter/mouseleave——解锁态整窗是
+// -webkit-app-region: drag 拖拽区，Electron 会吞掉拖拽区上的全部 DOM 鼠标事件
+//（工具栏"永远不显示"的根因），所以窗口悬停与否也在这里轮询后推送给渲染层。
 let hitArea = null; // { x, y, w, h } 相对歌词窗口左上角（DIP）
-let hoverHot = false;
+let hoverHot = false; // 锁定态：光标在解锁按钮热区内
+let insideWindow = false; // 光标是否在窗口内（解锁态工具栏显隐用）
+let lockedState = false;
 let pollTimer = null;
 
 function stopHoverPoll() {
@@ -42,18 +46,38 @@ function isCursorInHitArea(win) {
   );
 }
 
-function startHoverPoll(win) {
-  stopHoverPoll();
+function isCursorInsideWindow(win) {
+  const pt = screen.getCursorScreenPoint();
+  const [x, y] = win.getPosition();
+  const [w, h] = win.getContentSize();
+  return pt.x >= x && pt.x <= x + w && pt.y >= y && pt.y <= y + h;
+}
+
+function pushHoverState(win) {
+  win.webContents.send('desktopLyrics:hover', {
+    inside: insideWindow,
+    hot: hoverHot,
+  });
+}
+
+function startHoverPoll() {
+  if (pollTimer) return;
   pollTimer = setInterval(() => {
+    const win = lyricWindow;
     if (!win || win.isDestroyed()) {
       stopHoverPoll();
       return;
     }
-    const inside = isCursorInHitArea(win);
-    if (inside === hoverHot) return;
-    hoverHot = inside;
-    win.setIgnoreMouseEvents(!inside);
-    win.webContents.send('desktopLyrics:hover', inside);
+    const inside = isCursorInsideWindow(win);
+    const hot = lockedState && isCursorInHitArea(win);
+    if (inside !== insideWindow || hot !== hoverHot) {
+      insideWindow = inside;
+      hoverHot = hot;
+      // 锁定态：只有光标进入热区才回收鼠标（解锁按钮可点），其余时间穿透；
+      // 解锁态：整窗可交互，交给渲染层按 inside 显隐工具栏
+      if (lockedState) win.setIgnoreMouseEvents(!hot);
+      pushHoverState(win);
+    }
   }, 80);
 }
 
@@ -176,16 +200,17 @@ export function initDesktopLyrics(window, electronStore) {
   ipcMain.on('desktopLyrics:setLock', (event, locked) => {
     if (!lyricWindow || lyricWindow.isDestroyed()) return;
     if (event.sender !== lyricWindow.webContents) return;
-    if (locked) {
-      hoverHot = false;
+    lockedState = !!locked;
+    hoverHot = false;
+    if (lockedState) {
       lyricWindow.setIgnoreMouseEvents(true);
-      startHoverPoll(lyricWindow);
+      startHoverPoll();
     } else {
       stopHoverPoll();
-      hoverHot = false;
       lyricWindow.setIgnoreMouseEvents(false);
-      lyricWindow.webContents.send('desktopLyrics:hover', false);
     }
+    insideWindow = false;
+    pushHoverState(lyricWindow);
   });
   ipcMain.on('desktopLyrics:hitArea', (event, area) => {
     if (!lyricWindow || lyricWindow.isDestroyed()) return;

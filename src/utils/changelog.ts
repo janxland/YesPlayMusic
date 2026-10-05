@@ -29,6 +29,14 @@ export const changelogEntries = [
         type: 'feat',
         text: '桌面端完成 M2 闭环：Electron 13 → 44、contextBridge 安全 IPC（nodeIntegration 退役）、恢复三平台打包与自动更新',
       },
+      {
+        type: 'fix',
+        text: '桌面歌词：默认锁定鼠标穿透、不再遮挡桌面；右上角工具栏改由主进程光标轮询驱动（修复拖拽区吞掉 mouseenter 导致工具栏永不显示）',
+      },
+      {
+        type: 'fix',
+        text: '桌面端接口地址修复：补 .env.electron（vite mode=electron 不读 .env.production），修复首屏请求全部 404',
+      },
     ],
   },
   {
