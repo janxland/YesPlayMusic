@@ -15,6 +15,20 @@ interface Window {
   yesplaymusic: Record<string, any>;
   /** 仅 platform/bridge.ts 在桌面端使用（nodeIntegration 渲染进程） */
   require?: NodeRequire;
+  /**
+   * contextBridge 注入的 IPC 桥（src/preload.ts 暴露，platform/bridge.ts 独家消费）。
+   * 形状对齐旧的 require('electron') 用法：ipcRenderer 五件套 + 同步弹窗应答。
+   */
+  electronBridge?: {
+    ipcRenderer: {
+      send(channel: string, ...args: any[]): void;
+      invoke(channel: string, ...args: any[]): Promise<any>;
+      on(channel: string, listener: (...args: any[]) => void): void;
+      removeListener(channel: string, listener: (...args: any[]) => void): void;
+      removeAllListeners(channel: string): void;
+      sendSync(channel: string, payload?: any): any;
+    };
+  };
   /** Document Picture-in-Picture（桌面歌词 Canvas 降级之外的正路） */
   documentPictureInPicture?: {
     requestWindow(options: {

@@ -2,6 +2,7 @@
 // 透明、无边框、置顶的小窗口渲染 /#/desktop-lyrics 路由，
 // 主窗口的播放状态经 IPC 转发过来（渲染进程 desktopLyrics.js 负责发送）。
 import { BrowserWindow, ipcMain, screen } from 'electron';
+import path from 'path';
 
 const clc = require('cli-color');
 const log = text => {
@@ -74,8 +75,8 @@ function debounceSaveBounds() {
 }
 
 function getLyricsUrl() {
-  const base = process.env.WEBPACK_DEV_SERVER_URL
-    ? process.env.WEBPACK_DEV_SERVER_URL
+  const base = process.env.VITE_DEV_SERVER_URL
+    ? process.env.VITE_DEV_SERVER_URL
     : 'http://localhost:27232';
   return `${base}/#/desktop-lyrics`;
 }
@@ -99,9 +100,9 @@ function createLyricsWindow() {
     title: 'YesPlayMusic 桌面歌词',
     webPreferences: {
       webSecurity: false,
-      nodeIntegration: true,
-      enableRemoteModule: true,
-      contextIsolation: false,
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
     },
   });
 

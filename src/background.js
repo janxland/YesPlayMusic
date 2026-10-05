@@ -1,4 +1,5 @@
 'use strict';
+import path from 'path';
 import {
   app,
   protocol,
@@ -17,7 +18,6 @@ import {
   isCreateTray,
   isCreateMpris,
 } from '@/utils/platform';
-import { createProtocol } from 'vue-cli-plugin-electron-builder/lib';
 import { startNeteaseMusicApi } from './electron/services';
 import { initIpcMain } from './electron/ipcMain.js';
 import {
@@ -30,7 +30,7 @@ import { createTouchBar } from './electron/touchBar';
 import { createDockMenu } from './electron/dockMenu';
 import { registerGlobalShortcut } from './electron/globalShortcut';
 import { autoUpdater } from 'electron-updater';
-import installExtension, { VUEJS_DEVTOOLS } from 'electron-devtools-installer';
+import installExtension, { VUEJS3_DEVTOOLS } from 'electron-devtools-installer';
 import { EventEmitter } from 'events';
 import express from 'express';
 import expressProxy from 'express-http-proxy';
@@ -137,7 +137,7 @@ class Background {
   async initDevtools() {
     // Install Vue Devtools extension
     try {
-      await installExtension(VUEJS_DEVTOOLS);
+      await installExtension(VUEJS3_DEVTOOLS);
     } catch (e) {
       console.error('Vue Devtools failed to install:', e.toString());
     }
@@ -178,8 +178,9 @@ class Background {
   }
 
   registerProtocolClient() {
-    // 开发模式不注册，避免把系统协议关联到 Electron 调试壳
-    if (isDevelopment) return;
+    // 开发模式不注册，避免把系统协议关联到 Electron 调试壳；
+    // IS_TEST（冒烟/CI）同理，避免临时 .app 抢走正式安装版的协议关联
+    if (isDevelopment || process.env.IS_TEST) return;
     const ok = app.setAsDefaultProtocolClient('yesplaymusic');
     log(`register protocol "yesplaymusic://" -> ${ok}`);
   }
@@ -246,9 +247,11 @@ class Background {
       show: false,
       webPreferences: {
         webSecurity: false,
-        nodeIntegration: true,
-        enableRemoteModule: true,
-        contextIsolation: false,
+        // contextIsolation + preload（src/preload.ts → dist_electron/preload.js）
+        // 取代旧 nodeIntegration/remoteModule 组合；渲染层统一走 window.electronBridge
+        preload: path.join(__dirname, 'preload.js'),
+        contextIsolation: true,
+        nodeIntegration: false,
       },
       backgroundColor:
         ((appearance === undefined || appearance === 'auto') &&
@@ -302,16 +305,15 @@ class Background {
     // hide menu bar on Microsoft Windows and Linux
     this.window.setMenuBarVisibility(false);
 
-    if (process.env.WEBPACK_DEV_SERVER_URL) {
+    if (process.env.VITE_DEV_SERVER_URL) {
       // Load the url of the dev server if in development mode
       this.window.loadURL(
         showLibraryDefault
-          ? `${process.env.WEBPACK_DEV_SERVER_URL}/#/library`
-          : process.env.WEBPACK_DEV_SERVER_URL
+          ? `${process.env.VITE_DEV_SERVER_URL}/#/library`
+          : process.env.VITE_DEV_SERVER_URL
       );
       if (!process.env.IS_TEST) this.window.webContents.openDevTools();
     } else {
-      createProtocol('app');
       this.window.loadURL(
         showLibraryDefault
           ? 'http://localhost:27232/#/library'
@@ -321,9 +323,17 @@ class Background {
   }
 
   checkForUpdates() {
-    if (isDevelopment) return;
+    // --dir 产物/开发态没有更新元数据，electron-updater 会抛未捕获错误
+    if (isDevelopment || !app.isPackaged) return;
     log('checkForUpdates');
-    autoUpdater.checkForUpdatesAndNotify();
+    autoUpdater.on('error', err => {
+      log(`updater error: ${err.message}`);
+    });
+    // checkForUpdatesAndNotify 返回的 promise 在无更新元数据（--dir 产物）时会
+    // reject，不接住就是 UnhandledPromiseRejection 噪音
+    autoUpdater.checkForUpdatesAndNotify().catch(err => {
+      log(`updater check failed: ${err.message}`);
+    });
 
     const showNewVersionMessage = info => {
       dialog
@@ -337,7 +347,7 @@ class Background {
         })
         .then(result => {
           if (result.response === 0) {
-            shell.openExternal('https://github.com/qier222/YesPlayMusic');
+            shell.openExternal('https://github.com/janxland/YesPlayMusic');
           }
         });
     };
@@ -401,8 +411,8 @@ class Background {
       this.window.webContents.send('isMaximized', false);
     });
 
-    this.window.webContents.on('new-window', function (e, url) {
-      e.preventDefault();
+    // new-window 事件已废弃，Electron ≥22 统一走 setWindowOpenHandler
+    this.window.webContents.setWindowOpenHandler(({ url }) => {
       log('open url');
       const excludeHosts = ['www.last.fm'];
       const exclude = excludeHosts.find(host => url.includes(host));
@@ -412,17 +422,13 @@ class Background {
           height: 600,
           titleBarStyle: 'default',
           title: 'YesPlayMusic',
-          webPreferences: {
-            webSecurity: false,
-            nodeIntegration: true,
-            enableRemoteModule: true,
-            contextIsolation: false,
-          },
+          webPreferences: { webSecurity: false },
         });
         newWindow.loadURL(url);
-        return;
+        return { action: 'deny' };
       }
       shell.openExternal(url);
+      return { action: 'deny' };
     });
   }
 
@@ -471,9 +477,11 @@ class Background {
       // set proxy
       const proxyRules = this.store.get('proxy');
       if (proxyRules) {
-        this.window.webContents.session.setProxy({ proxyRules }, result => {
-          log('finished setProxy', result);
-        });
+        this.window.webContents.session
+          .setProxy({ proxyRules })
+          .then(result => {
+            log('finished setProxy', result);
+          });
       }
 
       // check for updates

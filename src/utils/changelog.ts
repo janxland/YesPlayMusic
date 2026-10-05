@@ -25,6 +25,10 @@ export const changelogEntries = [
         type: 'ci',
         text: '发布链路修复：Vercel 工作流升 Node 24 适配 Vite 7、补配 COS 密钥与 Vercel Token，master push 一键覆盖境内外入口',
       },
+      {
+        type: 'feat',
+        text: '桌面端完成 M2 闭环：Electron 13 → 44、contextBridge 安全 IPC（nodeIntegration 退役）、恢复三平台打包与自动更新',
+      },
     ],
   },
   {

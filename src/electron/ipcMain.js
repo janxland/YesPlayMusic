@@ -138,6 +138,11 @@ export function initIpcMain(win, store, trayEventEmitter) {
   // UNM.enableLogging(UNM.LoggingType.ConsoleEnv);
   const unmExecutor = new UNM.Executor();
 
+  // contextIsolation 下渲染层拿不到 dialog，nativeAlert 的同步弹窗走这里应答
+  ipcMain.on('show-message-box-sync', (event, options) => {
+    event.returnValue = dialog.showMessageBoxSync(win, options);
+  });
+
   ipcMain.handle(
     'unblock-music',
     /**
