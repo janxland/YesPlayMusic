@@ -166,26 +166,14 @@ const router = createRouter({
   routes,
 });
 
-router.beforeEach((to, from, next) => {
-  if (to.meta.requireAccountLogin) {
-    if (isAccountLoggedIn()) {
-      next();
-    } else {
-      next({ path: '/login/account' });
-    }
+// vue-router 4 下一个守卫内多次调用 next() 会直接报错中断导航，
+// 原写法 requireAccountLogin 分支放行后会再走一次 next()；改用返回值风格天然单次
+router.beforeEach(to => {
+  if (to.meta.requireAccountLogin && !isAccountLoggedIn()) {
+    return { path: '/login/account' };
   }
-  if (to.meta.requireLogin) {
-    if (isLooseLoggedIn()) {
-      next();
-    } else {
-      if (isDesktop()) {
-        next({ path: '/login/account' });
-      } else {
-        next({ path: '/login' });
-      }
-    }
-  } else {
-    next();
+  if (to.meta.requireLogin && !isLooseLoggedIn()) {
+    return { path: isDesktop() ? '/login/account' : '/login' };
   }
 });
 

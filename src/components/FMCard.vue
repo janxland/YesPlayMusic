@@ -1,6 +1,7 @@
 <template>
   <div class="fm" :style="{ background }" data-theme="dark">
     <img
+      v-if="nextTrackCover"
       :src="nextTrackCover"
       style="display: none"
       referrerpolicy="no-referrer"
@@ -70,10 +71,12 @@ const artists = computed(function artists() {
 });
 
 const nextTrackCover = computed(function nextTrackCover() {
-  return `${player.value._personalFMNextTrack?.album?.picUrl.replace(
-    'http://',
-    'https://'
-  )}?param=512y512`;
+  // _personalFMNextTrack 初始为 {id:0}、加载失败会被置 undefined，
+  // 链式取值必须兜底，否则 undefined.replace 在渲染期抛 TypeError 打崩 FM 卡片
+  const picUrl = player.value._personalFMNextTrack?.album?.picUrl;
+  return picUrl
+    ? `${picUrl.replace('http://', 'https://')}?param=512y512`
+    : '';
 });
 
 function play() {
@@ -89,7 +92,8 @@ function playPrevTrack() {
 }
 
 function goToAlbum() {
-  if (track.value.album.id === 0) return;
+  // 初始 _personalFMTrack = {id:0} 无 album 字段，冷启动点击会 TypeError
+  if (!track.value.album?.id) return;
   router.push({ path: '/album/' + track.value.album.id });
 }
 
@@ -99,23 +103,27 @@ function getColor() {
     'http://',
     'https://'
   )}?param=512y512`;
-  getCoverPalette(cover).then(palette => {
-    // 快速切 FM 时旧取色后到达，不能覆盖新歌的背景
-    if (
-      `${player.value.personalFMTrack?.album?.picUrl?.replace(
-        'http://',
-        'https://'
-      )}?param=512y512` !== cover
-    )
-      return;
-    const color = Color.rgb(palette.Vibrant._rgb).darken(0.1).rgb().string();
-    const color2 = Color.rgb(palette.Vibrant._rgb)
-      .lighten(0.28)
-      .rotate(-30)
-      .rgb()
-      .string();
-    background.value = `linear-gradient(to top left, ${color}, ${color2})`;
-  });
+  getCoverPalette(cover)
+    .then(palette => {
+      // 快速切 FM 时旧取色后到达，不能覆盖新歌的背景
+      if (
+        `${player.value.personalFMTrack?.album?.picUrl?.replace(
+          'http://',
+          'https://'
+        )}?param=512y512` !== cover
+      )
+        return;
+      // 某些封面提取不出 Vibrant 色板，裸读 _rgb 会 TypeError
+      if (!palette.Vibrant) return;
+      const color = Color.rgb(palette.Vibrant._rgb).darken(0.1).rgb().string();
+      const color2 = Color.rgb(palette.Vibrant._rgb)
+        .lighten(0.28)
+        .rotate(-30)
+        .rgb()
+        .string();
+      background.value = `linear-gradient(to top left, ${color}, ${color2})`;
+    })
+    .catch(() => {});
 }
 
 getColor();

@@ -11,26 +11,25 @@ const log = text => {
   console.log(`${clc.blueBright('[ipcMain.js]')} ${text}`);
 };
 
-const exitAsk = (e, win) => {
-  e.preventDefault(); //阻止默认行为
+const exitAsk = win => {
+  // 不能先 hide 再问：对已隐藏窗 minimize 无视觉反馈、取消时窗口凭空消失（假死）；
+  // cancelId 必须指向真实的「取消」按钮，越界值会让 Esc 无响应
   dialog
-    .showMessageBox({
+    .showMessageBox(win, {
       type: 'info',
       title: 'Information',
       cancelId: 2,
       defaultId: 0,
       message: '确定要关闭吗？',
-      buttons: ['最小化', '直接退出'],
+      buttons: ['最小化', '直接退出', '取消'],
     })
     .then(result => {
-      if (result.response == 0) {
-        e.preventDefault(); //阻止默认行为
-        win.minimize(); //调用 最小化实例方法
-      } else if (result.response == 1) {
-        win = null;
-        //app.quit();
+      if (result.response === 0) {
+        win.minimize();
+      } else if (result.response === 1) {
         app.exit(); //exit()直接关闭客户端，不会执行quit();
       }
+      // response 2（取消/Esc）：什么都不做，窗口保持原状
     })
     .catch(err => {
       log(err);
@@ -58,11 +57,9 @@ const exitAskWithoutMac = (e, win) => {
       }
 
       if (result.response === 0) {
-        e.preventDefault(); //阻止默认行为
+        // 'close' 事件早已同步 preventDefault（函数首行），异步回调里再调无效
         win.hide(); //调用 最小化实例方法
       } else if (result.response === 1) {
-        win = null;
-        //app.quit();
         app.exit(); //exit()直接关闭客户端，不会执行quit();
       }
     })
@@ -205,8 +202,7 @@ export function initIpcMain(win, store, trayEventEmitter) {
 
   ipcMain.on('close', e => {
     if (isMac) {
-      win.hide();
-      exitAsk(e, win);
+      exitAsk(win);
     } else {
       let closeOpt = store.get('settings.closeAppOption');
       if (closeOpt === 'exit') {
@@ -295,10 +291,13 @@ export function initIpcMain(win, store, trayEventEmitter) {
 
   ipcMain.on('updateShortcut', (e, { id, type, shortcut }) => {
     log('updateShortcut');
-    let shortcuts = store.get('settings.shortcuts');
-    let newShortcut = shortcuts.find(s => s.id === id);
-    newShortcut[type] = shortcut;
-    store.set('settings.shortcuts', shortcuts);
+    // 全新安装时主进程 store 还没收到渲染层 settings，得落默认表
+    let storedShortcuts = store.get('settings.shortcuts');
+    if (storedShortcuts === undefined) storedShortcuts = cloneDeep(shortcuts);
+    const target = storedShortcuts.find(s => s.id === id);
+    if (!target) return; // 渲染层传来的 id 可能不在主进程存的表里，直接改会 TypeError
+    target[type] = shortcut;
+    store.set('settings.shortcuts', storedShortcuts);
 
     createMenu(win, store);
     globalShortcut.unregisterAll();

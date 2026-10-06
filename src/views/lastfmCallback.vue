@@ -42,6 +42,10 @@ function close() {
     dataStore.updateLastfm(result.data.session);
     message.value = '已成功连接到 Last.fm';
     done.value = true;
+  }).catch(() => {
+    // 会话换取失败（网络/Token 过期）时页面必须给出终态，不能停在"请稍等..."
+    message.value = '连接失败，请检查网络后重试';
+    done.value = true;
   });
 })();
 </script>

@@ -69,9 +69,10 @@ const playNextList = computed(function playNextList() {
 });
 
 const playNextTracks = computed(function playNextTracks() {
-  return playNextList.value.map(tid => {
-    return tracks.value.find(t => t.id === tid);
-  });
+  return playNextList.value
+    .map(tid => tracks.value.find(t => t.id === tid))
+    // 详情接口响应前的占位 undefined 会让 TrackListItem 读 track.id 崩渲染，先过滤
+    .filter(t => t);
 });
 
 function loadTracks() {
@@ -83,10 +84,14 @@ function loadTracks() {
   let loadedTrackIDs = tracks.value.map(t => t.id);
 
   if (trackIDs.length > 0) {
-    getTrackDetail(trackIDs.join(',')).then(data => {
-      let newTracks = data.songs.filter(t => !loadedTrackIDs.includes(t.id));
-      tracks.value.push(...newTracks);
-    });
+    // 由切歌/shuffle watch 自动触发，失败静默等下次 watch 重试即可，不打扰用户
+    getTrackDetail(trackIDs.join(','))
+      .then(data => {
+        tracks.value.push(
+          ...(data?.songs ?? []).filter(t => !loadedTrackIDs.includes(t.id))
+        );
+      })
+      .catch(err => console.warn('[next] loadTracks failed:', err));
   }
 }
 

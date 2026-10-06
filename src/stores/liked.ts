@@ -56,7 +56,9 @@ export const useLikedStore = defineStore('liked', () => {
     apply(!wasLiked);
     likeATrack({ id, like: !wasLiked })
       .then(() => {
-        fetchLikedSongsWithDetails();
+        // 回读失败不能回滚已成功的红心，也不进外层 catch（那是接口失败路径），
+        // 独立静默降级，下次点红心自然重试
+        fetchLikedSongsWithDetails().catch(() => {});
       })
       .catch(() => {
         apply(wasLiked);
@@ -85,18 +87,21 @@ export const useLikedStore = defineStore('liked', () => {
       useDataStore().data.likedSongPlaylistID,
       true
     ).then(result => {
-      if (result.playlist?.trackIds?.length === 0) {
-        return Promise.resolve();
+      // 用户名模式登录时 likedSongPlaylistID 为 undefined，playlist 可能整体缺失
+      const trackIds = result.playlist?.trackIds ?? [];
+      if (trackIds.length === 0) {
+        return;
       }
       return getTrackDetail(
-        result.playlist.trackIds
+        trackIds
           .slice(0, 12)
           .map((t: { id: number }) => t.id)
           .join(',')
       ).then(result => {
+        // 异常体缺 songs 时赋 undefined，library 页读 .length / TrackList 渲染会崩
         updateLikedXXX({
           name: 'songsWithDetails',
-          data: result.songs,
+          data: result.songs ?? [],
         });
       });
     });
@@ -114,11 +119,15 @@ export const useLikedStore = defineStore('liked', () => {
             name: 'playlists',
             data: result.playlist,
           });
-          // 更新用户”喜欢的歌曲“歌单ID
-          useDataStore().updateData({
-            key: 'likedSongPlaylistID',
-            value: result.playlist[0].id,
-          });
+          // 空数组是 truthy，直接 [0].id 会在风控/空壳账号场景 TypeError
+          const firstPlaylistID = result.playlist[0]?.id;
+          if (firstPlaylistID !== undefined) {
+            // 更新用户”喜欢的歌曲“歌单ID
+            useDataStore().updateData({
+              key: 'likedSongPlaylistID',
+              value: firstPlaylistID,
+            });
+          }
         }
       });
     } else {
@@ -177,17 +186,28 @@ export const useLikedStore = defineStore('liked', () => {
       userPlayHistory({ uid, type: 0 }),
       userPlayHistory({ uid, type: 1 }),
     ]).then(result => {
-      const data: Record<string, unknown> = {};
+      // playHistory 必须保持 weekData/allData 两侧齐全：单侧异常时沿用旧值，
+      // 否则 updateLikedXXX 整体替换后 library 页读缺失侧 .length 渲染会崩
+      const data: Record<string, unknown> = {
+        weekData: liked.value.playHistory.weekData ?? [],
+        allData: liked.value.playHistory.allData ?? [],
+      };
       const dataType = { 0: 'allData', 1: 'weekData' };
       if (result[0] && result[1]) {
-        for (let i = 0; i < result.length; i++) {
-          const songData = result[i][dataType[i]].map((item: any) => {
+      for (let i = 0; i < result.length; i++) {
+        // 接口异常体里可能没有 allData/weekData 字段
+        const list = result[i]?.[dataType[i]];
+        if (!Array.isArray(list)) continue;
+        // 单条记录缺 song（异常体）时跳过该条，不让整份播放历史加载失败
+        const songData = list
+          .filter((item: any) => item?.song)
+          .map((item: any) => {
             const song = item.song;
             song.playCount = item.playCount;
             return song;
           });
-          data[dataType[i]] = songData;
-        }
+        data[dataType[i]] = songData;
+      }
         updateLikedXXX({
           name: 'playHistory',
           data: data,

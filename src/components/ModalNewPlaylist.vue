@@ -36,6 +36,7 @@ import { ref, computed } from 'vue';
 import { useDataStore } from '@/stores/data';
 import { useLikedStore } from '@/stores/liked';
 import { useUiStore } from '@/stores/ui';
+import { loadOptional } from '@/utils/pageLoad';
 import { storeToRefs } from 'pinia';
 
 const uiStore = useUiStore();
@@ -84,34 +85,46 @@ function close() {
 function doCreatePlaylist() {
   let params: { name: string; type?: number } = { name: title.value };
   if (privatePlaylist.value) params.type = 10; // 修复原版 this.private 恒 undefined 的 bug
-  createPlaylist(params).then(data => {
-    if (data.code === 200) {
+  createPlaylist(params)
+    .then(data => {
+      if (data.code !== 200) {
+        showToast(data.message ?? '创建歌单失败');
+        return;
+      }
       if (modals.value.newPlaylistModal.afterCreateAddTrackID !== 0) {
         addOrRemoveTrackFromPlaylist({
           op: 'add',
           pid: data.id,
           tracks: modals.value.newPlaylistModal.afterCreateAddTrackID,
-        }).then(data => {
-          if (data.body.code === 200) {
-            showToast((getI18n() as any).global.t('toast.savedToPlaylist'));
-          } else {
-            showToast(data.body.message);
-          }
-          resetAfterCreateAddTrackID();
-        });
+        })
+          .then(res => {
+            if (res.body?.code === 200) {
+              showToast((getI18n() as any).global.t('toast.savedToPlaylist'));
+            } else {
+              showToast(res.body?.message ?? '添加歌曲失败');
+            }
+            resetAfterCreateAddTrackID();
+          })
+          .catch(() => {
+            showToast('添加歌曲失败，请检查网络后重试');
+            resetAfterCreateAddTrackID();
+          });
       }
       close();
       showToast('成功创建歌单');
       updateData({ key: 'libraryPlaylistFilter', value: 'mine' });
-      fetchLikedPlaylist();
-    }
-  });
+      loadOptional(fetchLikedPlaylist());
+    })
+    .catch(() => {
+      showToast('创建歌单失败，请检查网络后重试');
+    });
 }
 
 function resetAfterCreateAddTrackID() {
   updateModal({
     modalName: 'newPlaylistModal',
-    key: 'AfterCreateAddTrackID',
+    // key 大小写写错会漏重置，残留曲目 id 会被静默加进下一个新建歌单
+    key: 'afterCreateAddTrackID',
     value: 0,
   });
 }

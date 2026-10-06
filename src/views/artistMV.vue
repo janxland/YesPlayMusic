@@ -56,7 +56,8 @@ function loadMVs() {
   loadWithProgress(
     artistMv({ id: id.value, limit: 100, offset: mvs.value.length }).then(
       data => {
-        mvs.value.push(...data.mvs);
+        // 异常体缺 mvs 时对 undefined 展开会 TypeError，整页进错误态
+        mvs.value.push(...(data.mvs ?? []));
         hasMore.value = data.hasMore;
         show.value = true;
       }

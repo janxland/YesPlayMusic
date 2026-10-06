@@ -84,7 +84,9 @@ export function initDesktopLyricsSync() {
   // 歌词窗工具栏的播控指令（主进程转发回主窗口执行）
   const handleControl = (event, cmd) => {
     const p = usePlayerStore().player;
-    if (!p || !p.enabled) return;
+    // enabled 守卫移除：主窗播放器隐藏与否不该拦远程播控，
+    // playOrPause/prev/next 在 disabled 状态下都是无害空操作
+    if (!p) return;
     if (cmd === 'prev') p.playPrevTrack();
     else if (cmd === 'next')
       p.isPersonalFM ? p.playNextFMTrack() : p.playNextTrack();

@@ -1,4 +1,8 @@
 export default {
+  server: {
+    tencent: 'QQ Music',
+    kugou: 'Kugou Music',
+  },
   common: {
     play: 'PLAY',
     songs: 'Songs',
@@ -12,9 +16,6 @@ export default {
     index: 'Author Blog',
     github: 'GitHub Repo',
     changelog: 'Changelog',
-  },
-  footer: {
-    settings: 'Settings',
   },
   home: {
     recommendPlaylist: 'Recommended Playlists',

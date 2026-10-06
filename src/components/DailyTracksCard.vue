@@ -53,7 +53,7 @@ function loadDailyTracks() {
   if (!isAccountLoggedIn()) return;
   dailyRecommendTracks()
     .then(result => {
-      uiStore.updateDailyTracks(result.data.dailySongs);
+      uiStore.updateDailyTracks(result.data?.dailySongs ?? []);
     })
     .catch(() => {});
 }
@@ -67,12 +67,17 @@ function playDailyTracks() {
     showToast((getI18n() as any).global.t('toast.needToLogin'));
     return;
   }
-  let trackIDs = dailyTracks.value.map(t => t.id);
+  const trackIDs = dailyTracks.value.map(t => t.id);
+  // 推荐接口失败/未返回时列表为空，dailyTracks[0].id 会读 undefined 崩掉点击
+  if (trackIDs.length === 0) {
+    showToast('每日推荐尚未加载完成，请稍后再试');
+    return;
+  }
   usePlayerStore().player.replacePlaylist(
     trackIDs,
     '/daily/songs',
     'url',
-    dailyTracks.value[0].id
+    trackIDs[0]
   );
 }
 

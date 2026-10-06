@@ -287,36 +287,42 @@ function loadData(id, next = undefined) {
     getArtist(id).then(data => {
       artist.value = data.artist;
       setPopularTracks(data.hotSongs);
-      if (next !== undefined) next();
       show.value = true;
-    })
+      // next() 放末尾：失败路径由 onError 兜底调用，两路互斥各恰好一次
+      if (next !== undefined) next();
+    }),
+    { onError: () => next?.() }
   );
   loadOptional(
     getArtistAlbum({ id: id, limit: 200 }).then(data => {
-      albumsData.value = data.hotAlbums;
-      latestRelease.value = data.hotAlbums[0];
+      // 异常体缺 hotAlbums 时，albums/eps computed 的 .filter 渲染期崩
+      albumsData.value = data.hotAlbums ?? [];
+      latestRelease.value = albumsData.value[0];
     })
   );
   loadOptional(
     artistMv({ id }).then(data => {
-      mvs.value = data.mvs;
+      // latestMV computed 读 mvs.value[0]，缺字段时赋 undefined 会崩
+      mvs.value = data.mvs ?? [];
       hasMoreMV.value = data.hasMore;
     })
   );
   if (isAccountLoggedIn()) {
     loadOptional(
       similarArtistsApi(id).then(data => {
-        similarArtists.value = data.artists;
+        // 模板直接 similarArtists.slice(0, 12)，undefined 会崩
+        similarArtists.value = data.artists ?? [];
       })
     );
   }
 }
 
 function setPopularTracks(hotSongs) {
-  const trackIDs = hotSongs.map(t => t.id);
+  const trackIDs = (hotSongs ?? []).map(t => t.id);
   loadOptional(
     getTrackDetail(trackIDs.join(',')).then(data => {
-      popularTracks.value = data.songs;
+      // 同 album.vue：异常体缺 songs 需兜底空数组
+      popularTracks.value = data.songs ?? [];
     })
   );
 }
@@ -343,9 +349,13 @@ function followArtist() {
   followAArtist({
     id: artist.value.id,
     t: artist.value.followed ? 0 : 1,
-  }).then(data => {
-    if (data.code === 200) artist.value.followed = !artist.value.followed;
-  });
+  })
+    .then(data => {
+      if (data.code === 200) artist.value.followed = !artist.value.followed;
+    })
+    .catch(error => {
+      showToast(`${error?.response?.data?.message || error}`);
+    });
 }
 
 function scrollTo(div, block: ScrollLogicalPosition = 'center') {

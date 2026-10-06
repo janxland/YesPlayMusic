@@ -18,6 +18,7 @@ import {
   useUiStore,
 } from '@/stores';
 import { isCreateMpris, isCreateTray } from '@/utils/platform';
+import { readLocalStorageJSON } from '@/utils/storage';
 import { ipcBridge } from '@/platform/bridge';
 import { isDesktop } from '@/platform/env';
 import shuffle from 'lodash/shuffle';
@@ -55,6 +56,7 @@ const excludeSaveKeys = [
   '_personalFMLoading',
   '_personalFMNextLoading',
   '_progress',
+  '_fadeSeq',
 ];
 
 // 红心状态查询的记忆化。isCurrentTrackLiked 挂在镜像 getter 上，会被
@@ -96,6 +98,7 @@ export default class {
   declare _current: any;
   declare _currentTrack: any;
   declare _enabled: any;
+  declare _fadeSeq: any;
   declare _howler: any;
   declare _isPersonalFM: any;
   declare _lastTimePersist: any;
@@ -157,6 +160,7 @@ export default class {
     // 换曲状态机。两个字段都要在构造函数里声明，Vue2 才会把它们纳入响应式
     this._loading = false; // 是否在为当前曲目装载音源
     this._loadToken = 0; // 每次换曲自增，用于丢弃过期异步结果
+    this._fadeSeq = 0; // 淡出代次：pause 挂起的 fade 回调据此判定是否已过期
     this._resourceLoadKey = null; // 正在装载的资源，避免重复点击叠加
 
     // howler (https://github.com/goldfire/howler.js)
@@ -407,29 +411,39 @@ export default class {
     runWhenIdle(() => this._scrobble(track, time, completed, sourceID));
   }
   async _scrobble(track, time, completed = false, sourceID?) {
-    console.debug(
-      `[debug][Player.js] scrobble track 👉 ${track.name} by ${track.ar[0].name} 👉 time:${time} completed: ${completed}`
-    );
-    const trackDuration = ~~(track.dt / 1000);
-    time = completed ? trackDuration : ~~time;
-    scrobble({
-      id: track.id,
-      sourceid: sourceID ?? this.playlistSource.id,
-      time,
-    });
-    if (
-      useDataStore().lastfm.key !== undefined &&
-      (time >= trackDuration / 2 || time >= 240)
-    ) {
-      const timestamp = ~~(new Date().getTime() / 1000) - time;
-      trackScrobble({
-        artist: track.ar[0].name,
-        track: track.name,
-        timestamp,
-        album: track.al.name,
-        trackNumber: track.no,
-        duration: trackDuration,
-      });
+    // 换曲/播完都会触发且调用方不 await：外层 try 兜同步裸读，api 调用各自
+    // .catch（try/catch 兜不住未 await 的 promise），失败只能降级不能悬空
+    try {
+      console.debug(
+        `[debug][Player.js] scrobble track 👉 ${track.name} by ${track.ar[0].name} 👉 time:${time} completed: ${completed}`
+      );
+      const trackDuration = ~~(track.dt / 1000);
+      time = completed ? trackDuration : ~~time;
+      scrobble({
+        id: track.id,
+        sourceid: sourceID ?? this.playlistSource.id,
+        time,
+      }).catch(err =>
+        console.debug('[debug][Player.js] scrobble failed:', err)
+      );
+      if (
+        useDataStore().lastfm.key !== undefined &&
+        (time >= trackDuration / 2 || time >= 240)
+      ) {
+        const timestamp = ~~(new Date().getTime() / 1000) - time;
+        trackScrobble({
+          artist: track.ar[0].name,
+          track: track.name,
+          timestamp,
+          album: track.al.name,
+          trackNumber: track.no,
+          duration: trackDuration,
+        }).catch(err =>
+          console.debug('[debug][Player.js] lastfm scrobble failed:', err)
+        );
+      }
+    } catch (err) {
+      console.debug('[debug][Player.js] scrobble failed:', err);
     }
   }
   async _playAudioSource(source, autoplay = true) {
@@ -617,6 +631,14 @@ export default class {
       useUiStore().showToast('获取歌曲信息失败');
       return false;
     }
+    // 第三方音源/旧格式曲目是 artists/album 结构，直接传对象起播时
+    // （_resolveTrack 的对象分支）后续 setTitle/mediaSession/now-playing
+    // 链统一按 ar/al 读，在这里归一一次
+    track = {
+      ...track,
+      ar: track.ar ?? track.artists ?? [],
+      al: track.al ?? track.album ?? {},
+    };
     this._currentTrack = track;
     this._updateMediaSessionMetaData(track);
     return this._replaceCurrentTrackAudio(
@@ -695,7 +717,11 @@ export default class {
       .catch(() => {});
   }
   _loadSelfFromLocalStorage() {
-    let player = JSON.parse(localStorage.getItem('player'));
+    // 解析失败返回 null 走默认值，损坏的 key 已被 storage 收口函数摘除自愈
+    const player = readLocalStorageJSON<Record<string, unknown> | null>(
+      'player',
+      null
+    );
     if (!player) return;
     for (const [key, value] of Object.entries(player)) {
       this[key] = value;
@@ -769,7 +795,14 @@ export default class {
       return ipcBridge.send('metadata', metadata);
     }
 
-    let lyricContent = await getLyric(track.id);
+    let lyricContent: any;
+    try {
+      lyricContent = await getLyric(track.id);
+    } catch (err) {
+      // 歌词拉取失败不能让 metadata 发送链悬空成 unhandled rejection
+      console.warn('[Player] getLyric for mpris failed:', err);
+      return ipcBridge.send('metadata', metadata);
+    }
 
     if (!lyricContent.lrc || !lyricContent.lrc.lyric) {
       return ipcBridge.send('metadata', metadata);
@@ -863,7 +896,9 @@ export default class {
   }
 
   appendTrack(trackID) {
-    this.list.append(trackID);
+    // Array 无 append（Vue2 原始笔误，一调即 TypeError）；整体重赋值以走 Proxy 同步链路
+    this._list = [...this._list, trackID];
+    if (this.shuffle) this._shuffledList = [...this._shuffledList, trackID];
   }
   playNextTrack() {
     // TODO: 切换歌曲时增加加载中的状态
@@ -948,9 +983,15 @@ export default class {
   }
 
   pause() {
-    this._howler?.fade(this.volume, 0, PLAY_PAUSE_FADE_DURATION);
-
-    this._howler?.once('fade', () => {
+    const howler = this._howler;
+    if (!howler) return;
+    const seq = ++this._fadeSeq;
+    howler.fade(this.volume, 0, PLAY_PAUSE_FADE_DURATION);
+    howler.once('fade', () => {
+      // 代次守卫：淡出被 play/再次 pause 打断时旧回调直接丢弃
+      //（howler 对被中断的 fade 会经 _stopFade 即时发 'fade'，无守卫会把
+      // 旧回调提前触发；且 howler 实例已换新时旧回调绝不能碰新实例）
+      if (seq !== this._fadeSeq || this._howler !== howler) return;
       this._howler?.pause();
       this._setPlaying(false);
       setTitle(null);
@@ -958,11 +999,20 @@ export default class {
     });
   }
   play() {
-    if (this._howler?.playing()) return;
-
-    this._howler?.play();
-
-    this._howler?.once('play', () => {
+    const howler = this._howler;
+    if (!howler) return;
+    // 作废挂起的淡出暂停：淡出进行中点播放/媒体键，否则播放意图被
+    // once('fade') 回调吞掉。此刻 playing() 仍为 true，下方 once('play')
+    // 永不触发，必须在此直接从当前实际音量拉回目标值（常态下 from===to
+    // 是无感 no-op，不能省略——fade 刚启动的 25ms 内 volume() 仍等于
+    // 目标值，靠比较会漏掉恢复）
+    this._fadeSeq++;
+    if (howler.playing()) {
+      howler.fade(howler.volume(), this.volume, PLAY_PAUSE_FADE_DURATION);
+      return;
+    }
+    howler.play();
+    howler.once('play', () => {
       this._howler?.fade(0, this.volume, PLAY_PAUSE_FADE_DURATION);
       this.nowMp3Url = this._howler._src;
       // 播放时确保开启player.
@@ -974,13 +1024,16 @@ export default class {
       }
       this._playDiscordPresence(this._currentTrack, this.seek());
       if (useDataStore().lastfm.key !== undefined) {
+        // 与 _scrobble 同口径：lastfm 会话过期/断网时不能悬成每次起播一条 unhandled rejection
         trackUpdateNowPlaying({
           artist: this.currentTrack.ar[0].name,
           track: this.currentTrack.name,
           album: this.currentTrack.al.name,
           trackNumber: this.currentTrack.no,
           duration: ~~(this.currentTrack.dt / 1000),
-        });
+        }).catch(err =>
+          console.debug('[debug][Player.js] lastfm now playing failed:', err)
+        );
       }
     });
   }
@@ -1116,7 +1169,10 @@ export default class {
     return this._replaceCurrentTrack(trackOrID);
   }
   playTrackOnListByID(id, listName = 'default') {
-    if (listName === 'default') {
+    // 双击「插队播放」曲目：曲目不在 _list，findIndex 会把 _current 置 -1 带偏后续顺序；正确语义是出队后起播
+    if (this._playNextList.includes(id)) {
+      this._playNextList = this._playNextList.filter(t => t !== id);
+    } else if (listName === 'default') {
       this._current = this._list.findIndex(t => t === id);
     }
     this._replaceCurrentTrack(id);
@@ -1137,7 +1193,15 @@ export default class {
             err?.message || err
           );
         });
-    });
+    })
+      // 外层 loadPlaylistSource 失败同样不能悬空（与 _playResource 口径一致）
+      .catch(err => {
+        console.warn(
+          '[Player] intelligence list load failed:',
+          err?.message || err
+        );
+        useUiStore().showToast('播放列表加载失败');
+      });
   }
   addTrackToPlayNext(trackID, playNow = false) {
     // push() 是就地变更，绕过 Proxy set 陷阱 → next 页 UI 不更新、不落盘，

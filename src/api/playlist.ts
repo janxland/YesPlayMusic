@@ -29,8 +29,10 @@ export function getPlaylistDetail(
   server: any = undefined
 ) {
   let params: Record<string, any> = { id };
-  // 仅在主动要求 noCache 且确实需要绕过的场景才打时间戳。
-  // 之前所有调用方都默认传 true，导致服务端 apicache + 浏览器缓存双双失效。  if (noCache && server) params.timestamp = bust();
+  // noCache 即击穿缓存（改 timestamp 换 key）：当前传 true 的调用点都是有意的
+  // fresh 请求（收藏后回读歌单 / liked 详情刷新 / 专项歌单回填），server 只是
+  // 音源选择，与是否击穿无关
+  if (noCache) params.timestamp = bust();
   return request({
     url: '/playlist/detail',
     method: 'get',

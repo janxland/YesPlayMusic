@@ -1,6 +1,6 @@
 <template>
   <div class="desktop-lyrics-window" :class="{ locked }">
-    <div class="toolbar" :class="{ visible: hovering || btnHot }">
+    <div ref="toolbarRef" class="toolbar" :class="{ visible: toolbarVisible }">
       <template v-if="!locked">
         <button title="上一首" @click="sendControl('prev')">
           <svg-icon icon-class="previous" />
@@ -43,7 +43,7 @@
         <svg-icon icon-class="x" />
       </button>
     </div>
-    <div class="lyrics-stage">
+    <div class="lyrics-stage" @pointerdown="onStagePointerDown">
       <transition name="soft">
         <div v-if="showRoller" class="viewport">
           <div class="roller" :style="rollerStyle">
@@ -74,17 +74,18 @@ import { getLyric } from '@/api/track';
 import { lyricParser } from '@/utils/lyrics';
 import { ref, computed, nextTick, onMounted, onBeforeUnmount } from 'vue';
 
-const HIT_MARGIN = 16; // 解锁按钮热区外扩像素（含在上报的 rect 里）
 const LINE_H = 48; // 滚动列每行固定高度（px），viewport 高 3 行
 
 const lockBtnRef = ref<any>(null);
+const toolbarRef = ref<any>(null);
 // 默认锁定（鼠标穿透）：桌面歌词的存在意义就是悬浮展示，不该挡住底下的操作；
 // 显式存过 '0' 才默认解锁。工具栏显隐由主进程光标轮询驱动（拖拽区会吞 DOM 鼠标事件）
 const locked = ref(localStorage.getItem('desktopLyricsLocked') !== '0');
 
-const hovering = ref<any>(false);
-
-const btnHot = ref<any>(false);
+// 工具栏显隐：完全由主进程裁决（visible 锁定态=命中热区、解锁态=光标在窗内）。
+// 不能用 inside||hot 在渲染层自己拼：锁定态光标在窗内时窗口处于穿透，
+// 工具栏若此时显示就是"看得见但永远点不到"的假按钮
+const toolbarVisible = ref(false);
 
 const trackId = ref<any>(0);
 
@@ -204,19 +205,30 @@ function slideTo(index) {
 }
 
 function reportHitArea() {
-  const el = lockBtnRef.value;
+  // 上报整个工具条的包围盒（锁定态唯一可交互区域），不是单个按钮
+  const el = toolbarRef.value;
   if (!el || !hasIpc()) return;
   const r = el.getBoundingClientRect();
+  const M = 16; // 热区外扩：穿透窗恢复鼠标事件有轮询延迟，热区越大越容易瞄准
   ipcBridge.send('desktopLyrics:hitArea', {
-    x: Math.max(0, r.left - HIT_MARGIN),
-    y: Math.max(0, r.top - HIT_MARGIN),
-    w: r.width + HIT_MARGIN * 2,
-    h: r.height + HIT_MARGIN * 2,
+    x: Math.max(0, r.left - M),
+    y: Math.max(0, r.top - M),
+    w: r.width + M * 2,
+    h: r.height + M * 2,
   });
 }
 
 function sendControl(cmd) {
-  ipcBridge.send('desktopLyrics:control', cmd);
+  // 走 invoke 拿 ack：旧主进程（无 handle 注册）invoke 会解析为 null，
+  // 此时降级回 send 兜底
+  ipcBridge
+    .invoke('desktopLyrics:control', cmd)
+    .then(ok => {
+      if (ok === null || ok === undefined) {
+        ipcBridge.send('desktopLyrics:control', cmd);
+      }
+    })
+    .catch(() => ipcBridge.send('desktopLyrics:control', cmd));
 }
 
 function toggleLock() {
@@ -233,14 +245,53 @@ function closeWindow() {
   window.close();
 }
 
+// ---- 手动窗口拖动（点击 vs 拖拽判定）----
+// 语义（用户明确要求）：单击 ≠ 拖拽，按住且移动才算拖拽。
+// pointerdown 只记录起点，不通知主进程；pointermove 位移超过阈值才升级为
+// 拖拽（dragStart，主进程开始跟随光标）；pointerup 若从未升级 = 纯点击，
+// 什么都不做。setPointerCapture 保证拖出窗口也能收到 pointerup
+const DRAG_THRESHOLD = 5; // px，位移超过才算拖拽（滤掉手抖）
+let press = null; // { x, y, id, dragging } | null
+let stageEl = null; // pointermove/up 绑在 window 上，卸载时统一摘除
+
+function onStagePointerDown(e) {
+  if (locked.value) return; // 锁定态穿透，本就收不到事件；防御性排除
+  if (e.button !== 0) return; // 只响应左键
+  press = { x: e.screenX, y: e.screenY, id: e.pointerId, dragging: false };
+  stageEl = e.currentTarget;
+  stageEl?.setPointerCapture?.(e.pointerId);
+  window.addEventListener('pointermove', onStagePointerMove);
+  window.addEventListener('pointerup', onStagePointerUp);
+  window.addEventListener('pointercancel', onStagePointerUp);
+}
+
+function onStagePointerMove(e) {
+  if (!press || e.pointerId !== press.id) return;
+  if (!press.dragging) {
+    const dist = Math.hypot(e.screenX - press.x, e.screenY - press.y);
+    if (dist < DRAG_THRESHOLD) return; // 位移不够 = 还在点击判定范围内
+    press.dragging = true;
+    ipcBridge.send('desktopLyrics:dragStart');
+  }
+}
+
+function onStagePointerUp(e) {
+  if (!press || e.pointerId !== press.id) return;
+  const wasDragging = press.dragging;
+  press = null;
+  window.removeEventListener('pointermove', onStagePointerMove);
+  window.removeEventListener('pointerup', onStagePointerUp);
+  window.removeEventListener('pointercancel', onStagePointerUp);
+  if (wasDragging) ipcBridge.send('desktopLyrics:dragEnd');
+}
+
 onMounted(function mounted() {
   document.documentElement.classList.add('desktop-lyrics-view');
   ipcBridge.on('desktopLyrics:state', handleState);
-  // 主进程热区轮询的回执：inside=光标在窗口内（解锁态工具栏显隐），
-  // hot=光标在解锁按钮热区（锁定态工具栏显隐 + 鼠标已回收）
+  // 主进程热区轮询的回执：visible=工具栏是否该显示（显隐与鼠标事件回收
+  // 由主进程同一处裁决，保证"看得见就一定点得到"）
   ipcBridge.on('desktopLyrics:hover', (event, state) => {
-    hovering.value = !!state?.inside;
-    btnHot.value = !!state?.hot;
+    toolbarVisible.value = !!state?.visible;
   });
   // rAF 逐帧检测切句（延迟 ≤16ms）；窗口被遮挡时 rAF 会停摆，留个低频定时器兜底
   const loop = () => {
@@ -258,6 +309,12 @@ onBeforeUnmount(function beforeUnmount() {
   cancelAnimationFrame(_rafId);
   clearInterval(_tickTimer);
   window.removeEventListener('resize', reportHitArea);
+  // 拖拽中途卸载兜底：通知主进程停止跟随，别让窗口粘在光标上
+  if (press?.dragging) ipcBridge.send('desktopLyrics:dragEnd');
+  press = null;
+  window.removeEventListener('pointermove', onStagePointerMove);
+  window.removeEventListener('pointerup', onStagePointerUp);
+  window.removeEventListener('pointercancel', onStagePointerUp);
   if (hasIpc()) {
     ipcBridge.removeListener('desktopLyrics:state', handleState);
     ipcBridge.removeAllListeners('desktopLyrics:hover');
@@ -278,18 +335,15 @@ html.desktop-lyrics-view #app {
 .desktop-lyrics-window {
   position: fixed;
   inset: 0;
-  -webkit-app-region: drag; // 解锁状态：整窗可拖动定位
+  // 注意：根节点不要显式写 -webkit-app-region: no-drag——祖先的显式
+  // no-drag 会屏蔽 .lyrics-stage 子区域的 drag（Chromium 区域计算坑）。
+  // 默认值就是 no-drag，缺省即安全
   -webkit-user-select: none;
   user-select: none;
   display: flex;
   flex-direction: column;
   justify-content: center;
   overflow: hidden;
-
-  // 锁定后整窗禁拖：穿透期间拖动无意义，解锁按钮是唯一交互点
-  &.locked {
-    -webkit-app-region: no-drag;
-  }
 }
 
 .toolbar {
@@ -310,6 +364,9 @@ html.desktop-lyrics-view #app {
   }
 
   button {
+    // 按钮级 no-drag（Electron 文档标准写法）：不依赖父容器 no-drag 对
+    // 子元素的穿透行为，排除解锁态整窗 drag 区吞掉按钮点击的变量
+    -webkit-app-region: no-drag;
     width: 26px;
     height: 26px;
     border: none;
@@ -341,6 +398,9 @@ html.desktop-lyrics-view #app {
   position: relative;
   height: 144px; // 3 × 48px 行高
   color: #fff;
+  // 注意：这里绝不能挂 -webkit-app-region: drag——CSS 拖拽区由 Chromium 在
+  // 事件派发前截获 mousedown，区域内/与其重叠的 click 全部蒸发（两轮实测
+  // 反复复发的根因）。拖动改为纯手动判定，见 script 里 onStagePointerDown
 }
 
 .viewport,

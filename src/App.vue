@@ -75,6 +75,8 @@ import {
   initDesktopLyricsSync,
   isDesktopLyricsView,
 } from '@/utils/desktopLyrics';
+import { loadOptional } from '@/utils/pageLoad';
+import { applyFont } from '@/utils/fontLoader';
 import { isDesktop } from '@/platform/env';
 import { useRoute, useRouter } from 'vue-router';
 import {
@@ -188,40 +190,17 @@ function handleKeydown(e) {
   }
 }
 
-function loadFont(fontFamily) {
-  fontFamily = uiStore.fonts.find(font => font.name === fontFamily);
-  const fontUrl = fontFamily?.href;
-  if (!fontUrl) return;
-
-  // 使用 media="print" 技巧避免阻塞渲染，加载完成后切换为 all
-  const fontLink = document.createElement('link');
-  fontLink.setAttribute('rel', 'stylesheet');
-  fontLink.setAttribute('href', fontUrl);
-  fontLink.setAttribute('media', 'print');
-  fontLink.onload = () => {
-    fontLink.media = 'all';
-  };
-  fontLink.onerror = () => {
-    // 死链自愈：字体 CSS 不可达时把该条目从字体列表移除（ui store deep watch 自动落盘），避免每次启动重复请求失效链接；flexiSite 恢复下发后会自动补回
-    uiStore.fonts = uiStore.fonts.filter(f => f?.name !== fontFamily?.name);
-  };
-  document.head.appendChild(fontLink);
-  document.documentElement.style.setProperty(
-    '--globalFont',
-    fontFamily?.import
-  );
-}
-
 function fetchData() {
   if (!isLooseLoggedIn()) return;
-  likedStore.fetchLikedSongs();
-  likedStore.fetchLikedSongsWithDetails();
-  likedStore.fetchLikedPlaylist();
+  // 启动链 fire-and-forget：失败静默但不留 unhandled rejection
+  loadOptional(likedStore.fetchLikedSongs());
+  loadOptional(likedStore.fetchLikedSongsWithDetails());
+  loadOptional(likedStore.fetchLikedPlaylist());
   if (isAccountLoggedIn.value) {
-    likedStore.fetchLikedAlbums();
-    likedStore.fetchLikedArtists();
-    likedStore.fetchLikedMVs();
-    likedStore.fetchCloudDisk();
+    loadOptional(likedStore.fetchLikedAlbums());
+    loadOptional(likedStore.fetchLikedArtists());
+    loadOptional(likedStore.fetchLikedMVs());
+    loadOptional(likedStore.fetchCloudDisk());
   }
 }
 
@@ -240,7 +219,7 @@ if (cachedFonts) {
   try {
     const fonts = JSON.parse(cachedFonts);
     if (Array.isArray(fonts) && fonts.length) {
-      loadFont(localStorage.getItem('fontFamilyName') || fonts[2]?.name);
+      applyFont(localStorage.getItem('fontFamilyName') || fonts[2]?.name);
     }
   } catch (_) {
     /* ignore */
@@ -248,13 +227,14 @@ if (cachedFonts) {
 }
 flexiSite(2)
   .then(res => {
-    if (res && res.code === 200) {
+    // 网关 value 缺 fonts 时把 store 写成 undefined，会让 applyFont 的
+    // onerror 自愈（fonts.filter）与设置页字体列表断掉，先归一
+    const fonts = res?.data?.value?.fonts;
+    if (res && res.code === 200 && Array.isArray(fonts)) {
       // 写入 ui store（deep watch 自动落盘 localStorage）——直写 localStorage 会让 store.fonts 停在首屏快照
-      uiStore.fonts = res.data.value.fonts;
+      uiStore.fonts = fonts;
       if (!cachedFonts) {
-        loadFont(
-          localStorage.getItem('fontFamilyName') || res.data.value.fonts[2].name
-        );
+        applyFont(localStorage.getItem('fontFamilyName') || fonts[2]?.name);
       }
     }
   })

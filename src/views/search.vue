@@ -129,11 +129,6 @@ const haveResult = computed(function haveResult() {
   );
 });
 
-function playTrackInSearchResult(id) {
-  let track = tracks.value.find(t => t.id === id);
-  playerStore.player.appendTrackToPlayerList(track, true);
-}
-
 function search(type = 'all') {
   const typeTable = {
     all: 1018,
@@ -205,7 +200,8 @@ function getTracksDetail() {
   if (trackIDs.length === 0) return;
   loadOptional(
     getTrackDetail(trackIDs.join(',')).then(result => {
-      tracks.value = result.songs;
+      // 异常体缺 songs 时赋 undefined，会让 haveResult 的 .length 在渲染期 TypeError
+      tracks.value = result.songs ?? [];
     })
   );
 }

@@ -140,7 +140,8 @@ function getTracksDetail() {
   if (trackIDs.length === 0) return;
   loadOptional(
     getTrackDetail(trackIDs.join(',')).then(data => {
-      result.value = data.songs;
+      // 异常体缺 songs 时赋 undefined 会让 TrackList 渲染期 .filter 崩掉
+      result.value = data.songs ?? [];
     })
   );
 }

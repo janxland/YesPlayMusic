@@ -8,19 +8,28 @@ export function useCrossPlatformPlay() {
 
   function playThisListByTrack(id, server, toastText?) {
     if (toastText) showToast(toastText);
-    getPlaylistDetail(id, true, server).then(data => {
-      const playlist = data.playlist;
-      // playable == 1 沿用原弱等于判断：部分平台返回字符串 "1"
-      const tracks = playlist.tracks.filter(_track => {
-        return _track.playable == 1;
+    getPlaylistDetail(id, true, server)
+      .then(data => {
+        const playlist = data.playlist;
+        // playable == 1 沿用原弱等于判断：部分平台返回字符串 "1"
+        const tracks = (playlist?.tracks ?? []).filter(_track => {
+          return _track.playable == 1;
+        });
+        if (tracks.length === 0) {
+          showToast('该歌单没有可播放的曲目');
+          return;
+        }
+        playerStore.player.replacePlaylist(
+          tracks,
+          playlist.id || id,
+          'artist',
+          tracks[0]
+        );
+      })
+      .catch(err => {
+        console.warn('[useCrossPlatformPlay]', err?.message || err);
+        showToast('播放列表加载失败');
       });
-      playerStore.player.replacePlaylist(
-        tracks,
-        tracks[0],
-        'artist',
-        tracks[0]
-      );
-    });
   }
 
   return { playThisListByTrack };

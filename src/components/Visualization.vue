@@ -24,7 +24,7 @@
     <transition name="vis-panel">
       <VisualizerPanel
         v-if="panelOpen"
-        :setting="setting"
+        v-model:setting="setting"
         :enabled="enabled"
         :edit-layout="editLayout"
         @close="panelOpen = false"

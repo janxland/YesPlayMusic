@@ -450,10 +450,18 @@ const { visualSet } = storeToRefs(useUiStore());
 const { player } = storeToRefs(usePlayerStore());
 
 const props = defineProps({
-  setting: { type: Object, required: true },
   enabled: { type: Boolean, default: false },
   editLayout: { type: Boolean, default: false },
 });
+// setting 归父组件所有（deep watch + 持久化），走 defineModel 双向绑定，不直改 props
+const setting = defineModel('setting', { type: Object, required: true });
+// 声明后模板 $emit 才有正确的零参类型（defineModel 会让未声明事件收窄报错）
+defineEmits<{
+  'toggle-edit': [];
+  'toggle-enabled': [];
+  close: [];
+  'reset-bounds': [];
+}>();
 
 const activeTab = ref<any>('basic');
 
@@ -476,7 +484,7 @@ const tabs = [
 ];
 
 const isWindowMode = computed(function isWindowMode() {
-  return props.setting.mode === 'window';
+  return setting.value.mode === 'window';
 });
 
 const coverUrl = computed(function coverUrl() {
@@ -487,16 +495,16 @@ const coverUrl = computed(function coverUrl() {
 });
 
 const isAutoActive = computed(function isAutoActive() {
-  const ap = props.setting.autoPalette;
+  const ap = setting.value.autoPalette;
   return (
     !!ap &&
-    sameColor(props.setting.lineColor, ap.line) &&
-    sameColor(props.setting.shadowColor, ap.shadow)
+    sameColor(setting.value.lineColor, ap.line) &&
+    sameColor(setting.value.shadowColor, ap.shadow)
   );
 });
 
 const autoColorItems = computed(function autoColorItems() {
-  const ap = props.setting.autoPalette;
+  const ap = setting.value.autoPalette;
   if (!ap || !Array.isArray(ap.colors) || ap.colors.length < 4) return [];
   const c = ap.colors;
   return [
@@ -519,26 +527,26 @@ const autoColorItems = computed(function autoColorItems() {
 
 function isActive(p) {
   return (
-    sameColor(props.setting.lineColor, p.line) &&
-    sameColor(props.setting.shadowColor, p.shadow)
+    sameColor(setting.value.lineColor, p.line) &&
+    sameColor(setting.value.shadowColor, p.shadow)
   );
 }
 
 function applyPalette(p) {
-  props.setting.lineColor = p.line;
-  props.setting.shadowColor = p.shadow;
+  setting.value.lineColor = p.line;
+  setting.value.shadowColor = p.shadow;
 }
 
 function applyAutoColor(c) {
-  const ap = props.setting.autoPalette;
+  const ap = setting.value.autoPalette;
   // 选回第一主导色时还原提取时的原始配对（阴影取第二主导色深色），其余颜色则派生同色相深色为阴影
   const isDefault = ap && ap.colors && sameColor(c, ap.colors[0]);
   const shadow = isDefault && ap.baseShadow ? ap.baseShadow : shadowFromHex(c);
-  props.setting.lineColor = c;
-  props.setting.shadowColor = shadow;
+  setting.value.lineColor = c;
+  setting.value.shadowColor = shadow;
   // 同步 autoPalette 的当前值，保持「自动识别」高亮与切歌跟随
   if (ap) {
-    props.setting.autoPalette = { ...ap, line: c, shadow };
+    setting.value.autoPalette = { ...ap, line: c, shadow };
   }
 }
 
@@ -556,9 +564,9 @@ async function applyAutoPalette() {
       return;
     }
     // 先记录提取结果（供高亮回显 / 切歌跟随），再应用到主/阴影色；baseShadow 保存原始配对，点选「主色/阴影色」格时可还原
-    props.setting.autoPalette = { ...palette, baseShadow: palette.shadow };
-    props.setting.lineColor = palette.line;
-    props.setting.shadowColor = palette.shadow;
+    setting.value.autoPalette = { ...palette, baseShadow: palette.shadow };
+    setting.value.lineColor = palette.line;
+    setting.value.shadowColor = palette.shadow;
   } finally {
     autoBusy.value = false;
   }

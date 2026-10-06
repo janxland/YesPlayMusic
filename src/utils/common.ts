@@ -167,13 +167,15 @@ export function dailyTask() {
     (lastDate === undefined || lastDate !== dayjs().date())
   ) {
     console.debug('[debug][common.js] execute dailyTask');
-    refreshCookie().then(() => {
-      console.debug('[debug][common.js] 刷新cookie');
-      useDataStore().updateData({
-        key: 'lastRefreshCookieDate',
-        value: dayjs().date(),
-      });
-    });
+    refreshCookie()
+      .then(() => {
+        console.debug('[debug][common.js] 刷新cookie');
+        useDataStore().updateData({
+          key: 'lastRefreshCookieDate',
+          value: dayjs().date(),
+        });
+      })
+      .catch(() => console.debug('[debug][common.js] 刷新cookie失败'));
   }
 }
 

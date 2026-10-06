@@ -57,12 +57,15 @@ import { search as searchApi } from '@/api/others';
 import { userPlaylist } from '@/api/user';
 import { throttle } from '@/utils/common';
 import ButtonTwoTone from '@/components/ButtonTwoTone.vue';
+import { useUiStore } from '@/stores';
 import { resizeImage } from '@/utils/formatters';
 import { ref } from 'vue';
 import { useDataStore } from '@/stores';
 
 import { useRouter } from 'vue-router';
 const dataStore = useDataStore();
+
+const showToast = useUiStore().showToast;
 
 const updateData = dataStore.updateData;
 
@@ -75,8 +78,9 @@ const activeUser = ref<any>({});
 function search() {
   if (!keyword.value) return;
   searchApi({ keywords: keyword.value, limit: 9, type: 1002 }).then(data => {
-    result.value = data.result.userprofiles;
-    activeUser.value = result.value[0];
+    // 搜不到用户时 userprofiles 为 undefined，直接取 [0] 会 TypeError
+    result.value = data.result?.userprofiles ?? [];
+    activeUser.value = result.value[0] ?? {};
   });
 }
 
@@ -86,13 +90,21 @@ function confirm() {
   userPlaylist({
     uid: activeUser.value.userId,
     limit: 1,
-  }).then(data => {
-    updateData({
-      key: 'likedSongPlaylistID',
-      value: data.playlist[0].id,
-    });
-    router.push({ path: '/library' });
-  });
+  })
+    .then(data => {
+      // 接口异常体里没有 playlist 数组，裸读 [0].id 会 TypeError 卡在登录页
+      const likedSongPlaylistID = data.playlist?.[0]?.id;
+      if (likedSongPlaylistID === undefined) {
+        showToast('获取用户歌单失败，请重试');
+        return;
+      }
+      updateData({
+        key: 'likedSongPlaylistID',
+        value: likedSongPlaylistID,
+      });
+      router.push({ path: '/library' });
+    })
+    .catch(() => showToast('获取用户歌单失败，请重试'));
 }
 
 // 原 methods 里 throttle(...) 生成的是单例节流函数，这里保持一致（每次调用都新建节流器会让节流完全失效）

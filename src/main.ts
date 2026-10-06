@@ -49,7 +49,15 @@ app.use(pinia);
 app.use(router);
 // i18n 语言包按需加载：启动只拉当前语言一个包，就绪后再挂载避免首屏渲染出 key 名
 async function bootstrap() {
-  app.use(await setupI18n(useSettingsStore().settings.lang));
+  // 语言包按需 chunk 拉取失败（发版后旧缓存的 index.html 引用已失效 chunk）会让整个应用拒绝挂载成白屏：回退 en 重试一次
+  let i18n: Awaited<ReturnType<typeof setupI18n>>;
+  try {
+    i18n = await setupI18n(useSettingsStore().settings.lang);
+  } catch (err) {
+    console.warn('[bootstrap] locale pack load failed, fallback to en:', err);
+    i18n = await setupI18n('en');
+  }
+  app.use(i18n);
   app.use(
     VueGtag,
     {
@@ -73,4 +81,6 @@ async function bootstrap() {
 
   app.mount('#app-root');
 }
-bootstrap();
+bootstrap().catch(err =>
+  console.error('[bootstrap] fatal, app not mounted:', err)
+);

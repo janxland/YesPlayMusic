@@ -349,20 +349,23 @@ function loadData() {
   ].forEach(name => loadOptional(likedStore[name]()));
 }
 
+// fetchLikedPlaylist 失败/未返回时 playlists 可能为空，裸读 [0].id 会 TypeError
+function getLikedPlaylistID() {
+  const pid = liked.value.playlists[0]?.id;
+  if (pid === undefined) showToast('歌单列表尚未加载完成，请稍后重试');
+  return pid;
+}
+
 function playLikedSongs() {
-  playerStore.player.playPlaylistByID(
-    liked.value.playlists[0].id,
-    'first',
-    true
-  );
+  const pid = getLikedPlaylistID();
+  if (pid === undefined) return;
+  playerStore.player.playPlaylistByID(pid, 'first', true);
 }
 
 function playIntelligenceList() {
-  playerStore.player.playIntelligenceListById(
-    liked.value.playlists[0].id,
-    'first',
-    true
-  );
+  const pid = getLikedPlaylistID();
+  if (pid === undefined) return;
+  playerStore.player.playIntelligenceListById(pid, 'first', true);
 }
 
 function updateCurrentTab(tab) {
@@ -427,16 +430,18 @@ function selectUploadFiles() {
 
 function uploadSongToCloudDisk(e) {
   const files = e.target.files;
-  uploadSong(files[0]).then(result => {
-    if (result.code === 200) {
-      let newCloudDisk = liked.value.cloudDisk;
-      newCloudDisk.unshift(result.privateCloud);
-      likedStore.updateLikedXXX({
-        name: 'cloudDisk',
-        data: newCloudDisk,
-      });
-    }
-  });
+  uploadSong(files[0])
+    .then(result => {
+      if (result.code === 200) {
+        let newCloudDisk = liked.value.cloudDisk;
+        newCloudDisk.unshift(result.privateCloud);
+        likedStore.updateLikedXXX({
+          name: 'cloudDisk',
+          data: newCloudDisk,
+        });
+      }
+    })
+    .catch(() => showToast('上传失败，请检查网络后重试'));
 }
 
 // /library 是 keepAlive 路由：Vue3 首挂会同帧先后触发 onMounted 与 onActivated，加上 created 一次会把 loadData 连跑三遍（每遍 ~8 个 store 请求）；改为首挂载只执行一次，缓存重入时再刷新

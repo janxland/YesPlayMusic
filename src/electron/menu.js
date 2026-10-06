@@ -10,6 +10,8 @@ export function createMenu(win, store) {
   if (shortcuts === undefined) {
     shortcuts = defaultShortcuts;
   }
+  // 主进程 store 里的快捷键表可能落后于代码（旧版缺新增条目），缺条目时该项不带快捷键
+  const sc = id => shortcuts.find(s => s.id === id)?.shortcut;
 
   let menu = null;
   const template = [
@@ -75,42 +77,42 @@ export function createMenu(win, store) {
       submenu: [
         {
           label: 'Play',
-          accelerator: shortcuts.find(s => s.id === 'play').shortcut,
+          accelerator: sc('play'),
           click: () => {
             win.webContents.send('play');
           },
         },
         {
           label: 'Next',
-          accelerator: shortcuts.find(s => s.id === 'next').shortcut,
+          accelerator: sc('next'),
           click: () => {
             win.webContents.send('next');
           },
         },
         {
           label: 'Previous',
-          accelerator: shortcuts.find(s => s.id === 'previous').shortcut,
+          accelerator: sc('previous'),
           click: () => {
             win.webContents.send('previous');
           },
         },
         {
           label: 'Increase Volume',
-          accelerator: shortcuts.find(s => s.id === 'increaseVolume').shortcut,
+          accelerator: sc('increaseVolume'),
           click: () => {
             win.webContents.send('increaseVolume');
           },
         },
         {
           label: 'Decrease Volume',
-          accelerator: shortcuts.find(s => s.id === 'decreaseVolume').shortcut,
+          accelerator: sc('decreaseVolume'),
           click: () => {
             win.webContents.send('decreaseVolume');
           },
         },
         {
           label: 'Like',
-          accelerator: shortcuts.find(s => s.id === 'like').shortcut,
+          accelerator: sc('like'),
           click: () => {
             win.webContents.send('like');
           },

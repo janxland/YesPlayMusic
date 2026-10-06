@@ -27,6 +27,22 @@ let insideWindow = false; // 光标是否在窗口内（解锁态工具栏显隐
 let lockedState = false;
 let pollTimer = null;
 
+// ---- 手动窗口拖动 ----
+// 渲染层判定"按住且位移超阈值"后才发 dragStart（单击不算拖拽，在渲染层
+// pointermove 里过滤）。主进程 16ms 轮询系统光标跟随移动，dragEnd 停止落盘
+let dragTimer = null;
+let dragOffset = null; // 非空 = 拖拽进行中（applyMousePolicy 依赖此状态）
+let dragStartedAt = 0;
+
+const stopWindowDrag = save => {
+  if (dragTimer) {
+    clearInterval(dragTimer);
+    dragTimer = null;
+  }
+  dragOffset = null;
+  if (save) debounceSaveBounds();
+};
+
 function stopHoverPoll() {
   if (pollTimer) {
     clearInterval(pollTimer);
@@ -57,7 +73,22 @@ function pushHoverState(win) {
   win.webContents.send('desktopLyrics:hover', {
     inside: insideWindow,
     hot: hoverHot,
+    // 显隐与可点击解耦：鼠标在窗口矩形内就显示工具栏（含锁定态的解锁按钮，
+    // 与窗口焦点无关）；可点击仍由 applyMousePolicy 单独裁决——锁定态只有
+    // 光标压到工具栏热区上才恢复鼠标事件，按钮必然点得到，其余区域继续穿透
+    visible: insideWindow,
   });
+}
+
+function applyMousePolicy(win) {
+  // 拖拽跟随期间绝不回收鼠标事件：一旦被设回穿透，渲染层立刻收不到
+  // pointerup，dragEnd 永远不来，窗口会"粘"在光标上（上一轮拖动卡死根因）
+  if (dragOffset) return;
+  // 锁定态：只有工具条区域可交互（hot），歌词其余部分永远穿透——
+  // 否则透明窗会挡住底下窗口（含主窗右上角）的点击；
+  // 解锁态：整窗可交互（拖拽/按钮都需要）
+  const interactive = lockedState ? hoverHot : insideWindow;
+  win.setIgnoreMouseEvents(!interactive);
 }
 
 function startHoverPoll() {
@@ -69,17 +100,16 @@ function startHoverPoll() {
       return;
     }
     const inside = isCursorInsideWindow(win);
-    const hot = lockedState && isCursorInHitArea(win);
+    const hot = isCursorInHitArea(win);
     if (inside !== insideWindow || hot !== hoverHot) {
       insideWindow = inside;
       hoverHot = hot;
-      // 语义（用户预期）：光标悬停在歌词窗上任意位置 → 工具栏显示 + 窗口可交互；
-      // 光标离开窗口 → 恢复鼠标穿透。锁定/解锁只影响默认拖拽与否，
-      // 不再要求光标贴到小按钮上才能唤出工具栏
-      win.setIgnoreMouseEvents(!(inside || hot));
+      applyMousePolicy(win);
       pushHoverState(win);
     }
-  }, 80);
+    // 30ms：锁定态下这是"光标进热区 → 恢复鼠标事件"的切换延迟，
+    // 间隔越大，用户快速划入立刻点击的首击越容易穿到窗口底下
+  }, 30);
 }
 
 function notifyMainWindow() {
@@ -108,18 +138,30 @@ function getLyricsUrl() {
 
 function createLyricsWindow() {
   const bounds = store.get('desktopLyricsWindow') || {};
+  // 离屏自愈：上次退出时存的坐标可能落在已拔掉的外接屏/改过分辨率后
+  // 的不可见区域，直接恢复会得到一个"永远找不到"的歌词窗。
+  // bounds.x/y 缺省时 NaN 参与比较恒 false，自然走系统默认居中
+  const onScreen = screen
+    .getAllDisplays()
+    .some(
+      d =>
+        bounds.x + 60 > d.bounds.x &&
+        bounds.x + 60 < d.bounds.x + d.bounds.width &&
+        bounds.y + 30 > d.bounds.y &&
+        bounds.y + 30 < d.bounds.y + d.bounds.height
+    );
   const win = new BrowserWindow({
     width: bounds.width || 960,
     height: bounds.height || 160,
-    x: bounds.x,
-    y: bounds.y,
+    x: onScreen ? bounds.x : undefined,
+    y: onScreen ? bounds.y : undefined,
     minWidth: 320,
     minHeight: 80,
     frame: false,
     transparent: true,
     alwaysOnTop: true,
     hasShadow: false,
-    resizable: true,
+    resizable: false, // 歌词窗不允许拉伸变形（用户要求），只支持位置拖动
     skipTaskbar: true,
     show: false,
     title: 'YesPlayMusic 桌面歌词',
@@ -137,9 +179,14 @@ function createLyricsWindow() {
   win.setAlwaysOnTop(true, 'screen-saver');
   win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
 
-  win.loadURL(getLyricsUrl());
+  // express(27232) 未就绪/已挂时 loadURL 会 reject，不接住即主进程 unhandled rejection
+  win.loadURL(getLyricsUrl()).catch(err => {
+    log(`load lyrics page failed: ${err.message}`);
+  });
   win.once('ready-to-show', () => {
-    if (!win.isDestroyed()) win.show();
+    // showInactive 而非 show：歌词窗绝不抢焦点——macOS 上抢焦点会把用户
+    // 从当前 Space（尤其全屏主窗）切走，表现为"开歌词后主窗口消失"
+    if (!win.isDestroyed()) win.showInactive();
   });
 
   win.on('moved', debounceSaveBounds);
@@ -149,8 +196,10 @@ function createLyricsWindow() {
   win.on('closed', () => {
     log('desktop lyrics window closed');
     stopHoverPoll();
+    stopWindowDrag(false);
     hitArea = null;
     hoverHot = false;
+    insideWindow = false;
     if (lyricWindow === win) {
       lyricWindow = null;
       notifyMainWindow();
@@ -203,10 +252,17 @@ export function initDesktopLyrics(window, electronStore) {
   ipcMain.on('desktopLyrics:setLock', (event, locked) => {
     if (!lyricWindow || lyricWindow.isDestroyed()) return;
     if (event.sender !== lyricWindow.webContents) return;
+    log(`setLock: ${!!locked} (was ${lockedState})`);
     lockedState = !!locked;
-    hoverHot = false;
-    insideWindow = false;
+    stopWindowDrag(false); // 拖拽中锁定 → 立即结束跟随
+    // 按光标真实位置重算，而不是无脑清 false：解锁通常发生在光标压着
+    // 工具栏的时候，若此时把 insideWindow 清 false，锁定策略会让窗口
+    // 立刻恢复穿透（setIgnoreMouseEvents(true)），用户紧接着的点击全部
+    // 掉到窗口底下——"解锁后右上角点不了"的根因
+    insideWindow = isCursorInsideWindow(lyricWindow);
+    hoverHot = lockedState && isCursorInHitArea(lyricWindow);
     startHoverPoll();
+    applyMousePolicy(lyricWindow);
     pushHoverState(lyricWindow);
   });
   ipcMain.on('desktopLyrics:hitArea', (event, area) => {
@@ -215,11 +271,68 @@ export function initDesktopLyrics(window, electronStore) {
     hitArea = area && area.w > 0 && area.h > 0 ? area : null;
   });
 
-  // 歌词窗工具栏播控指令 → 主窗口执行（歌词窗没有音频实例，必须回主窗操作）
-  ipcMain.on('desktopLyrics:control', (event, cmd) => {
-    if (!mainWin || mainWin.isDestroyed()) return;
+  // ---- 手动窗口拖动（渲染层已做"单击 vs 按住拖拽"判定）----
+  ipcMain.on('desktopLyrics:dragStart', event => {
     if (!lyricWindow || lyricWindow.isDestroyed()) return;
     if (event.sender !== lyricWindow.webContents) return;
+    if (lockedState) return; // 锁定态不允许拖动
+    const pt = screen.getCursorScreenPoint();
+    const [x, y] = lyricWindow.getPosition();
+    dragOffset = { dx: pt.x - x, dy: pt.y - y };
+    dragStartedAt = Date.now();
+    log('drag start');
+    dragTimer = setInterval(() => {
+      // 保险丝：渲染层 pointerup 丢失（崩溃/遮挡）时 60s 后自动停
+      if (!dragOffset || Date.now() - dragStartedAt > 60000) {
+        log('drag fuse/stop');
+        stopWindowDrag(true);
+        return;
+      }
+      if (!lyricWindow || lyricWindow.isDestroyed()) {
+        stopWindowDrag(false);
+        return;
+      }
+      const cur = screen.getCursorScreenPoint();
+      lyricWindow.setPosition(cur.x - dragOffset.dx, cur.y - dragOffset.dy);
+    }, 16);
+  });
+  ipcMain.on('desktopLyrics:dragEnd', event => {
+    if (
+      lyricWindow &&
+      !lyricWindow.isDestroyed() &&
+      event.sender !== lyricWindow.webContents
+    ) {
+      return;
+    }
+    log('drag end');
+    stopWindowDrag(true);
+  });
+
+  // 歌词窗工具栏播控指令 → 主窗口执行（歌词窗没有音频实例，必须回主窗操作）。
+  // 双通道并存：新渲染层走 invoke（带 ack，可在歌词窗侧看到送达结果），
+  // 旧渲染层走 send（兼容未重构建的歌词窗产物）。两条路互不触发，不会重复投递。
+  // 每个守卫都留痕：指令蒸发时终端日志直接指出断在哪一跳
+  const forwardControl = (event, cmd, via) => {
+    if (!mainWin || mainWin.isDestroyed()) {
+      log(`control:${cmd}(${via}) dropped: mainWin unavailable`);
+      return false;
+    }
+    if (!lyricWindow || lyricWindow.isDestroyed()) {
+      log(`control:${cmd}(${via}) dropped: lyricWindow unavailable`);
+      return false;
+    }
+    if (event.sender !== lyricWindow.webContents) {
+      log(`control:${cmd}(${via}) dropped: sender is not lyric window`);
+      return false;
+    }
     mainWin.webContents.send('desktopLyrics:control', cmd);
+    log(`control:${cmd}(${via}) -> main window`);
+    return true;
+  };
+  ipcMain.on('desktopLyrics:control', (event, cmd) => {
+    forwardControl(event, cmd, 'send');
+  });
+  ipcMain.handle('desktopLyrics:control', (event, cmd) => {
+    return forwardControl(event, cmd, 'invoke');
   });
 }

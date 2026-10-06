@@ -1,8 +1,9 @@
 import initLocalStorage from '@/stores/initLocalStorage';
+import { readLocalStorageJSON } from '@/utils/storage';
 import pkg from '../../package.json';
 
 const updateSetting = () => {
-  const parsedSettings = JSON.parse(localStorage.getItem('settings'));
+  const parsedSettings = readLocalStorageJSON('settings', null);
   const settings = {
     ...initLocalStorage.settings,
     ...parsedSettings,
@@ -29,7 +30,7 @@ const updateSetting = () => {
 };
 
 const updateData = () => {
-  const parsedData = JSON.parse(localStorage.getItem('data'));
+  const parsedData = readLocalStorageJSON('data', null);
   const data = {
     ...parsedData,
   };
@@ -37,7 +38,7 @@ const updateData = () => {
 };
 
 const updatePlayer = () => {
-  let parsedData = JSON.parse(localStorage.getItem('player'));
+  let parsedData = readLocalStorageJSON('player', null);
   let appVersion = localStorage.getItem('appVersion');
   if (appVersion === `"0.2.5"`) parsedData = {}; // 0.2.6版本重构了player
   const data = {

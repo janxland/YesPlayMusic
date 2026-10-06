@@ -1,4 +1,8 @@
 export default {
+  server: {
+    tencent: 'QQ Music',
+    kugou: 'Kugou Music',
+  },
   common: {
     play: 'OYNAT',
     songs: 'Müzikler',
@@ -12,9 +16,6 @@ export default {
     index: 'Yazarın Blogu',
     github: 'GitHub Repo',
     changelog: 'Değişiklik Günlüğü',
-  },
-  footer: {
-    settings: 'Ayarlar',
   },
   home: {
     recommendPlaylist: 'Önerilen Çalma Listeier',
@@ -50,6 +51,7 @@ export default {
   },
   artist: {
     latestRelease: 'Son Çıkanlar',
+    latestMV: 'Son Müzik Videosu',
     popularSongs: 'Popüler Müzikler',
     showMore: 'Daha Fazlası',
     showLess: 'Daha Azı',
@@ -60,9 +62,12 @@ export default {
     videos: 'Müzik Videoları',
     following: 'Takip Ediyor',
     follow: 'Takip Et',
+    similarArtists: 'Benzer Sanatçılar',
+    artistDesc: 'Sanatçı Açıklaması',
   },
   album: {
     released: 'Yayınlandı',
+    albumDesc: 'Albüm Açıklaması',
   },
   playlist: {
     playlist: 'Çalma Listeleri',
@@ -111,6 +116,7 @@ export default {
     pause: 'Durdur',
     mute: 'Sesi kapat',
     nextUp: 'Sıradaki',
+    reversed: 'Ters Sıra',
     translationLyric: 'şarkı sözleri (çeviri)',
     PronunciationLyric: 'şarkı sözleri (çeviri)',
   },
@@ -184,6 +190,11 @@ export default {
     clearSongsCache: 'Müzik çerezlerini temizle',
     cacheCount: 'Çerezlenen {song} Müzikler ({size})',
     showLyricsTranslation: 'Müzik sözlerinin çevirilerini göster',
+    webFont: {
+      text: 'Web Yazı Tipi',
+    },
+    enableGlobalShortcut: 'Küresel Kısayolu Etkinleştir',
+    showLyricsTime: 'Geçerli saati göster',
     showPlaylistsByAppleMusic: "Apple Music'in Çalma Listelerini Göster",
     enableDiscordRichPresence: 'Discord gösterimini aktifleştir',
     showLibraryDefault: 'Kitaplık Varsayılanını göster',
@@ -201,6 +212,12 @@ export default {
       ask: 'Ask',
       exit: 'Exit',
       minimizeToTray: 'Küçült',
+    },
+    enableOsdlyricsSupport: {
+      title: 'OSDLyrics Desteği',
+      desc1:
+        'Yalnızca Linux ortamında geçerlidir. Etkinleştirildiğinde şarkı sözü dosyaları yerel konuma indirilir ve oynatıcı açılırken OSDLyrics başlatılmaya çalışılır.',
+      desc2: 'Devam etmeden önce OSDLyrics uygulamasını doğru şekilde yüklediğinizden emin olun.',
     },
     unm: {
       enable: 'Enable',
@@ -235,7 +252,7 @@ export default {
     play: 'Oynat',
     addToQueue: 'Sonrakini Oynat',
     saveToMyLikedSongs: 'Beğendiğim Müziklere Kaydet',
-    removeFromMyLikedMüzikler: 'Beğendiğim Müziklerden Kaldır',
+    removeFromMyLikedSongs: 'Beğendiğim Müziklerden Kaldır',
     saveToLibrary: 'Save to library',
     removeFromLibrary: 'Remove from library',
     addToPlaylist: 'Add to playlist',
@@ -250,7 +267,12 @@ export default {
     copyLyricWithTranslation: 'Copy Lyric With Translation',
   },
   toast: {
+    savedToPlaylist: 'Çalma listesine kaydedildi',
+    removedFromPlaylist: 'Çalma listesinden kaldırıldı',
     savedToMyLikedSongs: 'Beğendiğim Müziklere Kaydet',
     removedFromMyLikedSongs: 'Beğendiğim Müziklerden Kaldır',
+    copied: 'Kopyalandı',
+    copyFailed: 'Kopyalanamadı: ',
+    needToLogin: 'Bu işlem için NetEase hesabına giriş yapılması gerekiyor',
   },
 };

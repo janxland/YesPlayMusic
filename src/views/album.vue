@@ -269,7 +269,8 @@ function likeAlbum(toast = false) {
       }
     })
     .catch(error => {
-      showToast(`${error.response.data.message || error}`);
+      // 网络级失败没有 error.response，裸读会二次抛 TypeError
+      showToast(`${error?.response?.data?.message || error}`);
     });
 }
 
@@ -289,7 +290,8 @@ function loadData(id) {
   loadWithProgress(
     getAlbum(id).then(data => {
       album.value = data.album;
-      tracks.value = data.songs;
+      // 异常体缺 songs 时下一行的 .map 直接 TypeError，让成功响应整页进错误态
+      tracks.value = data.songs ?? [];
       formatTitle();
       show.value = true;
 
@@ -297,14 +299,16 @@ function loadData(id) {
       let trackIDs = tracks.value.map(t => t.id);
       loadOptional(
         getTrackDetail(trackIDs.join(',')).then(data => {
-          tracks.value = data.songs;
+          // 异常体缺 songs 时赋 undefined 会让 TrackList 渲染期 .filter 崩掉
+          tracks.value = data.songs ?? [];
         })
       );
 
       // get more album by this artist
       loadOptional(
         getArtistAlbum({ id: album.value.artist.id, limit: 100 }).then(data => {
-          moreAlbums.value = data.hotAlbums;
+          // filteredMoreAlbums computed 的 .filter 渲染期会读它
+          moreAlbums.value = data.hotAlbums ?? [];
         })
       );
     })

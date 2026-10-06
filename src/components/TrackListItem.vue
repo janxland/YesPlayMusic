@@ -264,12 +264,13 @@ const timeText = computed(function timeText() {
 });
 
 function goToAlbum() {
-  if (track.value.al.id === 0) return;
+  // 搜索结果等旧格式曲目无 al 字段，只有 album（album computed 已做三形态归一）
+  if (!album.value?.id) return;
   if (track.value.sourceUrl) {
     window.open(track.value.sourceUrl);
     return;
   }
-  router.push({ path: '/album/' + track.value.al.id });
+  router.push({ path: '/album/' + album.value.id });
 }
 
 function playTrack() {

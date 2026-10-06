@@ -33,7 +33,8 @@ const show = ref<any>(false);
 function loadDailyTracks() {
   loadWithProgress(
     dailyRecommendTracks().then(result => {
-      updateDailyTracks(result.data.dailySongs);
+      // 异常体缺 dailySongs 时赋 undefined 会让 TrackList 渲染期崩掉
+      updateDailyTracks(result.data?.dailySongs ?? []);
       show.value = true;
     })
   );

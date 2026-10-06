@@ -1,4 +1,8 @@
 export default {
+  server: {
+    tencent: 'QQ 音樂',
+    kugou: '酷狗音樂',
+  },
   common: {
     play: '播放',
     songs: '首歌',
@@ -47,6 +51,7 @@ export default {
   },
   artist: {
     latestRelease: '最新發佈',
+    latestMV: '最新 MV',
     popularSongs: '熱門歌曲',
     showMore: '顯示更多',
     showLess: '收起',
@@ -57,9 +62,12 @@ export default {
     videos: '個 MV',
     following: '正在追蹤',
     follow: '追蹤',
+    similarArtists: '相似藝人',
+    artistDesc: '藝術家介紹',
   },
   album: {
     released: '發行於',
+    albumDesc: '專輯介紹',
   },
   playlist: {
     playlist: '歌單',
@@ -186,7 +194,9 @@ export default {
     clearSongsCache: '清除歌曲快取',
     cacheCount: '已快取 {song} 首 ({size})',
     showLyricsTranslation: '顯示歌詞翻譯',
-    minimizeToTray: '最小化到工作列角落',
+    webFont: {
+      text: '使用 Web 字型',
+    },
     showPlaylistsByAppleMusic: '首頁顯示來自 Apple Music 的歌單',
     enableDiscordRichPresence: '啟用 Discord Rich Presence',
     enableGlobalShortcut: '啟用全域快捷鍵',

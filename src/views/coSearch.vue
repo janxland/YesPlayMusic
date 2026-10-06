@@ -67,6 +67,7 @@ import TrackList from '@/components/TrackList.vue';
 import CoverRow from '@/components/CoverRow.vue';
 import ButtonTwoTone from '@/components/ButtonTwoTone.vue';
 import { ref, computed, watch, onWatcherCleanup } from 'vue';
+import { useUiStore } from '@/stores';
 import { useCrossPlatformPlay } from '@/composables/useCrossPlatformPlay';
 
 import { useRoute, useRouter } from 'vue-router';
@@ -159,32 +160,36 @@ function fetchData(isPush = false) {
     hasMore.value = res.hasMore ?? true;
     switch (type.value) {
       case 'musicVideos':
-        if (isPush) result.value.push(...res.mvs);
-        else result.value = res.mvs;
+        if (isPush) result.value.push(...(res.mvs ?? []));
+        else result.value = res.mvs ?? [];
         if (res.mvCount <= result.value.length) {
           hasMore.value = false;
         }
         break;
       case 'artists':
-        if (isPush) result.value.push(...res.artists);
-        else result.value = res.artists;
+        if (isPush) result.value.push(...(res.artists ?? []));
+        else result.value = res.artists ?? [];
         break;
       case 'albums':
-        if (isPush) result.value.push(...res.albums);
-        else result.value = res.albums;
+        if (isPush) result.value.push(...(res.albums ?? []));
+        else result.value = res.albums ?? [];
         if (res.albumCount <= result.value.length) {
           hasMore.value = false;
         }
         break;
       case 'tracks':
-        if (isPush) result.value.push(...res.songs);
-        else result.value = res.songs;
+        if (isPush) result.value.push(...(res.songs ?? []));
+        // 首屏赋值：异常体缺 songs 时 undefined 会直达 TrackList 渲染
+        else result.value = res.songs ?? [];
         break;
       case 'playlists':
-        if (isPush) result.value.push(...res.playlists);
-        else result.value = res.playlists;
+        if (isPush) result.value.push(...(res.playlists ?? []));
+        else result.value = res.playlists ?? [];
         break;
     }
+  }).catch(err => {
+    console.warn('[coSearch]', err?.message || err);
+    useUiStore().showToast('搜索失败，请检查网络后重试');
   });
 }
 

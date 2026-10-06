@@ -111,13 +111,16 @@ function getData(id) {
         return Promise.all(requests);
       })
       .then(results => {
-        videoSources.value = results.map(result => {
-          return {
-            src: result.data.url.replace(/^http:/, 'https:'),
-            type: 'video/mp4',
-            size: result.data.r,
-          };
-        });
+        // 无版权/已下线的 MV 接口返回 url: null，不过滤会在 replace 上抛 TypeError，让已加载好的详情页整页报错
+        videoSources.value = results
+          .filter(result => result.data?.url)
+          .map(result => {
+            return {
+              src: result.data.url.replace(/^http:/, 'https:'),
+              type: 'video/mp4',
+              size: result.data.r,
+            };
+          });
       })
   );
   loadOptional(
@@ -135,9 +138,11 @@ function likeMV() {
   likeAMV({
     mvid: mv.value.data.id,
     t: mv.value.subed ? 0 : 1,
-  }).then(data => {
-    if (data.code === 200) mv.value.subed = !mv.value.subed;
-  });
+  })
+    .then(data => {
+      if (data.code === 200) mv.value.subed = !mv.value.subed;
+    })
+    .catch(() => showToast('操作失败，请检查网络后重试'));
 }
 
 function openMenu(e) {

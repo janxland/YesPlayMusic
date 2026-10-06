@@ -27,7 +27,8 @@ loadWithProgress(
     area: 'EA',
     limit: 100,
   }).then(data => {
-    albums.value = data.albums;
+    // 异常体缺 albums 时赋 undefined，CoverRow 渲染期 .map 会崩
+    albums.value = data.albums ?? [];
   })
 );
 </script>

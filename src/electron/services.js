@@ -9,8 +9,20 @@ export async function startNeteaseMusicApi() {
   console.log(`${clc.redBright('[NetEase API]')} initiating NCM API`);
 
   // Load the NCM API.
-  await server.serveNcmApi({
-    port: 10754,
-    moduleDefs: require('../ncmModDef'),
-  });
+  try {
+    const app = await server.serveNcmApi({
+      port: 10754,
+      moduleDefs: require('../ncmModDef'),
+    });
+    // 端口被占等 listen 失败以 'error' 事件异步抛出，无监听器会以 uncaught exception 打崩主进程
+    if (app && app.server) {
+      app.server.on('error', err => {
+        console.error(
+          `${clc.redBright('[NetEase API]')} server error: ${err.message}`
+        );
+      });
+    }
+  } catch (err) {
+    console.error(`${clc.redBright('[NetEase API]')} failed to start:`, err);
+  }
 }

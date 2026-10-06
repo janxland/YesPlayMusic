@@ -457,18 +457,22 @@ function likePlaylist(toast = false) {
   subscribePlaylist({
     id: playlist.value.id,
     t: playlist.value.subscribed ? 2 : 1,
-  }).then(data => {
-    if (data.code === 200) {
-      playlist.value.subscribed = !playlist.value.subscribed;
-      if (toast === true)
-        showToast(
-          playlist.value.subscribed ? '已保存到音乐库' : '已从音乐库删除'
-        );
-    }
-    getPlaylistDetail(id, true).then(data => {
-      playlist.value = data.playlist;
+  })
+    .then(data => {
+      if (data.code === 200) {
+        playlist.value.subscribed = !playlist.value.subscribed;
+        if (toast === true)
+          showToast(
+            playlist.value.subscribed ? '已保存到音乐库' : '已从音乐库删除'
+          );
+      }
+      return getPlaylistDetail(id, true).then(data => {
+        if (data.playlist) playlist.value = data.playlist;
+      });
+    })
+    .catch(() => {
+      showToast('收藏操作失败，请检查网络后重试');
     });
-  });
 }
 
 function loadData(newId, next = undefined) {
@@ -483,10 +487,11 @@ function loadData(newId, next = undefined) {
     getPlaylistDetail(id, noCache, route.query.server || undefined)
       .then(data => {
         playlist.value = data.playlist;
-        tracks.value = data.playlist.tracks;
+        // api 层对缺 tracks 的异常体会把 playlist.tracks 归一成 undefined
+        tracks.value = data.playlist.tracks ?? [];
         if (next !== undefined) next();
         show.value = true;
-        lastLoadedTrackIndex.value = data.playlist.tracks.length - 1;
+        lastLoadedTrackIndex.value = tracks.value.length - 1;
         return data;
       })
       .then(() => {
@@ -501,6 +506,8 @@ function loadData(newId, next = undefined) {
         // 失败也要交出页面壳（返回可点、导航在位），并复位忙态
         show.value = true;
         loadingMore.value = false;
+        // 失败时 next() 不能悬空：vue-router 4 守卫不落定会把导航永远挂在旧页
+        next?.();
       },
     }
   );
@@ -548,14 +555,16 @@ function deletePlaylist() {
   }
   let confirmation = confirm(`确定要删除歌单 ${playlist.value.name}？`);
   if (confirmation === true) {
-    deletePlaylistApi(playlist.value.id).then(data => {
-      if (data.code === 200) {
-        nativeAlert(`已删除歌单 ${playlist.value.name}`);
-        router.go(-1);
-      } else {
-        nativeAlert('发生错误');
-      }
-    });
+    deletePlaylistApi(playlist.value.id)
+      .then(data => {
+        if (data.code === 200) {
+          nativeAlert(`已删除歌单 ${playlist.value.name}`);
+          router.go(-1);
+        } else {
+          nativeAlert('发生错误');
+        }
+      })
+      .catch(() => nativeAlert('删除歌单失败，请检查网络后重试'));
   }
 }
 

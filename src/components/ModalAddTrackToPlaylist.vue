@@ -82,14 +82,16 @@ function addTrackToPlaylist(playlistID) {
     op: 'add',
     pid: playlistID,
     tracks: modals.value.addTrackToPlaylistModal.selectedTrackID,
-  }).then(data => {
-    if (data.body.code === 200) {
-      show.value = false;
-      uiStore.showToast((getI18n() as any).global.t('toast.savedToPlaylist'));
-    } else {
-      uiStore.showToast(data.body.message);
-    }
-  });
+  })
+    .then(data => {
+      if (data.body?.code === 200) {
+        show.value = false;
+        uiStore.showToast((getI18n() as any).global.t('toast.savedToPlaylist'));
+      } else {
+        uiStore.showToast(data.body?.message ?? '添加失败，请重试');
+      }
+    })
+    .catch(() => uiStore.showToast('添加失败，请检查网络后重试'));
 }
 
 function newPlaylist() {

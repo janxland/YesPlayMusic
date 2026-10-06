@@ -3,17 +3,16 @@ import { defineStore } from 'pinia';
 import initLocalStorage from './initLocalStorage';
 import { userAccount } from '@/api/user';
 import { isAccountLoggedIn } from '@/utils/auth';
+import { readLocalStorageJSON } from '@/utils/storage';
 
 // 账号数据域（localStorage key: 'data' 与 'lastfm'，键与结构冻结不变）
 export const useDataStore = defineStore('data', () => {
   const data = ref<Record<string, any>>(
-    JSON.parse(
-      localStorage.getItem('data') || JSON.stringify(initLocalStorage.data)
-    )
+    readLocalStorageJSON('data', initLocalStorage.data)
   );
 
   const lastfm = ref<Record<string, any>>(
-    JSON.parse(localStorage.getItem('lastfm') || '{}')
+    readLocalStorageJSON('lastfm', {})
   );
 
   // 仅 data 深度写回；lastfm 由视图回调手动落盘，保持原行为

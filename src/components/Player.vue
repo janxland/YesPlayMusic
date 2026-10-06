@@ -277,6 +277,7 @@ import ButtonIcon from '@/components/ButtonIcon.vue';
 import VueSlider from 'vue-slider-component';
 import { goToListSource, hasListSource } from '@/utils/playList';
 import { resizeImage } from '@/utils/formatters';
+import { formatTrackTime } from '@/utils/common';
 import {
   isDesktopLyricsSupported,
   isDesktopLyricsOpen,
@@ -401,16 +402,15 @@ function goToNextTracksPage() {
   route.name === 'next' ? router.go(-1) : router.push({ name: 'next' });
 }
 
-function formatTrackTime(value) {
-  if (!value) return '';
-  let min = ~~((value / 60) % 60);
-  let sec = (~~(value % 60)).toString().padStart(2, '0');
-  return `${min}:${sec}`;
-}
-
 function Download() {
   const { name, ar } = currentTrack.value;
-  const newMp3Url = player.value.nowMp3Url.split(':')[1];
+  const src = player.value.nowMp3Url;
+  // nowMp3Url 仅在首次 'play' 事件后回填，未播过时为 undefined
+  if (typeof src !== 'string' || src.length === 0) {
+    uiStore.showToast('请先播放歌曲再下载');
+    return;
+  }
+  const newMp3Url = src.split(':')[1];
   fetch(newMp3Url)
     .then(response => response.blob())
     .then(blob => {
@@ -431,7 +431,8 @@ function goToList() {
 }
 
 function goToAlbum() {
-  if (player.value.currentTrack.al.id === 0) return;
+  // 初始曲目详情未回填时无 al 字段
+  if (!player.value.currentTrack.al?.id) return;
   router.push({ path: '/album/' + player.value.currentTrack.al.id });
 }
 

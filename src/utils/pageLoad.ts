@@ -21,8 +21,9 @@ export function loadWithProgress(
 }
 
 /** 次要请求（补充标记、推荐列表等）：失败静默，但不留未处理 rejection。 */
-export function loadOptional(promise) {
-  return promise.catch(err =>
+export function loadOptional(promise: Promise<unknown> | undefined) {
+  // fetchLikedSongs 等在宽松登录态下返回 undefined，不能直接 .catch
+  return promise?.catch(err =>
     console.warn('[pageLoad][optional]', err?.message || err)
   );
 }

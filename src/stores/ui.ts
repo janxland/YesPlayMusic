@@ -1,6 +1,7 @@
 import { ref, shallowRef, watch } from 'vue';
 import { defineStore } from 'pinia';
 import type { Track } from '@/types/entities';
+import { readLocalStorageJSON } from '@/utils/storage';
 
 /**
  * 界面状态域：歌词页开关、滚动、toast、模态框、每日推荐、字体与可视化设置。
@@ -35,7 +36,7 @@ export const useUiStore = defineStore('ui', () => {
   // 深层 Proxy 包裹；消费方只读展示，不就地改嵌套字段
   const dailyTracks = shallowRef<Track[]>([]);
 
-  const fonts = ref<any[]>(JSON.parse(localStorage.getItem('fonts') || '[]'));
+  const fonts = ref<any[]>(readLocalStorageJSON('fonts', []));
 
   // 字体名单一事实源是 settings.fontFamilyName + localStorage('fontFamilyName')
   // （settings.vue 直写），这里不再放一份永远脱节的镜像状态
@@ -45,7 +46,7 @@ export const useUiStore = defineStore('ui', () => {
     perspective: 1000,
     rotateY: 0,
     lyricsScale: 1,
-    ...JSON.parse(localStorage.getItem('visualSet') || '{}'),
+    ...readLocalStorageJSON('visualSet', {}),
   });
 
   // ---- 持久化 ----

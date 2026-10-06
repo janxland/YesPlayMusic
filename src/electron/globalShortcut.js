@@ -13,46 +13,23 @@ export function registerGlobalShortcut(win, store) {
     shortcuts = defaultShortcuts;
   }
 
-  globalShortcut.register(
-    shortcuts.find(s => s.id === 'play').globalShortcut,
-    () => {
-      win.webContents.send('play');
-    }
-  );
-  globalShortcut.register(
-    shortcuts.find(s => s.id === 'next').globalShortcut,
-    () => {
-      win.webContents.send('next');
-    }
-  );
-  globalShortcut.register(
-    shortcuts.find(s => s.id === 'previous').globalShortcut,
-    () => {
-      win.webContents.send('previous');
-    }
-  );
-  globalShortcut.register(
-    shortcuts.find(s => s.id === 'increaseVolume').globalShortcut,
-    () => {
-      win.webContents.send('increaseVolume');
-    }
-  );
-  globalShortcut.register(
-    shortcuts.find(s => s.id === 'decreaseVolume').globalShortcut,
-    () => {
-      win.webContents.send('decreaseVolume');
-    }
-  );
-  globalShortcut.register(
-    shortcuts.find(s => s.id === 'like').globalShortcut,
-    () => {
-      win.webContents.send('like');
-    }
-  );
-  globalShortcut.register(
-    shortcuts.find(s => s.id === 'minimize').globalShortcut,
-    () => {
+  const handlers = {
+    play: () => win.webContents.send('play'),
+    next: () => win.webContents.send('next'),
+    previous: () => win.webContents.send('previous'),
+    increaseVolume: () => win.webContents.send('increaseVolume'),
+    decreaseVolume: () => win.webContents.send('decreaseVolume'),
+    like: () => win.webContents.send('like'),
+    minimize: () => {
       win.isVisible() ? win.hide() : win.show();
-    }
-  );
+    },
+  };
+
+  for (const [id, run] of Object.entries(handlers)) {
+    // 渲染层 localStorage 的快捷键表可能落后于当前版本（缺条目），
+    // find 失败必须跳过，否则 TypeError 会中断 app.ready 的后续初始化
+    const entry = shortcuts.find(s => s.id === id);
+    if (!entry || !entry.globalShortcut) continue;
+    globalShortcut.register(entry.globalShortcut, run);
+  }
 }

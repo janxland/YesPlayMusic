@@ -1,27 +1,33 @@
 import { ref, watch } from 'vue';
 import { defineStore } from 'pinia';
 import initLocalStorage from './initLocalStorage';
+import { readLocalStorageJSON } from '@/utils/storage';
+import { invalidateSettingsCache } from '@/utils/request';
 import { ipcBridge } from '@/platform/bridge';
 import { isDesktop } from '@/platform/env';
 import { changeAppearance, changeThemeColor } from '@/utils/common';
 import cloneDeep from 'lodash/cloneDeep';
 import shortcuts from '@/utils/shortcuts';
-import { useUiStore } from './ui';
+import { applyFont } from '@/utils/fontLoader';
 
 // 用户设置域（localStorage key: 'settings'，键与结构冻结不变）；
 // 「设置变更即推送主进程」收敛在本 store 的 updateSettings 内。
 export const useSettingsStore = defineStore('settings', () => {
   const settings = ref<Record<string, any>>(
-    JSON.parse(
-      localStorage.getItem('settings') ||
-        JSON.stringify(initLocalStorage.settings)
-    )
+    readLocalStorageJSON('settings', initLocalStorage.settings)
   );
 
-  // 持久化：deep watch 写回
-  watch(settings, s => localStorage.setItem('settings', JSON.stringify(s)), {
-    deep: true,
-  });
+  // 持久化：deep watch 写回（同时失效请求层的 settings 内存缓存）
+  watch(
+    settings,
+    s => {
+      localStorage.setItem('settings', JSON.stringify(s));
+      invalidateSettingsCache();
+    },
+    {
+      deep: true,
+    }
+  );
 
   // 首次运行默认语言
   if ([undefined, null].includes(settings.value.lang)) {
@@ -62,26 +68,7 @@ export const useSettingsStore = defineStore('settings', () => {
   }
   function changefontFamilyName(value: string) {
     settings.value.fontFamilyName = value;
-    const ui = useUiStore();
-    let fontFamily = ui.fonts.find(
-      (font: { name: string }) => font.name === value
-    );
-    const fontUrl = fontFamily?.href;
-    if (!fontUrl) return;
-
-    // 使用 media="print" 技巧避免阻塞渲染，加载完成后切换为 all
-    const fontLink = document.createElement('link');
-    fontLink.setAttribute('rel', 'stylesheet');
-    fontLink.setAttribute('href', fontUrl);
-    fontLink.setAttribute('media', 'print');
-    fontLink.onload = function (this: HTMLLinkElement) {
-      this.media = 'all';
-    };
-    document.head.appendChild(fontLink);
-    document.documentElement.style.setProperty(
-      '--globalFont',
-      fontFamily?.import
-    );
+    applyFont(value);
   }
   function changeMusicQuality(value: number) {
     settings.value.musicQuality = value;

@@ -121,13 +121,17 @@ export function cacheTrackSource(trackInfo, url, bitRate, from = 'netease') {
     (trackInfo.ar && trackInfo.ar[0]?.name) ||
     (trackInfo.artists && trackInfo.artists[0]?.name) ||
     'Unknown';
-  let cover = trackInfo.al.picUrl;
-  if (cover.slice(0, 5) !== 'https') {
+  // 云盘等非标准结构的曲目没有 al，预取封面只是可选优化，无 cover 直接跳过
+  let cover = trackInfo.al?.picUrl;
+  if (cover && cover.slice(0, 5) !== 'https') {
     cover = 'https' + cover.slice(4);
   }
-  axios.get(`${cover}?param=512y512`);
-  axios.get(`${cover}?param=224y224`);
-  axios.get(`${cover}?param=1024y1024`);
+  if (cover) {
+    axios.get(`${cover}?param=512y512`).catch(() => {});
+    axios.get(`${cover}?param=224y224`).catch(() => {});
+    axios.get(`${cover}?param=1024y1024`).catch(() => {});
+  }
+  // 调用点均为 fire-and-forget，音频缓存失败只降级（下次播放走网络），不能悬成 unhandled rejection
   return axios
     .get(url, {
       responseType: 'arraybuffer',
@@ -147,6 +151,9 @@ export function cacheTrackSource(trackInfo, url, bitRate, from = 'netease') {
       tracksCacheBytes += response.data.byteLength;
       deleteExcessCache();
       return { trackID: trackInfo.id, source: response.data, bitRate };
+    })
+    .catch(err => {
+      console.warn(`[debug][db.js] cache track source failed: ${name}`, err);
     });
 }
 
@@ -163,14 +170,17 @@ export function getTrackSource(id) {
 }
 
 export function cacheTrackDetail(track, privileges) {
-  getDb().then(db =>
-    db.trackDetail.put({
-      id: track.id,
-      detail: track,
-      privileges: privileges,
-      updateTime: new Date().getTime(),
-    })
-  );
+  getDb()
+    .then(db =>
+      db.trackDetail.put({
+        id: track.id,
+        detail: track,
+        privileges: privileges,
+        updateTime: new Date().getTime(),
+      })
+    )
+    // fire-and-forget 写缓存，失败只降级（下次请求走网络），不能悬成 unhandled rejection
+    .catch(err => console.warn('[debug][db.js] cache track detail failed:', err));
 }
 
 export function getTrackDetailFromCache(ids) {
@@ -197,13 +207,15 @@ export function getTrackDetailFromCache(ids) {
 }
 
 export function cacheLyric(id, lyrics) {
-  getDb().then(db =>
-    db.lyric.put({
-      id,
-      lyrics,
-      updateTime: new Date().getTime(),
-    })
-  );
+  getDb()
+    .then(db =>
+      db.lyric.put({
+        id,
+        lyrics,
+        updateTime: new Date().getTime(),
+      })
+    )
+    .catch(err => console.warn('[debug][db.js] cache lyric failed:', err));
 }
 
 export function getLyricFromCache(id) {
@@ -216,13 +228,15 @@ export function getLyricFromCache(id) {
 }
 
 export function cacheAlbum(id, album) {
-  getDb().then(db =>
-    db.album.put({
-      id: Number(id),
-      album,
-      updateTime: new Date().getTime(),
-    })
-  );
+  getDb()
+    .then(db =>
+      db.album.put({
+        id: Number(id),
+        album,
+        updateTime: new Date().getTime(),
+      })
+    )
+    .catch(err => console.warn('[debug][db.js] cache album failed:', err));
 }
 
 export function getAlbumFromCache(id) {
@@ -239,7 +253,9 @@ export function countDBSize() {
   return getDb()
     .then(db =>
       db.trackSources.each(track => {
-        trackSizes.push(track.source.byteLength);
+        // 写入中断可能留下无 source 的记录，裸读会让整次统计 reject（调用方 catch 后误显示 0KB）
+        const size = track?.source?.byteLength;
+        if (size) trackSizes.push(size);
       })
     )
     .then(() => {
@@ -256,9 +272,8 @@ export function countDBSize() {
 }
 
 export function clearDB() {
-  return getDb().then(db => {
-    db.tables.forEach(function (table) {
-      table.clear();
-    });
-  });
+  // clear() 本身异步，不等待的话调用方清完立即统计会读到清空前的旧值
+  return getDb().then(db =>
+    Promise.all(db.tables.map(table => table.clear()))
+  );
 }

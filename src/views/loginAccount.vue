@@ -330,8 +330,9 @@ function handleLoginResponse(data) {
     setCookies(data.cookie);
 
     updateData({ key: 'loginMode', value: 'account' });
-    dataStore.fetchUserProfile().then(() => {
-      likedStore.fetchLikedPlaylist().then(() => {
+    // 链 return 给外层 catch：资料/歌单拉取失败不能让按钮永久转圈
+    return dataStore.fetchUserProfile().then(() => {
+      return likedStore.fetchLikedPlaylist().then(() => {
         router.push({ path: '/library' });
       });
     });

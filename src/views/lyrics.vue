@@ -318,8 +318,7 @@ let _lyricFetchEpoch = 0;
 import { player as playerInstance } from '@/player/singleton';
 import VueSlider from 'vue-slider-component';
 import ContextMenu from '@/components/ContextMenu.vue';
-// 与同名本地包装函数撞名，导入改名（Options API 时代的 this 遮蔽在 setup 里不成立）
-import { formatTrackTime as formatTrackTimeUtil } from '@/utils/common';
+import { formatTrackTime } from '@/utils/common';
 import { getLyric as getLyricApi, getCloudLyric } from '@/api/track';
 import {
   lyricParser,
@@ -607,10 +606,6 @@ function switchLyricType() {
     lyricType.value === 'translation' ? 'romaPronunciation' : 'translation';
 }
 
-function formatTrackTime(value) {
-  return formatTrackTimeUtil(value);
-}
-
 function clickLyricLine(index, startPlay = false) {
   // 歌词文字本身是 user-select: none，页面残留的旧选区不该把跳转一起挡掉 —— 清掉选区，「点哪句跳到哪句」无条件成立
   window.getSelection()?.removeAllRanges();
@@ -745,20 +740,30 @@ function switchShuffle() {
 
 function getCoverColor() {
   if (settings.value.lyricsBackground !== true) return;
-  const cover = currentTrack.value.al?.picUrl + '?param=256y256';
-  getCoverPalette(cover).then(palette => {
-    // 快速切歌时旧取色后到达，不能覆盖新歌的背景
-    if (currentTrack.value.al?.picUrl + '?param=256y256' !== cover) return;
-    const originColor = Color.rgb(palette.DarkMuted._rgb);
-    const color = originColor.darken(0.1).rgb().fade(0.28).string();
-    const color2 = originColor
-      .lighten(0.28)
-      .rotate(-30)
-      .rgb()
-      .fade(0.4)
-      .string();
-    background.value = `linear-gradient(to top left, ${color}, ${color2})`;
-  });
+  const picUrl = currentTrack.value.al?.picUrl;
+  if (!picUrl) return;
+  const cover = `${picUrl.replace('http://', 'https://')}?param=256y256`;
+  getCoverPalette(cover)
+    .then(palette => {
+      // 快速切歌时旧取色后到达，不能覆盖新歌的背景
+      const nowCover = `${currentTrack.value.al?.picUrl?.replace(
+        'http://',
+        'https://'
+      )}?param=256y256`;
+      if (nowCover !== cover) return;
+      // 纯色/小图封面可能提取不出 DarkMuted 色板
+      if (!palette.DarkMuted) return;
+      const originColor = Color.rgb(palette.DarkMuted._rgb);
+      const color = originColor.darken(0.1).rgb().fade(0.28).string();
+      const color2 = originColor
+        .lighten(0.28)
+        .rotate(-30)
+        .rgb()
+        .fade(0.4)
+        .string();
+      background.value = `linear-gradient(to top left, ${color}, ${color2})`;
+    })
+    .catch(() => {});
 }
 
 function hasList() {

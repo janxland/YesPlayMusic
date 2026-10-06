@@ -90,13 +90,19 @@ export async function createDbus(window) {
   const osdInterface = osdService.getInterface('org.osdlyrics.Lyrics');
 
   ipcMain.on('sendLyrics', async (e, { track, lyrics }) => {
-    const metadata = {
-      title: new Variant('s', track.name),
-      artist: new Variant('s', track.ar.map(ar => ar.name).join(', ')),
-    };
+    try {
+      const metadata = {
+        title: new Variant('s', track.name),
+        artist: new Variant('s', track.ar.map(ar => ar.name).join(', ')),
+      };
 
-    await osdInterface.SetLyricContent(metadata, Buffer.from(lyrics));
+      await osdInterface.SetLyricContent(metadata, Buffer.from(lyrics));
 
-    window.webContents.send('saveLyricFinished');
+      window.webContents.send('saveLyricFinished');
+    } catch (err) {
+      // daemon 中途退出时 SetLyricContent 会 reject：async listener 的
+      // rejection 无人接会悬成主进程 unhandled rejection
+      console.error('[mpris] sendLyrics failed:', err?.message || err);
+    }
   });
 }

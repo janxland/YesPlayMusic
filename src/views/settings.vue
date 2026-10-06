@@ -1271,23 +1271,20 @@ function logout() {
 }
 
 function countDBSize() {
-  countDBSizeUtil().then(data => {
-    if (data === undefined) {
-      tracksCache.value = {
-        size: '0KB',
-        length: 0,
-      };
-      return;
-    }
-    tracksCache.value.size = bytesToSize(data.bytes);
-    tracksCache.value.length = data.length;
-  });
+  countDBSizeUtil()
+    .then(data => {
+      tracksCache.value.size = bytesToSize(data.bytes);
+      tracksCache.value.length = data.length;
+    })
+    .catch(() => {
+      tracksCache.value = { size: '0KB', length: 0 };
+    });
 }
 
 function clearCache() {
-  clearDB().then(() => {
-    countDBSize();
-  });
+  clearDB()
+    .then(() => countDBSize())
+    .catch(() => showToast('清除缓存失败，请重试'));
 }
 
 function lastfmConnect() {
@@ -1400,6 +1397,8 @@ countDBSize();
 if (isDesktop()) getAllOutputDevices();
 
 onBeforeUnmount(function beforeUnmount() {
+  // 录制中途离开设置页：不退出录制会让主进程的临时 disable 永不恢复
+  exitRecordShortcut();
   clearInterval(_lastfmChecker);
 });
 

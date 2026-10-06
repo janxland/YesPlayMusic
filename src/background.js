@@ -163,6 +163,10 @@ class Background {
     expressApp.use('/', express.static(__dirname + '/'));
     expressApp.use('/api', expressProxy('http://127.0.0.1:10754'));
     expressApp.use('/player', (req, res) => {
+      if (!this.window) {
+        res.status(503).json({ error: 'main window unavailable' });
+        return;
+      }
       this.window.webContents
         .executeJavaScript('window.yesplaymusic.player')
         .then(result => {
@@ -172,9 +176,19 @@ class Background {
               : result._currentTrack,
             progress: result._progress,
           });
+        })
+        .catch(err => {
+          // 页面刷新/崩溃期间 executeJavaScript 会 reject：不接住就是主进程
+          // unhandled rejection，且请求悬挂无响应
+          log(`player endpoint failed: ${err.message}`);
+          res.status(502).json({ error: 'player unavailable' });
         });
     });
     this.expressApp = expressApp.listen(27232, '127.0.0.1');
+    // 端口被占用等 listen 失败：没有 error 监听会以 uncaught exception 打崩主进程
+    this.expressApp.on('error', err => {
+      log(`express server error: ${err.message}`);
+    });
   }
 
   registerProtocolClient() {
@@ -285,7 +299,7 @@ class Background {
             x > bounds.x &&
             x < bounds.x + bounds.width &&
             y > bounds.y &&
-            y < bounds.y - bounds.height
+            y < bounds.y + bounds.height
           ) {
             // 检测到APP窗口当前处于一个可用的屏幕里，break
             isResetWindiw = false;
@@ -307,18 +321,22 @@ class Background {
 
     if (process.env.VITE_DEV_SERVER_URL) {
       // Load the url of the dev server if in development mode
-      this.window.loadURL(
-        showLibraryDefault
-          ? `${process.env.VITE_DEV_SERVER_URL}/#/library`
-          : process.env.VITE_DEV_SERVER_URL
-      );
+      this.window
+        .loadURL(
+          showLibraryDefault
+            ? `${process.env.VITE_DEV_SERVER_URL}/#/library`
+            : process.env.VITE_DEV_SERVER_URL
+        )
+        .catch(err => log(`load main window failed: ${err.message}`));
       if (!process.env.IS_TEST) this.window.webContents.openDevTools();
     } else {
-      this.window.loadURL(
-        showLibraryDefault
-          ? 'http://localhost:27232/#/library'
-          : 'http://localhost:27232'
-      );
+      this.window
+        .loadURL(
+          showLibraryDefault
+            ? 'http://localhost:27232/#/library'
+            : 'http://localhost:27232'
+        )
+        .catch(err => log(`load main window failed: ${err.message}`));
     }
   }
 
@@ -424,7 +442,9 @@ class Background {
           title: 'YesPlayMusic',
           webPreferences: { webSecurity: false },
         });
-        newWindow.loadURL(url);
+        newWindow
+          .loadURL(url)
+          .catch(err => log(`load lastfm window failed: ${err.message}`));
         return { action: 'deny' };
       }
       shell.openExternal(url);
@@ -446,9 +466,6 @@ class Background {
 
       // create window
       this.createWindow();
-      this.window.once('ready-to-show', () => {
-        this.window.show();
-      });
       this.handleWindowEvents();
 
       // create tray
@@ -481,6 +498,10 @@ class Background {
           .setProxy({ proxyRules })
           .then(result => {
             log('finished setProxy', result);
+          })
+          .catch(err => {
+            // 代理规则非法时 setProxy 会 reject：不能悬成主进程 unhandled rejection
+            log(`setProxy failed: ${err?.message || err}`);
           });
       }
 
@@ -492,7 +513,7 @@ class Background {
 
       // create dock menu for macOS
       const createdDockMenu = createDockMenu(this.window);
-      if (createDockMenu && app.dock) app.dock.setMenu(createdDockMenu);
+      if (createdDockMenu && app.dock) app.dock.setMenu(createdDockMenu);
 
       // create touch bar
       const createdTouchBar = createTouchBar(this.window);
@@ -505,7 +526,14 @@ class Background {
 
       // try to start osdlyrics process on start
       if (this.store.get('settings.enableOsdlyricsSupport')) {
-        await createDbus(this.window);
+        try {
+          await createDbus(this.window);
+        } catch (err) {
+          // daemon 尚未注册到 DBus 时 getProxyObject 必然 reject（首次启用时
+          // 进程还没 spawn）：不能让 ready 链在此中断，否则后面的 createMpris
+          // 永远不执行、osdlyrics 进程也起不来（功能自锁）
+          log(`createDbus failed: ${err?.message || err}`);
+        }
         log('try to start osdlyrics process');
         const osdlyricsProcess = spawn('osdlyrics');
 

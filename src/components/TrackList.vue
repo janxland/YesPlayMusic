@@ -186,14 +186,21 @@ const isRightClickedTrackLiked = computed(function isRightClickedTrackLiked() {
 
 const rightClickedTrackComputed = computed(
   function rightClickedTrackComputed() {
-    return props.type === 'cloudDisk'
-      ? {
-          id: 0,
-          name: '',
-          ar: [{ name: '' }],
-          al: { picUrl: '' },
-        }
-      : rightClickedTrack.value;
+    if (props.type === 'cloudDisk') {
+      return {
+        id: 0,
+        name: '',
+        ar: [{ name: '' }],
+        al: { picUrl: '' },
+      };
+    }
+    // /search 旧格式行是 artists/album 结构，详情回填前右键会裸读 ar/al
+    const t = rightClickedTrack.value;
+    return {
+      ...t,
+      ar: t.ar ?? t.artists ?? [{ name: '' }],
+      al: t.al ?? t.album ?? { picUrl: '' },
+    };
   }
 );
 
@@ -215,10 +222,11 @@ function closeMenu() {
 
 function playThisListByTrack(track) {
   showToast('TrackList 正在进行其他平台播放');
-  let tracks = props.tracks.filter(_track => {
+  const tracks = props.tracks.filter(_track => {
     return _track.playable == 1;
   });
-  player.value.replacePlaylist(tracks, track, 'artist', track);
+  // playlistSourceID 必须是 id：传对象会让 goToListSource 产出 "/artist/[object Object]"
+  player.value.replacePlaylist(tracks, track.id || track.songId, 'artist', track);
 }
 
 function playThisList(trackID) {
@@ -257,12 +265,18 @@ function playThisListDefault(trackID) {
   }
 }
 
+// 云盘行的曲目没有 id，只有 songId；取错会把 undefined 塞进插队队列
 function play() {
-  player.value.addTrackToPlayNext(rightClickedTrack.value.id, true);
+  player.value.addTrackToPlayNext(
+    rightClickedTrack.value.id ?? rightClickedTrack.value.songId,
+    true
+  );
 }
 
 function addToQueue() {
-  player.value.addTrackToPlayNext(rightClickedTrack.value.id);
+  player.value.addTrackToPlayNext(
+    rightClickedTrack.value.id ?? rightClickedTrack.value.songId
+  );
 }
 
 function like() {
@@ -297,14 +311,18 @@ function removeTrackFromPlaylist() {
       op: 'del',
       pid: props.id,
       tracks: trackID,
-    }).then(data => {
-      showToast(
-        data.body.code === 200
-          ? (getI18n() as any).global.t('toast.removedFromPlaylist')
-          : data.body.message
-      );
-      emit('remove-track', trackID);
-    });
+    })
+      .then(data => {
+        showToast(
+          data.body.code === 200
+            ? (getI18n() as any).global.t('toast.removedFromPlaylist')
+            : data.body.message
+        );
+        emit('remove-track', trackID);
+      })
+      .catch(() => {
+        showToast('从歌单删除失败，请检查网络后重试');
+      });
   }
 }
 
@@ -325,16 +343,20 @@ function removeTrackFromQueue() {
 function removeTrackFromCloudDisk() {
   if (confirm(`确定要从云盘删除 ${rightClickedTrack.value.songName}？`)) {
     let trackID = rightClickedTrack.value.songId;
-    cloudDiskTrackDelete(trackID).then(data => {
-      showToast(data.code === 200 ? '已将此歌曲从云盘删除' : data.message);
-      let newCloudDisk = liked.value.cloudDisk.filter(
-        t => t.songId !== trackID
-      );
-      likedStore.updateLikedXXX({
-        name: 'cloudDisk',
-        data: newCloudDisk,
+    cloudDiskTrackDelete(trackID)
+      .then(data => {
+        showToast(data.code === 200 ? '已将此歌曲从云盘删除' : data.message);
+        let newCloudDisk = liked.value.cloudDisk.filter(
+          t => t.songId !== trackID
+        );
+        likedStore.updateLikedXXX({
+          name: 'cloudDisk',
+          data: newCloudDisk,
+        });
+      })
+      .catch(() => {
+        showToast('从云盘删除失败，请检查网络后重试');
       });
-    });
   }
 }
 

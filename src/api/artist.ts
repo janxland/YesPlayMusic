@@ -15,7 +15,8 @@ export function getArtist(id: any) {
     },
   }).then(async data => {
     if (!isAccountLoggedIn()) {
-      const trackIDs = data.hotSongs.map(t => t.id);
+      // 风控/异常体可能不带 hotSongs，裸 .map 会让艺人页整页进错误态
+      const trackIDs = (data.hotSongs ?? []).map(t => t.id);
       const tracks = await getTrackDetail(trackIDs.join(','));
       data.hotSongs = tracks.songs;
       return data;

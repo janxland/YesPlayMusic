@@ -112,7 +112,8 @@ const byAppleMusic = computed(function byAppleMusic() {
 function loadData() {
   loadWithProgress(
     getRecommendPlayList(10, false).then(items => {
-      recommendPlaylist.value.items = items;
+      // 未登录态异常体 result 缺失时 items 为 undefined，CoverRow 渲染期 .map 会崩
+      recommendPlaylist.value.items = items ?? [];
       show.value = true;
     })
   );
@@ -121,7 +122,8 @@ function loadData() {
       area: settings.value.musicLanguage ?? 'ALL',
       limit: 10,
     }).then(data => {
-      newReleasesAlbum.value.items = data.albums;
+      // 异常体缺 albums 时赋 undefined，CoverRow 渲染期 .map 会崩
+      newReleasesAlbum.value.items = data.albums ?? [];
     })
   );
 

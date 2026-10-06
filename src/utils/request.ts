@@ -44,8 +44,13 @@ function readSettings(): Record<string, any> {
   }
   return _cachedSettings!;
 }
+// 同标签页写 localStorage 不触发 storage 事件，落盘方必须主动调这个，
+// 否则代理/RealIP 等请求参数改完不生效直到重启
+export function invalidateSettingsCache() {
+  _cachedSettings = null;
+}
 window.addEventListener('storage', e => {
-  if (e.key === 'settings') _cachedSettings = null;
+  if (e.key === 'settings') invalidateSettingsCache();
 });
 
 /* 请求并发去重 + requestTag 可取消 + 可选内存缓存 */

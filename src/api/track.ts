@@ -1,6 +1,7 @@
 import request from '@/utils/request';
 import { bust } from './internal';
 import { mapTrackPlayableStatus } from '@/utils/common';
+import { readLocalStorageJSON } from '@/utils/storage';
 import {
   cacheTrackDetail,
   getTrackDetailFromCache,
@@ -11,12 +12,8 @@ import {
 /* 音质设置直读 localStorage（与 utils/request.js 的 readSettings 同口径），
    避免 api 层反向依赖 store（R14 / P0.9 收口） */
 function readMusicQuality() {
-  try {
-    const settings = JSON.parse(localStorage.getItem('settings')) || {};
-    return settings.musicQuality ?? '320000';
-  } catch (_) {
-    return '320000';
-  }
+  const settings = readLocalStorageJSON<Record<string, any>>('settings', {});
+  return settings.musicQuality ?? '320000';
 }
 /**
  * 解灰

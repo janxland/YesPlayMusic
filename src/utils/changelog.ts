@@ -4,6 +4,38 @@
 // type 取值：feat 新功能 | fix 修复 | perf 性能 | refactor 重构 | chore 清理 | ci 构建 | docs 文档
 export const changelogEntries = [
   {
+    version: '2026.10.06',
+    date: '2026-10-06',
+    branch: 'master',
+    summary: 'Vue3 重构 M3：全站健壮性收口 + 桌面歌词交互重做',
+    items: [
+      {
+        type: 'fix',
+        text: '全站接口异常体兜底：缺 songs / albums / mvs / tracks 等字段不再让整页崩进错误态，空数据下的播放、插队、每日推荐等点击不再报错',
+      },
+      {
+        type: 'fix',
+        text: 'unhandled rejection 收口：启动数据链、IndexedDB 缓存写入、scrobble 上报、收藏回读等异步链全部接住静默降级，控制台不再刷未处理 rejection',
+      },
+      {
+        type: 'fix',
+        text: '播放器修复：暂停淡出被打断的竞态（快速暂停/播放卡死无声）、插队列表双击起播、第三方音源曲目 ar/al 结构归一、未播放时点下载崩溃',
+      },
+      {
+        type: 'feat',
+        text: '桌面歌词交互重做：按住拖动换位置（单击不再误判为拖拽）、锁定态「看得见就点得到」、离屏窗口自动回屏、打开歌词窗不再抢走当前窗口焦点',
+      },
+      {
+        type: 'fix',
+        text: '桌面端加固：快捷键表缺条目不再中断启动、关闭确认对话框补「取消」按钮、窗口加载 / 代理 / DBus 初始化失败不再打崩主进程、多屏窗口位置判定修复',
+      },
+      {
+        type: 'refactor',
+        text: '基础设施：localStorage 损坏 JSON 自动重置防永久白屏、语言包加载失败回退英文、字体注入收口消重、代理 / RealIP 等设置变更即时生效',
+      },
+    ],
+  },
+  {
     version: '2026.10.05',
     date: '2026-10-05',
     branch: 'master',
