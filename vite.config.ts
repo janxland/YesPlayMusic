@@ -31,7 +31,9 @@ export default defineConfig(({ mode }) => {
               // 注册由 src/registerServiceWorker.ts 自己完成（要走 uiStore 的更新
               // 提示流程），插件再注入 registerSW.js 会造成同一段 sw.js 双重注册
               injectRegister: false,
-              includeAssets: ['favicon.ico', 'robots.txt'],
+              // robots.txt 走 includeAssets 收进预缓存；favicon/manifest 已在
+              // globPatterns 里，两边都写会出现重复预缓存条目
+              includeAssets: ['robots.txt'],
               manifest: {
                 name: 'YesPlayMusic',
                 short_name: 'YesPlayMusic',
@@ -65,6 +67,33 @@ export default defineConfig(({ mode }) => {
                 // 提示后刷新一次仍跑旧 SW（要刷两次才生效）。
                 skipWaiting: true,
                 clientsClaim: true,
+                // 预缓存只装「离线壳」（入口 HTML + 图标），从 93 条瘦身到 3 条：
+                // 全量预缓存意味着每次发版每个 PWA 用户都要重下全部产物，一次
+                // 版本发布就是 用户数 × 93 个 CDN 请求。hash 产物本身不可变，
+                // 交给下面 runtimeCaching 的 CacheFirst —— 命中率相同、安装
+                // 请求趋近于零。index.html 必须留在预缓存里（navigateFallback
+                // 依赖它，见 vite-pwa 文档与 workbox #402 的教训）。
+                globPatterns: ['index.html', 'manifest.webmanifest', 'favicon.ico'],
+                runtimeCaching: [
+                  {
+                    // hash 产物不可变：CacheFirst + 容量上限。第二条分支覆盖
+                    // 国内构建（publicPath 指向 cos.roginx.ink）的跨域资源 ——
+                    // SW 会拦截受控页面发出的跨域请求，运行时缓存同样生效。
+                    urlPattern: ({ url }: { url: URL }) =>
+                      url.pathname.startsWith('/assets/') ||
+                      (url.hostname.endsWith('roginx.ink') &&
+                        url.pathname.includes('/assets/')),
+                    handler: 'CacheFirst',
+                    options: {
+                      cacheName: 'immutable-assets',
+                      expiration: {
+                        maxEntries: 160,
+                        maxAgeSeconds: 60 * 60 * 24 * 90,
+                      },
+                      cacheableResponse: { statuses: [200] },
+                    },
+                  },
+                ],
               },
             }),
           ]),
@@ -127,6 +156,11 @@ export default defineConfig(({ mode }) => {
       chunkSizeWarningLimit: 900,
       rollupOptions: {
         output: {
+          // 低于 16KB 的微 chunk 由 Rollup 自动并进邻近 chunk（实验参数）。
+          // 现状 55 个 js 里有大量 <3KB 的碎片（useKeepAliveLoad 432B 等），
+          // 每个碎片都是一次独立请求：SW 安装、爬虫渲染、首访瀑布都在为它们
+          // 买单。只做 mop-up，不触碰路由级懒加载边界与 manualChunks 分组。
+          experimentalMinChunkSize: 16 * 1024,
           // 只把「主入口静态依赖」归组，改善长缓存（业务迭代不再打穿框架/vendor
           // 的哈希）。其余包一律不归组：howler/dexie 是动态 import 自成懒 chunk，
           // node-vibrant/qrcode 挂在懒加载视图下 —— 若把它们卷进 vendor 反而

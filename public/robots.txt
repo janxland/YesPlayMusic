@@ -1,2 +1,6 @@
+# JS/CSS 必须放行：Googlebot 渲染 SPA 依赖它们，禁了会整站掉出索引。
+# 只挡无索引价值的接口路径（/api/ 的每次抓取也是一次 Vercel 边缘请求）。
 User-agent: *
-Disallow: /
+Disallow: /api/
+
+Sitemap: https://music.roginx.ink/sitemap.xml

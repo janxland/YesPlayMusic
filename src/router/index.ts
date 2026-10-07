@@ -177,4 +177,32 @@ router.beforeEach(to => {
   }
 });
 
+// 路由级 SEO 元信息：Googlebot 渲染 SPA 后读的是运行时 DOM 头，导航时必须
+// 同步 title/description。只映射「无需登录、可索引」的页面；歌单/歌手等动态
+// 页由数据驱动内容，标题交给播放器（Player.ts 写 document.title）即可。
+const ROUTE_SEO: Record<string, { title: string; description?: string }> = {
+  home: {
+    title: 'YesPlayMusic — 高颜值的第三方网易云播放器',
+    description: 'Web 在线版 + 桌面客户端 + PWA，无需安装即可使用',
+  },
+  download: {
+    title: '下载客户端 — YesPlayMusic',
+    description: 'macOS / Windows 客户端下载，自动识别系统推荐安装包',
+  },
+  newAlbum: {
+    title: '新专辑速递 — YesPlayMusic',
+    description: '网易云新专辑上架速递',
+  },
+};
+
+router.afterEach(to => {
+  const seo = to.name ? ROUTE_SEO[to.name as string] : undefined;
+  document.title = seo?.title ?? 'YesPlayMusic';
+  if (seo?.description) {
+    document
+      .querySelector('meta[name="description"]')
+      ?.setAttribute('content', seo.description);
+  }
+});
+
 export default router;

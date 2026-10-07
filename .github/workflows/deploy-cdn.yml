@@ -3,7 +3,11 @@ name: Deploy Web to COS CDN
 # push 到 master 即构建并上传 COS —— 国内入口（music.roginx.ink → 103 nginx → 本桶）的资源源
 # 与 deploy-vercel.yml 构成"一次 push，境内外同时覆盖"：
 #   境外 = Vercel（deploy-vercel.yml，自包含产物，publicPath=/）
-#   境内 = COS/CDN（本 workflow，.env.production 的 cos 绝对 publicPath）
+#   境内 = COS/CDN（本 workflow，构建时注入 cos CDN 绝对 publicPath，
+#          浏览器直连 CDN 加载资源，服务器只出 index.html 与 API）
+# 注意：publicPath 必须在构建时以环境变量注入（进程 env 优先于 .env 文件），
+# .env.production 的 VITE_PUBLIC_PATH=/ 是给 Vercel 自包含产物用的 —— 两者
+# 是同一次 push 下的两份不同构建，不能共用一份产物。
 # 本地验证仍可用 `pnpm deploy:cdn`（OAuth→STS 免密钥），构建的是本地工作区（可含未提交改动），
 # CI 构建的是仓库 master —— 两者互不干扰。
 on:
@@ -30,9 +34,12 @@ jobs:
           cache: 'pnpm'
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-      - name: Build web（保留 .env.production 的 cos 绝对 publicPath）
+      - name: Build web（注入 cos CDN 绝对 publicPath，资源直连 CDN）
         env:
           NODE_OPTIONS: --openssl-legacy-provider
+          # 进程 env 优先于 .env.production 的 /（loadEnv 已验证）：
+          # 国内产物资源指向 CDN 域名，修复 Vite 迁移期间国内 /assets 404 的回归
+          VITE_PUBLIC_PATH: https://cos.roginx.ink/www/music/dist/
         run: pnpm run build
       - name: Upload to COS（deploy-cdn.js 检测到密钥时走直传，跳过 OAuth STS）
         env:
@@ -43,3 +50,8 @@ jobs:
           COS_PREFIX: www/music/dist
           COS_CDN_DOMAIN: https://cos.roginx.ink
         run: node scripts/deploy-cdn.js
+      - name: Purge CDN cache（部署后目录刷新，旧 sw.js/入口立即失效）
+        env:
+          TENCENT_CDN_SECRET_ID: ${{ secrets.TENCENT_CDN_SECRET_ID }}
+          TENCENT_CDN_SECRET_KEY: ${{ secrets.TENCENT_CDN_SECRET_KEY }}
+        run: node scripts/purge-cdn.js

@@ -123,16 +123,22 @@ function getMimeType(filePath) {
 }
 
 /**
- * Service Worker 与其 precache 清单必须每次回源。
+ * 入口/更新链路文件的缓存策略（文件名不带 hash，内容随发版变化）。
  *
- * 它们的文件名不含 hash（service-worker.js / precache-manifest.*.js），
- * 一旦被 `max-age=31536000` 强缓存，用户会在整整一年内拿着旧的路由表，
- * 新版本发布后既看不到更新，也会拿旧 chunk 名去请求已删除的文件（报错）。
+ *  - 不能一年强缓存：sw.js 曾因 REVALIDATE_PATTERN 只匹配 service-worker.js
+ *    而落进桶默认策略，被 CDN 缓存 30 天，PWA 更新传不下去。
+ *  - 也不再用 no-cache：腾讯 CDN 对 no-cache 资源不建边缘缓存（实测每次
+ *    Cache Miss 回源），每次访问都是一次 COS 计费读请求。
+ *  - 折中 public, max-age=300：浏览器与 CDN 各缓存 5 分钟。发版延迟 ≤5 分钟；
+ *    入口回源从「每次访问」降到「每 5 分钟每边缘」。SW 主脚本的更新检查本就
+ *    绕过浏览器 HTTP 缓存（updateViaCache 默认 imports），新鲜度由 CDN 层的
+ *    5 分钟 TTL 吸收 —— 与 web.dev/Workbox 的 SW 更新建议一致。
  */
-const REVALIDATE_PATTERN = /(^|\/)index\.html$|service-worker\.js$|precache-manifest\..*\.js$/;
+const REVALIDATE_PATTERN =
+  /(^|\/)index\.html$|(^|\/)sw\.js$|(^|\/)workbox-.*\.js$|(^|\/)visualizer-worker\.js$|precache-manifest\..*\.js$/;
 function buildCacheControl(relativePath) {
   return REVALIDATE_PATTERN.test(relativePath)
-    ? 'no-cache, no-store, must-revalidate'
+    ? 'public, max-age=300, must-revalidate'
     : 'max-age=31536000, immutable';
 }
 

@@ -10,6 +10,26 @@
       name="description"
       content="YesPlayMusic — 一款颜值优先的第三方网易云音乐播放器"
     />
+    <!-- SPA 的 SEO 底座：社交爬虫（微信/QQ/微博等）不执行 JS，只认 HTML 头。
+         canonical 固定指向主域名，两个分源入口（music.roginx.ink /
+         music.vercel.roginx.ink）不会互相稀释权重 -->
+    <link rel="canonical" href="https://music.roginx.ink/" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="YesPlayMusic" />
+    <meta
+      property="og:title"
+      content="YesPlayMusic — 高颜值的第三方网易云播放器"
+    />
+    <meta
+      property="og:description"
+      content="Web 在线版 + 桌面客户端 + PWA，无需安装即可使用"
+    />
+    <meta property="og:url" content="https://music.roginx.ink/" />
+    <meta
+      property="og:image"
+      content="https://cos.roginx.ink/www/music/dist/img/icons/android-chrome-512x512.png"
+    />
+    <meta name="twitter:card" content="summary" />
     <!-- 封面图是首屏请求数的大头，先把 DNS/TCP/TLS 建好，省下每张图一次往返 -->
     <link rel="dns-prefetch" href="https://music.126.net" />
     <link rel="preconnect" href="https://music.126.net" crossorigin />
