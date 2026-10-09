@@ -52,7 +52,7 @@ interface FlexiSiteResponse {
 export function flexiSite(id: any): Promise<FlexiSiteResponse> {
   return new Promise((resolve, reject) => {
     axios
-      .get('/api/kv/key-value/query', {
+      .get('/api/kv/key-value/public/query', {
         params: { id },
       })
       .then(res => {
