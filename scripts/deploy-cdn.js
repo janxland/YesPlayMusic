@@ -72,7 +72,9 @@ const cosBaseDir = cosConfig.Prefix.endsWith('/')
   ? cosConfig.Prefix
   : `${cosConfig.Prefix}/`;
 
-const distDir = path.join(rootDir, 'dist');
+// DIST_DIR：统一流水线（deploy-web.yml）三份构建变体分目录输出（dist-cos 等），
+// 上传哪个目录由此指定；本地 `pnpm deploy:cdn` 不设此值，行为不变（仍是 dist）
+const distDir = path.join(rootDir, process.env.DIST_DIR || 'dist');
 
 // COS 客户端（默认用 .env 密钥；无密钥时由 initCOSWithSts 用 OAuth STS 临时密钥重建）
 let cos = new COS({
