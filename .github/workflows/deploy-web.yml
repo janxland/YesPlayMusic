@@ -49,7 +49,7 @@ jobs:
           VITE_LASTFM_API_KEY: 09c55292403d961aa517ff7f5e8a3d9c
           VITE_LASTFM_API_SHARED_SECRET: 307c9fda32b3904e53654baff215cb67
           VITE_NETEASE_API_URL: https://ncmapi.roginx.ink/api
-        run: pnpm run build -- --outDir dist-vercel
+        run: pnpm exec vite build --outDir dist-vercel
 
       - name: Build dist-cos（境内 CDN 产物）
         env:
@@ -57,13 +57,13 @@ jobs:
           VITE_LASTFM_API_SHARED_SECRET: 307c9fda32b3904e53654baff215cb67
           # 进程 env 优先于 .env.production 的 /（loadEnv 已验证）
           VITE_PUBLIC_PATH: https://cos.roginx.ink/www/music/dist/
-        run: pnpm run build -- --outDir dist-cos
+        run: pnpm exec vite build --outDir dist-cos
 
       - name: Build dist-local（境内本机直出产物）
         env:
           VITE_LASTFM_API_KEY: 09c55292403d961aa517ff7f5e8a3d9c
           VITE_LASTFM_API_SHARED_SECRET: 307c9fda32b3904e53654baff215cb67
-        run: pnpm run build -- --outDir dist-local
+        run: pnpm exec vite build --outDir dist-local
 
       # ---------- 分发 ×3（!cancelled()：单目标失败不吞其它目标的部署，任一失败 job 判红） ----------
       - name: Deploy → Vercel（境外）
