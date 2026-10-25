@@ -96,20 +96,42 @@ function botPage(): Response {
   });
 }
 
+// ---- 请求画像信标（2026-10-25 加装，诊断 Vercel 流量构成用）----
+// Hobby 套餐的 Observability 不开放 API，面板之外拿不到请求明细；middleware
+// 是唯一能看到每个请求的地方。fire-and-forget 打到 ncmapi 域名（全球直连
+// 成都、不进 Vercel、无回环），nginx 访问日志即计数器：
+//   p=路径(截80) s=状态码 b=是否爬虫UA u=UA桶(1=已知爬虫 2=Windows-Chrome系 3=其他)
+// 不 await、不影响响应延迟；个别信标可能被运行时冻结丢弃（统计级可接受）。
+// matcher 豁免的路径（robots/llms/sw.js 等）不经过本函数，不在计数内。
+// 不再需要时删掉 beacon() 调用即可（或置 BEACON=false）。
+const BEACON = true;
+function beacon(path: string, status: number, bot: boolean, uaBucket: 1 | 2 | 3) {
+  if (!BEACON) return;
+  try {
+    fetch(
+      `https://ncmapi.roginx.ink/__vcnt?p=${encodeURIComponent(path.slice(0, 80))}&s=${status}&b=${bot ? 1 : 0}&u=${uaBucket}`
+    ).catch(() => {});
+  } catch {
+    /* 信标失败不影响响应 */
+  }
+}
+
 export default function middleware(request: Request): Response | undefined {
   const url = new URL(request.url);
+  const ua = request.headers.get('user-agent') ?? '';
+  const isBot = BOT_UA_RE.test(ua);
+  const uaBucket: 1 | 2 | 3 = isBot ? 1 : /windows nt/i.test(ua) ? 2 : 3;
 
   // /api 大门焊死：vercel.json 已不再反代 /api，打到这里的只有爬虫直探与
   // 旧缓存 HTML 的残留调用（前端构建时注入的是 ncmapi 绝对地址）。403 无
   // body，是这条路径上最便宜的响应
   if (url.pathname.startsWith('/api/')) {
+    beacon(url.pathname, 403, isBot, uaBucket);
     return new Response(null, { status: 403 });
   }
 
-  const ua = request.headers.get('user-agent') ?? '';
-  const isBot = BOT_UA_RE.test(ua);
-
   if (isBot && ASSET_RE.test(url.pathname)) {
+    beacon(url.pathname, 403, true, uaBucket);
     return new Response(null, { status: 403 });
   }
 
@@ -117,15 +139,18 @@ export default function middleware(request: Request): Response | undefined {
   if (ASSET_RE.test(url.pathname)) {
     const referer = request.headers.get('referer') ?? '';
     if (!referer || !REFERER_OK.test(referer)) {
+      beacon(url.pathname, 403, isBot, uaBucket);
       return new Response(null, { status: 403 });
     }
   }
 
   if (isBot && request.method === 'GET') {
+    beacon(url.pathname, 200, true, uaBucket);
     return botPage();
   }
 
   // 人类请求：交回原路由（静态文件 / SPA fallback）
+  beacon(url.pathname, 0, isBot, uaBucket);
   return undefined;
 }
 
