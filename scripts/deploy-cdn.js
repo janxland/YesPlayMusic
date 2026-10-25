@@ -139,7 +139,7 @@ function getMimeType(filePath) {
  *    5 分钟 TTL 吸收 —— 与 web.dev/Workbox 的 SW 更新建议一致。
  */
 const REVALIDATE_PATTERN =
-  /(^|\/)index\.html$|(^|\/)sw\.js$|(^|\/)workbox-.*\.js$|(^|\/)visualizer-worker\.js$|precache-manifest\..*\.js$/;
+  /(^|\/)index\.html$|(^|\/)sw\.js$|(^|\/)workbox-.*\.js$|(^|\/)visualizer-worker\.js$|precache-manifest\..*\.js$|(^|\/)(robots\.txt|sitemap\.xml|llms\.txt|manifest\.webmanifest)$/;
 function buildCacheControl(relativePath) {
   return REVALIDATE_PATTERN.test(relativePath)
     ? 'public, max-age=300, must-revalidate'

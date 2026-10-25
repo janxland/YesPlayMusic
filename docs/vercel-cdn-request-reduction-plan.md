@@ -189,6 +189,7 @@ on this fork due to the scale of GitHub Actions usage"），需维护者在 Acti
 | `build.yaml`：桌面端仅 `v*` 标签触发 | Electron 三平台矩阵（15~45 分钟/次）原来就有 tag 门，但 master push 仍会跑冗余的 check job（完整 install+build）；现已删除 check job（构建校验由 deploy-cdn 覆盖——同一份代码每次 push 都构建）并去掉 master push 触发。`workflow_dispatch` 保留为手动兜底 |
 | `deploy-cdn.yml` / `deploy-vercel.yml` 加 `paths-ignore` | 纯文档（docs/**、**.md）与 images/** 改动跳过部署。注意：src/public/middleware.ts/vercel.json/workflow 本身的改动照常触发（防 10-25 式静默跳过） |
 | `scripts/deploy-cdn.js` MIME 表补 `.xml`/`.webmanifest` | sitemap.xml 之前上传为 octet-stream；music 站点 nginx 的 meta 文件直连 COS 代理依赖正确 Content-Type，下次 CI 部署自动修正线上对象 |
+| `scripts/deploy-cdn.js` 缓存策略：meta 文件移出 immutable | robots/sitemap/llms/manifest 文件名不带 hash，之前落到默认 `max-age=31536000, immutable`——叠加宝塔 `proxy.conf` 的**全局 `proxy_cache`**（所有 proxy location 继承），nginx 会把旧 sitemap 缓存一年（实测裸 URL octet-stream、加 query 才拿到新版）。修复：nginx 三个 meta location 加 `proxy_cache off` + `proxy_hide_header Cache-Control`（.bak-20261025-metafiles-v2），COS 侧随下次部署改 `max-age=300` |
 
 ### 10.4 境内入口修复（本次发现的存量问题）
 
