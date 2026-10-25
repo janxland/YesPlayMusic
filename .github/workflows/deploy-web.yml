@@ -141,5 +141,10 @@ jobs:
         if: ${{ !cancelled() }}
         run: |
           set -e
-          npm i --no-save puppeteer-core@23 --loglevel=error
-          node .github/scripts/boot-smoke.mjs
+          # 仓库是 pnpm + 历史 vue2 peer 残留，npm 在仓库内安装会 ERESOLVE——
+          # 在隔离目录装 puppeteer-core，脚本拷过去执行
+          mkdir -p /tmp/boot-smoke && cd /tmp/boot-smoke
+          npm init -y >/dev/null 2>&1
+          npm i puppeteer-core@23 --loglevel=error
+          cp "$GITHUB_WORKSPACE/.github/scripts/boot-smoke.mjs" .
+          node boot-smoke.mjs
