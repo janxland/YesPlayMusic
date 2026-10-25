@@ -122,6 +122,14 @@ export default {
   },
   modal: {
     close: 'Kapat',
+    apiBlockedTitle: 'Müzik servisi geçici olarak kullanılamıyor',
+    apiBlockedDesc:
+      'İstekler reddediliyor: yurtdışı hattının servis kotası tükendi. Bunun hesabınızla ilgisi yok. Devam etmek için Çin içi bir ağa geçip sayfayı yenileyin.',
+    apiBlockedStep1:
+      "Proxy / VPN'i kapatın veya siteyi Çin içi doğrudan bağlantıya geçirin",
+    apiBlockedStep2: 'Yeniden denemek için aşağıdaki düğmeye dokunun',
+    apiBlockedLater: 'Daha sonra',
+    apiBlockedRefresh: 'Yenile ve tekrar dene',
   },
   search: {
     artist: 'Sanatçılar',
@@ -217,7 +225,8 @@ export default {
       title: 'OSDLyrics Desteği',
       desc1:
         'Yalnızca Linux ortamında geçerlidir. Etkinleştirildiğinde şarkı sözü dosyaları yerel konuma indirilir ve oynatıcı açılırken OSDLyrics başlatılmaya çalışılır.',
-      desc2: 'Devam etmeden önce OSDLyrics uygulamasını doğru şekilde yüklediğinizden emin olun.',
+      desc2:
+        'Devam etmeden önce OSDLyrics uygulamasını doğru şekilde yüklediğinizden emin olun.',
     },
     unm: {
       enable: 'Enable',

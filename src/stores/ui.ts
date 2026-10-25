@@ -30,6 +30,13 @@ export const useUiStore = defineStore('ui', () => {
       show: false,
       afterCreateAddTrackID: 0,
     },
+    // API 402（海外线路欠费）引导弹窗。everShown 标记本会话已弹过，
+    // lastDismissedAt 供入口限流重弹（60s 内关闭后不再骚扰）
+    apiBlockedModal: {
+      show: false,
+      everShown: false,
+      lastDismissedAt: 0,
+    },
   });
 
   // 只会整体替换（updateDailyTracks），用 shallowRef 免去对每首曲目对象的

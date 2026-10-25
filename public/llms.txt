@@ -1,0 +1,17 @@
+# YesPlayMusic
+
+> 高颜值的第三方网易云音乐播放器（NetEase Cloud Music 第三方客户端），提供 Web 在线版、PWA 与桌面客户端，无需安装即可使用。
+
+YesPlayMusic 是开源项目，界面优先，支持歌单/搜索/排行榜/每日推荐/歌词/MV，桌面端基于 Electron（macOS / Windows / Linux）。
+
+## Links
+
+- [Web 在线版](https://music.roginx.ink/)
+- [下载桌面客户端](https://music.roginx.ink/download)
+- [GitHub 开源仓库](https://github.com/janxland/YesPlayMusic)
+- [站点地图](https://music.roginx.ink/sitemap.xml)
+
+## Notes
+
+- 本站对爬虫/AI Agent 提供纯文本元数据页（无 JS/CSS/图片）；完整交互需浏览器访问。
+- 音乐数据来自网易云公开接口，本站不存储任何音频文件。

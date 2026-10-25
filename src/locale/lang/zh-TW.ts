@@ -126,6 +126,13 @@ export default {
   },
   modal: {
     close: '關閉',
+    apiBlockedTitle: '音樂服務暫時無法使用',
+    apiBlockedDesc:
+      '網路請求被拒絕：目前使用的海外線路服務額度已用盡，與你的帳號無關。請切換到國內網路後重新整理頁面即可恢復。',
+    apiBlockedStep1: '關閉代理 / VPN / 加速器，讓本站走國內直連網路',
+    apiBlockedStep2: '點擊下方按鈕重新整理重試',
+    apiBlockedLater: '稍後再說',
+    apiBlockedRefresh: '已切換網路，重新整理重試',
   },
   search: {
     artist: '藝人',

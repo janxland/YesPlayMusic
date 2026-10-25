@@ -1,6 +1,7 @@
 {
-  "rewrites": [
-    { "source": "/api/(.*)", "destination": "https://ncmapi.roginx.ink/api/$1" },
-    { "source": "/(.*)", "destination": "/index.html" }
-  ]
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }],
+  "proxy": {
+    "entrypoint": "middleware.ts"
+  }
 }

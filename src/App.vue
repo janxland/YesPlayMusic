@@ -43,6 +43,7 @@
 
       <Toast />
       <SwUpdatePrompt />
+      <ModalApiBlocked />
       <ModalAddTrackToPlaylist v-if="isAccountLoggedIn" />
       <ModalNewPlaylist v-if="isAccountLoggedIn" />
       <transition v-if="enablePlayer" name="slide-up">
@@ -65,6 +66,7 @@ import Navbar from './components/Navbar.vue';
 import Player from './components/Player.vue';
 import Toast from './components/Toast.vue';
 import SwUpdatePrompt from './components/SwUpdatePrompt.vue';
+import ModalApiBlocked from './components/ModalApiBlocked.vue';
 import { wireDesktopIpc } from './electron/ipcRenderer';
 import {
   isAccountLoggedIn as isAccountLoggedInUtil,

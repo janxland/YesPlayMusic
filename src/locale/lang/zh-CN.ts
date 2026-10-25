@@ -126,6 +126,13 @@ export default {
   },
   modal: {
     close: '关闭',
+    apiBlockedTitle: '音乐服务暂时不可用',
+    apiBlockedDesc:
+      '网络请求被拒绝：当前使用的海外线路服务额度已用尽，与你的账号无关。请切换到国内网络后刷新页面即可恢复。',
+    apiBlockedStep1: '关闭代理 / VPN / 加速器，让本站走国内直连网络',
+    apiBlockedStep2: '点击下方按钮刷新重试',
+    apiBlockedLater: '稍后再说',
+    apiBlockedRefresh: '已切换网络，刷新重试',
   },
   search: {
     artist: '艺人',

@@ -122,6 +122,14 @@ export default {
   },
   modal: {
     close: 'Close',
+    apiBlockedTitle: 'Music service is temporarily unavailable',
+    apiBlockedDesc:
+      "Requests are being rejected: the overseas route's service quota is used up. This has nothing to do with your account. Switch to a mainland China network and refresh to continue.",
+    apiBlockedStep1:
+      'Turn off your proxy / VPN, or switch this site to a direct China route',
+    apiBlockedStep2: 'Click the button below to refresh and retry',
+    apiBlockedLater: 'Later',
+    apiBlockedRefresh: 'Refresh & Retry',
   },
   search: {
     artist: 'Artists',

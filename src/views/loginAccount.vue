@@ -156,6 +156,7 @@ import {
 } from '@/utils/auth';
 import { userAccount } from '@/api/user';
 import nativeAlert from '@/utils/nativeAlert';
+import request from '@/utils/request';
 import {
   loginWithPhone,
   loginWithEmail,
@@ -277,10 +278,12 @@ function loginWithCookie() {
 }
 
 function syncCredential(cookie) {
-  fetch('/api/netease/credential', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ cookie }),
+  // 经 request service 走当前 API 基址：境内入口同源 /api，API 解耦的境外
+  // 部署直连 ncmapi。不能写死同源 /api——境外入口的 /api 已被 middleware 焊死
+  request({
+    url: '/netease/credential',
+    method: 'post',
+    data: { cookie },
   }).catch(() => {
     // 同步是机会性的：失败时播放器登录态仍然有效
   });

@@ -7,12 +7,16 @@ import axios from 'axios';
  * 由入口在启动时通过 configureRequest 注入。未注入时静默丢弃，不影响请求本身。
  */
 let _onSessionExpired: (() => void) | null = null;
+let _onApiBlocked: ((status: number) => void) | null = null;
 export function configureRequest({
   onSessionExpired,
+  onApiBlocked,
 }: {
   onSessionExpired?: () => void;
+  onApiBlocked?: (status: number) => void;
 }) {
   if (onSessionExpired) _onSessionExpired = onSessionExpired;
+  if (onApiBlocked) _onApiBlocked = onApiBlocked;
 }
 
 let baseURL = '/api';
@@ -25,6 +29,11 @@ if (isDesktop()) {
 } else {
   baseURL = import.meta.env.VITE_NETEASE_API_URL;
 }
+
+// 供极少数绕过 service 的调用（flexiSite 等）判断当前 API 基址形态：
+// 相对路径（境内入口/桌面端）走同源；http(s) 开头（API 解耦的境外部署）
+// 需要改用带 CORS 的绝对地址，不能打到同源 /api（已被 middleware 403）
+export const apiBase = baseURL;
 
 const service = axios.create({
   baseURL,
@@ -240,6 +249,19 @@ service.interceptors.response.use(
         console.warn('Token has expired. Logout now!');
         if (_onSessionExpired) _onSessionExpired();
         else doLogout();
+      }
+    }
+
+    // 402 = 部署在 Vercel 的海外线路额度耗尽，平台整体拒绝所有请求，与具体
+    // 接口无关。首页一进来就是十几个并发请求，10s 内只通知一次，弹窗还是
+    // toast 由入口注入的 onApiBlocked 决定（同上：api 层不碰 UI）
+    if (response?.status === 402) {
+      const svc = service as any;
+      const now = Date.now();
+      if (!svc._lastApiBlockedAt || now - svc._lastApiBlockedAt > 10_000) {
+        svc._lastApiBlockedAt = now;
+        console.warn('[api] HTTP 402 Payment Required: 海外线路额度已用尽');
+        if (_onApiBlocked) _onApiBlocked(response.status);
       }
     }
 

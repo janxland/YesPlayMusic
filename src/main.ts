@@ -4,7 +4,6 @@ import VueGtag from 'vue-gtag';
 import App from './App.vue';
 import { pinia, useSettingsStore, useUiStore } from './stores';
 import router from './router';
-import { setupI18n } from '@/locale';
 import 'virtual:svg-icons-register';
 import SvgIcon from '@/components/SvgIcon.vue';
 import LazyImage from '@/components/LazyImage.vue';
@@ -17,13 +16,31 @@ import '@/assets/css/nprogress.css';
 import { configureRequest } from '@/utils/request';
 import { doLogout } from '@/utils/auth';
 import { isDesktop } from '@/platform/env';
+import { setupI18n } from '@/locale';
 
-// api 层不许 import store/router，会话过期的动作在此注入；必须早于任何请求发出。
+// api 层不许 import store/router，会话过期与线路故障的动作在此注入；必须早于任何请求发出。
 configureRequest({
   onSessionExpired: () => {
     useUiStore().showToast('登录已过期，请重新登录');
     doLogout();
     router.push({ name: isDesktop() ? 'loginAccount' : 'login' });
+  },
+  // 402：海外线路（Vercel）额度耗尽被平台整体拒绝。首次自动弹引导模态让
+  // 用户切到国内网络；用户关掉后若仍持续 402，限流重弹（60s 一次）——
+  // 不用 toast：页面级「加载失败」toast 会连续覆盖引导文案。拦截器已按
+  // 10s 节流
+  onApiBlocked: () => {
+    const uiStore = useUiStore();
+    const modal = uiStore.modals.apiBlockedModal;
+    if (modal.show) return;
+    if (!modal.everShown || Date.now() - modal.lastDismissedAt > 60_000) {
+      modal.everShown = true;
+      uiStore.updateModal({
+        modalName: 'apiBlockedModal',
+        key: 'show',
+        value: true,
+      });
+    }
   },
 });
 

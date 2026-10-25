@@ -1,5 +1,8 @@
-# JS/CSS 必须放行：Googlebot 渲染 SPA 依赖它们，禁了会整站掉出索引。
-# 只挡无索引价值的接口路径（/api/ 的每次抓取也是一次 Vercel 边缘请求）。
+# 爬虫能收录的只有元数据 HTML：边缘中间件（middleware.ts）把所有爬虫的 HTML
+# 请求改写为 bot.html（纯文字 + 结构化数据），JS/CSS/字体/图片对爬虫一律 403
+# ——爬虫不需要渲染 SPA，元数据页就是给它们的索引面。robots.txt 只是礼貌层，
+# Bytespider 等无视它的由边缘 403 兜底。
+# /api/ 与本入口无关（前端直连 ncmapi.roginx.ink），禁抓 + 边缘 403 双保险。
 User-agent: *
 Disallow: /api/
 
