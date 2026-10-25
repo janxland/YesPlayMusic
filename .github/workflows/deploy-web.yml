@@ -133,3 +133,13 @@ jobs:
             [ "$code" = "200" ] || { echo "FAIL: llms.txt HTTP $code"; exit 1; }
           done
           echo '✅ 边缘冒烟全部通过（bot 元数据页 / /api 403 / llms.txt 200 × 两域名）'
+
+      # 真实浏览器挂载冒烟（2026-10-25 事故教训：当天 bundle 存在 TDZ 循环初始化
+      # 崩溃，HTTP 层冒烟与 curl 全绿但应用永不挂载——必须用真浏览器断言 #app-root
+      # 真的渲染出来。用 runner 预装 Chrome + puppeteer-core，无浏览器下载开销）
+      - name: Verify（真实浏览器挂载冒烟）
+        if: ${{ !cancelled() }}
+        run: |
+          set -e
+          npm i --no-save puppeteer-core@23 --loglevel=error
+          node .github/scripts/boot-smoke.mjs

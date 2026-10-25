@@ -52,15 +52,22 @@ interface FlexiSiteResponse {
 // （境内入口/桌面端）保持同源调用；API 解耦后的境外部署必须走全球直连成都
 // 的域名——注意 music.roginx.ink 境外线路 CNAME 到 Vercel（会被 middleware
 // 403），www.roginx.ink 无分线路、海外直连成都（实测国内外均 200 + CORS 回显）
-const KV_PUBLIC_QUERY_URL = apiBase.startsWith('http')
-  ? 'https://www.roginx.ink/api/kv/key-value/public/query'
-  : '/api/kv/key-value/public/query';
+//
+// ⚠️ 不能在模块顶层读 apiBase（2026-10-25 事故）：本模块与 request.ts 存在
+// 既有的模块环，顶层执行时 request.ts 的 const apiBase 尚未初始化（TDZ
+// ReferenceError），bundle 一加载就崩、应用永不挂载。延迟到首次调用时求值。
+let _kvUrl: string | null = null;
+function kvPublicQueryUrl(): string {
+  return (_kvUrl ??= apiBase.startsWith('http')
+    ? 'https://www.roginx.ink/api/kv/key-value/public/query'
+    : '/api/kv/key-value/public/query');
+}
 
 // 获取全域管理配置 无需理会
 export function flexiSite(id: any): Promise<FlexiSiteResponse> {
   return new Promise((resolve, reject) => {
     axios
-      .get(KV_PUBLIC_QUERY_URL, {
+      .get(kvPublicQueryUrl(), {
         params: { id },
       })
       .then(res => {
