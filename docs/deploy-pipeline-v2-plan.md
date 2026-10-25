@@ -119,7 +119,32 @@ token/服务器 key 各自独立 secret，泄露任一不影响其余）；**服
 用量对照：v1 每次 push = 2 个 job 各自 install+build（~2×1.5min 计费）；v2 = 单 job 一次 install
 + 三次 build + 三部署 + 冒烟（~2min，rsync 仅 +5s）。桌面端打包仍仅 v* 标签触发。
 
-## 10. 状态快照（本次定稿后的世界）
+## 11. 事故记录：上线日全站「页面加载失败」（2026-10-25 04:00~04:50）
+
+**现象**：真实浏览器打开 music.roginx.ink 显示「页面加载失败」看门狗页，刷新无效；curl 与
+CI 边缘冒烟全部绿（验证盲区）。
+
+**根因（三层叠加，主因是第一层）**：
+1. **bundle 启动即崩（P0）**：a0d3153 起 `others.ts` 在模块顶层读 `request.ts` 的 `apiBase`
+   （`KV_PUBLIC_QUERY_URL = apiBase.startsWith(...)`），在既有模块环求值顺序下 apiBase 处于
+   TDZ → `ReferenceError: Cannot access 'Es' before initialization` → 应用永不挂载。typecheck
+   不查 TDZ、curl 不执行 JS，双双漏过。修复：延迟到 `flexiSite()` 首次调用求值（7036c18）。
+2. **Vercel Git 集成接入（03:30，人为在新账号控制台连接）**：其无构建配置的裸仓部署（直出
+   `src=/src/main.ts`）与 CLI 部署竞争生产别名，产生 ERROR/READY 交替与哈希混乱，放大排查
+   噪声。处置：API 断开（`DELETE /v9/projects/:id/link`），流水线维持纯 CLI。
+3. **重载按钮骗不过 SW**：workbox 预缓存匹配忽略 query，旧按钮只加时间戳无法击穿 SW 里的
+   版本错配壳。修复：boot error 触发时注销 SW + 清 CacheStorage 再重载，首次自动执行
+   （sessionStorage 防死循环）（35c96e4）。
+
+**防回归**：deploy-web.yml 新增「真实浏览器挂载冒烟」（runner 预装 Chrome + puppeteer-core，
+隔离目录安装；断言 #app-root 渲染 + 无 pageerror）。两个工程坑留档：仓库内 `npm i` 撞历史
+vue2 peer 依赖（改 /tmp 隔离安装）；无头 Chrome 默认 UA 含 `HeadlessChrome` 会被自家爬虫门
+（middleware/nginx 都匹配 headless）喂 bot.html（冒烟必须覆盖 UA）。
+
+**验证**：境内 CDN 路由与境外 Vercel 路由均在真实浏览器挂载成功（Home/Explore/Library 渲染，
+零 JS 错误）；CI 冒烟连续两轮全绿。用户侧旧缓存/SW 状态由自愈逻辑在下次访问时自动恢复。
+
+## 12. 状态快照（本次定稿后的世界）
 
 - 流水线：`deploy-web.yml`（统一）+ `build.yaml`（Release，仅 v* tag/手动）。仓库再无 cron。
 - GitHub secrets：VERCEL_API_TOKEN/ORC_ID/PROJECT_ID（新账号）、COS_*、TENCENT_CDN_*、YPM_SERVER_SSH_KEY（受限 rsync）。
