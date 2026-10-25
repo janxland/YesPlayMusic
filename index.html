@@ -331,6 +331,39 @@
           settled = true;
           if (shell) shell.remove();
 
+          // 自愈（2026-10-25 事故）：SW 预缓存/运行时缓存可能持有版本错配的
+          // 壳与 chunk（workbox 匹配忽略 query，仅带时间戳重载骗不过它），
+          // 必须注销 SW + 清空 CacheStorage 才能拿到网络上的新壳。
+          // 首次自动执行一次（sessionStorage 防死循环），仍失败才露出 UI。
+          function nukeAndReload() {
+            var nuke = navigator.serviceWorker
+              ? navigator.serviceWorker.getRegistrations().then(function (rs) {
+                  return Promise.all(rs.map(function (r) { return r.unregister(); }));
+                })
+              : Promise.resolve();
+            nuke = nuke.then(function () {
+              if (!window.caches) return;
+              return caches.keys().then(function (ks) {
+                return Promise.all(ks.map(function (k) { return caches.delete(k); }));
+              });
+            });
+            nuke.catch(function () {}).then(function () {
+              var base = location.href.replace(/[?&]_retry=\d+/, '');
+              location.replace(
+                base + (location.search ? '&' : '?') + '_retry=' + Date.now()
+              );
+            });
+          }
+          try {
+            if (!sessionStorage.getItem('__bootSelfHealed')) {
+              sessionStorage.setItem('__bootSelfHealed', '1');
+              nukeAndReload();
+              return;
+            }
+          } catch (_) {
+            /* sessionStorage 不可用则直接显示 UI */
+          }
+
           var box = document.createElement('div');
           box.className = 'app-boot-error';
           var title = document.createElement('h2');
@@ -341,13 +374,7 @@
           var retry = document.createElement('button');
           retry.type = 'button';
           retry.textContent = '重新加载';
-          retry.addEventListener('click', function () {
-            // 带一次性时间戳，让浏览器与 CDN 都回源取最新的 index.html
-            var base = location.href.replace(/[?&]_retry=\d+/, '');
-            location.replace(
-              base + (location.search ? '&' : '?') + '_retry=' + Date.now()
-            );
-          });
+          retry.addEventListener('click', nukeAndReload);
           box.append(title, desc, retry);
           document.body.appendChild(box);
         }
