@@ -105,6 +105,24 @@ token/服务器 key 各自独立 secret，泄露任一不影响其余）；**服
 | 服务器 | `/www/wwwroot/music.roginx.ink/dist/index.html` mtime = 部署时刻；境内裸 URL 冒烟同上 |
 | 通道安全 | deploy key 执行 `ssh root@ip ls` 被拒；rsync 目标越界被拒 |
 
-## 9. 执行记录
+## 9. 执行记录（2026-10-25 当日完成）
 
-（执行后回填）
+| 项 | 结果 |
+|---|---|
+| 1. 服务器通道 | ✅ 专用 ed25519 key + `rrsync -wo` 白名单目录 + sshd `PubkeyAuthentication yes`（备份 `sshd_config.bak-20261025-ypmdeploy`；authorized_keys 原为空，无陈旧钥匙被激活）。安全实测：任意命令被 rrsync 拒绝；越界目标（`/etc/`）被 rrsync **重映射进白名单目录**（不可能逃逸）；GNU rsync 3.2.7（=CI 同款客户端）真实写入成功。注：Mac 自带 openrsync 与新版 Python rrsync 不兼容（协议 29 vs 只认 stock rsync 3.x 语法），本地手动同步需 `brew rsync` 或走 CI |
+| 2. deploy-cdn.js DIST_DIR | ✅ 默认 `dist` 不变，本地 `pnpm deploy:cdn` 零影响 |
+| 3. deploy-web.yml | ✅ 首跑踩坑一处：pnpm 9 会把 `--` 原样透传给脚本，`vite build -- --outDir X` 的 outDir 被当位置参数忽略、三份构建全落默认 dist/——改 `pnpm exec vite build --outDir X` 直调后全绿（run 40160799476，~2 分钟） |
+| 4. 三目标落地 | ✅ Vercel 新 deployment READY；COS 上传+purge；服务器 dist mtime=部署时刻且 `--delete` 清掉历史 `._*` 垃圾与旧 hash 资产（本地路由用户自此与 COS 同步） |
+| 5. CI 冒烟 | ✅ 内置于流水线：bot UA 元数据页 / /api 403 / llms.txt 200 × 两域名，回归在 CI 内自动发现（runner 在境外，境内线路回归仍需手动） |
+| 附带 | 工作区带来的 router base 修复（COS 变体 BASE_URL 为 CDN 绝对址会污染路由 path）随 a737938 上车验证 |
+
+用量对照：v1 每次 push = 2 个 job 各自 install+build（~2×1.5min 计费）；v2 = 单 job 一次 install
++ 三次 build + 三部署 + 冒烟（~2min，rsync 仅 +5s）。桌面端打包仍仅 v* 标签触发。
+
+## 10. 状态快照（本次定稿后的世界）
+
+- 流水线：`deploy-web.yml`（统一）+ `build.yaml`（Release，仅 v* tag/手动）。仓库再无 cron。
+- GitHub secrets：VERCEL_API_TOKEN/ORC_ID/PROJECT_ID（新账号）、COS_*、TENCENT_CDN_*、YPM_SERVER_SSH_KEY（受限 rsync）。
+- 服务器新增物：`/root/.ssh/authorized_keys` 一行 rrsync 受限条目；`sshd_config` 备份同目录。
+- 凭据卫生：腾讯云主账号 SecretKey 曾出现在对话中——建议轮换；旧 Vercel 账号 6 个遗留项目弃置待清理（需站长确认）。
+
