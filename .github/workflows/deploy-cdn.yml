@@ -14,6 +14,13 @@ on:
   push:
     branches:
       - master
+    # 2026-10-25 用量治理：纯文档/图片改动不影响构建产物，跳过部署省 runner 时间
+    # （注意：src/public/构建配置/workflow 本身的改动不受影响，照常触发——
+    #  部署静默跳过正是 10-25 事故的失效模式，此清单只放确定不影响产物的路径）
+    paths-ignore:
+      - 'docs/**'
+      - '**.md'
+      - 'images/**'
   workflow_dispatch:
 
 concurrency:

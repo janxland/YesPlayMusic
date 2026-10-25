@@ -2,10 +2,19 @@ name: Deploy Web to Vercel
 
 # 合并 PR（push 到 master）即构建 Web 版并上传到 Vercel 生产环境
 # 站点：https://music.vercel.roginx.ink（项目 ypm-music-landing，未接 Vercel Git 集成，纯 CLI 上传）
+# 2026-10-25 起 secrets 指向新注册的 Vercel 账号（旧账号 fair-use 超限被封锁且拒新部署，
+# 两域名已迁入新账号，见 docs/vercel-cdn-request-reduction-plan.md §10）
 on:
   push:
     branches:
       - master
+    # 2026-10-25 用量治理：纯文档/图片改动不影响构建产物，跳过部署省 runner 时间
+    # 与新账号的 CDN Request 配额（注意：src/public/middleware.ts/vercel.json/
+    # workflow 本身的改动不受影响，照常触发）
+    paths-ignore:
+      - 'docs/**'
+      - '**.md'
+      - 'images/**'
   workflow_dispatch:
 
 concurrency:

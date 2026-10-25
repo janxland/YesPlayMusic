@@ -116,6 +116,10 @@ const MIME_TYPES = {
   '.otf': 'font/otf',
   '.txt': 'text/plain',
   '.map': 'application/json',
+  // 2026-10-25：sitemap.xml 此前落到 octet-stream 兜底；music 站点 nginx 的
+  // robots/sitemap/llms 直连 COS 代理依赖正确的 Content-Type
+  '.xml': 'application/xml',
+  '.webmanifest': 'application/manifest+json',
 };
 
 function getMimeType(filePath) {

@@ -156,6 +156,59 @@ P0 清单执行结果：
 
 阻塞项 = §P2 的账号恢复决策（support 工单 / 升 Pro / 等重置），属用户决策，不在本次执行范围内。
 
+## 10. 执行记录 II（2026-10-25 晚：换号部署 + Actions 用量治理）
+
+§9 之后同日推进的两件事：Vercel 换新账号、GitHub Actions 省量重设计。
+
+### 10.1 Vercel 换号（决策：不等旧账号周期重置，直接迁移）
+
+| 步骤 | 结果 |
+|---|---|
+| 新账号（janxland-8182 / team_KenAVpEqns8SayBtJw11bNxk）建同名项目 `ypm-music-landing`（prj_IKLROvwAt7mFig9DBAwWNzvqIA5t）并直传 dist | ✅ `ypm-music-landing-seven.vercel.app` 上线，四类请求（bot/资产/api/人类）验证全绿 |
+| 旧账号解绑两域名（项目级 + 团队级清空） | ✅ 旧账号不再接收任何 music 流量（其余 6 个旧项目仍在旧账号，暂停态不服务） |
+| 新账号绑定 `music.vercel.roginx.ink` + `music.roginx.ink` | ✅ `_vercel.roginx.ink` 加 2 条 TXT 验证记录（RecordId 2436584317/2436584318，保留勿删）后 verified |
+| DNSPod | `music.vercel` CNAME 由旧账号专属目标 `678cd0152e945308.vercel-dns-017.com` 改为通用 `cname.vercel-dns.com`（RecordId 2415754616）；**music 两线记录（境内 A / 境外 CNAME→music.vercel）均未动** |
+| 境外全链路验证（经代理，境外解析视角） | ✅ 两个域名：bot UA→内联元数据页、bot 资产→403、/api→403、人类 UA→SPA、llms.txt→200 text/plain |
+| GitHub secrets（VERCEL_ORG_ID/PROJECT_ID/API_TOKEN） | ✅ 已切新账号，CI 自动部署走新号 |
+| §P2 账号恢复 | **作废**——不再依赖旧账号解封；旧账号弃用（域名已清空），若日后要彻底关闭可删 6 个旧项目（需另行确认） |
+
+### 10.2 GitHub Actions fork 用量自动禁用（新发现，重要）
+
+push 后所有 workflow 静默不跑：dispatch 报 422 "Actions has been disabled for this repository"，而
+`/actions/permissions` 仍显示 enabled——**该状态 API 完全不可见**。根因：本仓库是热门上游的 fork，
+GitHub 对 fork 的 Actions 用量有自动禁用机制（Actions 页横幅："Workflows are not currently being run
+on this fork due to the scale of GitHub Actions usage"），需维护者在 Actions 页点绿色按钮恢复。
+**复发风险**：若用量模式再次触发该机制会重新禁用——这是 10.3 省量重设计的直接动因。
+（参考：StartupBros-com/better-ccflare#463，症状逐条一致）
+
+### 10.3 Actions 省量重设计（每次 push 的 runner 时间 3 份 → 2 份）
+
+| 改动 | 说明 |
+|---|---|
+| 删除 `sync.yml`（Upstream Sync） | 老遗留：本仓库已深度分叉（Vue3+TS+Pinia 迁移），上游同步有害无益；此前已被手动禁用且一年只跑过一次 |
+| `build.yaml`：桌面端仅 `v*` 标签触发 | Electron 三平台矩阵（15~45 分钟/次）原来就有 tag 门，但 master push 仍会跑冗余的 check job（完整 install+build）；现已删除 check job（构建校验由 deploy-cdn 覆盖——同一份代码每次 push 都构建）并去掉 master push 触发。`workflow_dispatch` 保留为手动兜底 |
+| `deploy-cdn.yml` / `deploy-vercel.yml` 加 `paths-ignore` | 纯文档（docs/**、**.md）与 images/** 改动跳过部署。注意：src/public/middleware.ts/vercel.json/workflow 本身的改动照常触发（防 10-25 式静默跳过） |
+| `scripts/deploy-cdn.js` MIME 表补 `.xml`/`.webmanifest` | sitemap.xml 之前上传为 octet-stream；music 站点 nginx 的 meta 文件直连 COS 代理依赖正确 Content-Type，下次 CI 部署自动修正线上对象 |
+
+### 10.4 境内入口修复（本次发现的存量问题）
+
+- **本地 dist 陈旧**：`/www/wwwroot/music.roginx.ink/dist`（境内 IP 五五分流中 local 50% 路由的源）
+  停在 10-09 手动 scp 的版本，CI 只更新 COS——已 rsync 同步至 a0d3153 构建（同源 /api 版）。
+  **遗留**：CI 仍无服务器同步通道，下次部署后 local 路由会再次滞后（建议后续给 deploy-cdn.yml
+  加受限 SSH key 的 rsync 步骤，涉及服务器凭据管理，未在本次范围）。
+- **nginx 爬虫门吞 meta 文件**：`location /` 的 `$music_bot` 改写把 /robots.txt、/sitemap.xml
+  也改写成 bot.html（搜索引擎拿不到 robots.txt）。已加三个 exact-match location 直连 COS 源站
+  豁免（robots/sitemap/llms，与 Vercel middleware matcher 豁免清单对齐），备份
+  `html_music.roginx.ink.conf.bak-20261025-metafiles`。验证：bot UA 三文件均 200 正确 Content-Type
+  与新内容，bot 页/资产 403/人类 SPA 不受影响。
+
+### 10.5 验证与回滚口径
+
+- 验证（2026-10-25 实测）：境外 `music.roginx.ink` / `music.vercel.roginx.ink` 与境内
+  `music.roginx.ink`（双路由）全部通过 §6 矩阵。
+- Vercel 回滚：新账号 `vercel rollback` 或 re-deploy 旧 dist；旧账号链路已不可用（域名清空）。
+- DNS 回滚：`music.vercel` CNAME 改回记录值即可（RecordId 2415754616）。
+
 ---
 
 **参考资料**

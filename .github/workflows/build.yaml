@@ -1,9 +1,12 @@
 name: Release
 
+# 2026-10-25 用量治理重设计（防 fork Actions 用量再次触发 GitHub 自动禁用）：
+#   - 桌面端（Electron 三平台矩阵，15~45 分钟/次）只在打 v* 标签时打包
+#   - master push 不再触发本 workflow —— 原 check 任务的「构建能否通过」校验
+#     由 deploy-cdn.yml 覆盖（它每次 push 都构建同一份代码，坏了会直接红）
+#   - workflow_dispatch 保留为手动兜底（显式手动触发，不算自动用量）
 on:
   push:
-    branches:
-      - master
     tags:
       - v*
   workflow_dispatch:
@@ -14,28 +17,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # push 到 master 只跑轻量校验（单 ubuntu，几分钟）；
-  # 三平台打包矩阵只在打 tag 或手动 dispatch 时跑 —— 迭代 push 不再排队 15~45 分钟的打包。
-  check:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
-    runs-on: ubuntu-22.04
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v5
-      - uses: pnpm/action-setup@v5
-      - uses: actions/setup-node@v5
-        with:
-          # Vite 7 要求 Node 20.19+，与 package.json engines（24.x）对齐
-          node-version: 24
-          cache: 'pnpm'
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-      - name: Web build
-        env:
-          VITE_LASTFM_API_KEY: 09c55292403d961aa517ff7f5e8a3d9c
-          VITE_LASTFM_API_SHARED_SECRET: 307c9fda32b3904e53654baff215cb67
-        run: pnpm run build
-
   release:
     if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     runs-on: ${{ matrix.os }}
