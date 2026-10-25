@@ -162,7 +162,9 @@ const routes: RouteRecordRaw[] = [
 const router = createRouter({
   history: isDesktop()
     ? createWebHashHistory()
-    : createWebHistory(import.meta.env.BASE_URL),
+    // base 固定为 '/'：CDN 化构建时 BASE_URL 是绝对资源域，作 router base 会把
+    // 路由 path 污染成 /https://cos.roginx.ink/...（资源前缀由 vite base 注入，与此无关）
+    : createWebHistory('/'),
   routes,
 });
 
