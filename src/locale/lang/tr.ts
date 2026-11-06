@@ -200,6 +200,7 @@ export default {
     showLyricsTranslation: 'Müzik sözlerinin çevirilerini göster',
     webFont: {
       text: 'Web Yazı Tipi',
+      systemDefault: 'Sistem Varsayılanı (web yazı tipi yüklenmez)',
     },
     enableGlobalShortcut: 'Küresel Kısayolu Etkinleştir',
     showLyricsTime: 'Geçerli saati göster',

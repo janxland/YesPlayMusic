@@ -139,6 +139,9 @@
         </div>
         <div class="right">
           <select v-model="fontFamilyName">
+            <option :value="null">
+              {{ $t('settings.webFont.systemDefault') }}
+            </option>
             <option
               v-for="font in fonts"
               :key="font.name"
@@ -956,11 +959,15 @@ const imageLoadEffect = settingComputed('imageLoadEffect', {
 
 const fontFamilyName = computed({
   get() {
-    return settings.value.fontFamilyName ?? '思源黑体中文';
+    return settings.value.fontFamilyName ?? null;
   },
   set(value) {
     if (value === settings.value.fontFamilyName) return;
-    localStorage.setItem('fontFamilyName', value);
+    if (value === null) {
+      localStorage.removeItem('fontFamilyName');
+    } else {
+      localStorage.setItem('fontFamilyName', value);
+    }
     settingsStore.changefontFamilyName(value);
     clearCache();
   },

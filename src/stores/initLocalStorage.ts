@@ -12,7 +12,7 @@ const localStorageDefaults = {
     lang: null,
     musicLanguage: 'all',
     appearance: 'auto',
-    fontFamilyName: '思源黑体中文',
+    fontFamilyName: null,
     themeColor: 'default',
     imageLoadEffect: 'blur',
     musicQuality: 320000,

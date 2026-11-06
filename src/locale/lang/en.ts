@@ -157,6 +157,7 @@ export default {
     },
     webFont: {
       text: 'Web Font',
+      systemDefault: 'System Default (no web fonts)',
     },
     musicQuality: {
       text: 'Music Quality',

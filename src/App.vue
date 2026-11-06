@@ -221,7 +221,7 @@ if (cachedFonts) {
   try {
     const fonts = JSON.parse(cachedFonts);
     if (Array.isArray(fonts) && fonts.length) {
-      applyFont(localStorage.getItem('fontFamilyName') || fonts[2]?.name);
+      applyFont(localStorage.getItem('fontFamilyName'));
     }
   } catch (_) {
     /* ignore */
@@ -236,7 +236,7 @@ flexiSite(2)
       // 写入 ui store（deep watch 自动落盘 localStorage）——直写 localStorage 会让 store.fonts 停在首屏快照
       uiStore.fonts = fonts;
       if (!cachedFonts) {
-        applyFont(localStorage.getItem('fontFamilyName') || fonts[2]?.name);
+        applyFont(localStorage.getItem('fontFamilyName'));
       }
     }
   })

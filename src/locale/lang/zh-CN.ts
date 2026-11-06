@@ -160,6 +160,7 @@ export default {
     },
     webFont: {
       text: '字体选择',
+      systemDefault: '系统默认字体（不加载网络字体）',
     },
     musicQuality: {
       text: '音质选择',

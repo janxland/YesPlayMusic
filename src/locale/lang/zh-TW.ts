@@ -203,6 +203,7 @@ export default {
     showLyricsTranslation: '顯示歌詞翻譯',
     webFont: {
       text: '使用 Web 字型',
+      systemDefault: '系統預設字型（不載入網路字型）',
     },
     showPlaylistsByAppleMusic: '首頁顯示來自 Apple Music 的歌單',
     enableDiscordRichPresence: '啟用 Discord Rich Presence',
