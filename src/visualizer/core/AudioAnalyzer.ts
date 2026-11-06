@@ -76,6 +76,8 @@ export class AudioAnalyzer {
   // 返回值只在当帧渲染内消费、不跨帧持有，覆写安全。
   _waveOut: Float32Array | null = null;
   _bandsOut: Float32Array | null = null;
+  // 原始频谱输出缓冲：get rawSpectrum 每帧调用，同样按长度复用
+  _rawOut: Float32Array | null = null;
 
   constructor(
     ctx: AudioContext,
@@ -123,6 +125,7 @@ export class AudioAnalyzer {
     // fftSize 变化后旧缓冲尺寸不再匹配，置空让下次取帧时按新长度重建
     this._waveOut = null;
     this._bandsOut = null;
+    this._rawOut = null;
   }
 
   /** 拉一帧 byte FFT → 平滑 → AGC → 算响度。 */
@@ -178,6 +181,24 @@ export class AudioAnalyzer {
   /** 归一化频谱（per-bin AGC 之后） — 渲染端使用；destroy 后为 null。 */
   get spectrum(): Float32Array {
     return this._normalized as Float32Array;
+  }
+
+  /**
+   * 原始频谱（byte FFT → [0,1]，**平滑/AGC 链路之前**）。
+   * 仅供节拍检测消费：包络平滑和 AGC 都是低通，会把鼓点上升沿
+   * 摊成几十毫秒的缓坡，在缓坡上做通量检测，拍的位置感会消失。
+   * 缓冲区跨帧复用，返回值仅供当帧消费，下一次调用会覆写内容。
+   */
+  get rawSpectrum(): Float32Array {
+    const buf = this._buffer;
+    if (!buf) return new Float32Array(0);
+    let out = this._rawOut;
+    if (!out || out.length !== buf.length) {
+      out = new Float32Array(buf.length);
+      this._rawOut = out;
+    }
+    for (let i = 0; i < buf.length; i++) out[i] = buf[i] / 255;
+    return out;
   }
 
   /**
