@@ -49,20 +49,13 @@
     runLoudFloor: 0.12,
 
     // —— 节拍检测 ——
-    // 与主线程 BeatDetector.ts 保持 1:1：原始频谱输入（平滑/AGC 之前）、
-    // 三重阈值、时间基滑动窗口、exp(-dt/τ) kick 衰减。
-    raw: null, // Float32Array：byte FFT → [0,1]，未经平滑/AGC
     prev: null,
-    history: [], // {t, flux}，按「最近 windowMs」修剪
-    windowMs: 700,
+    history: [],
+    windowSize: 43,
     threshold: 1.45,
-    minFlux: 0.12, // 绝对门限：全静音时 mean=std=0，阈值退化成 0
-    jumpRatio: 1.6, // 相对跳变：压持续高波动信号（白噪/嘶声）误触发
-    minHistory: 8,
     minIntervalMs: 220,
-    kickReleaseMs: 130,
+    kickDecay: 0.12,
     lastBeatAt: 0,
-    lastFrameAt: -1,
     kick: 0,
   };
 
@@ -98,14 +91,12 @@
       state.envelope = new Float32Array(N);
       state.normalized = new Float32Array(N);
       state.runPeak = new Float32Array(N);
-      state.raw = new Float32Array(N);
       for (var k = 0; k < N; k++) state.runPeak[k] = state.runPeakFloor;
     }
     if (!state.aWeight || state.aWeight.length !== N) {
       state.aWeight = computeAWeights(N, state.sampleRate);
     }
     var env = state.envelope;
-    var raw = state.raw;
     var aBase = state.attack;
     var rBase = state.release;
     var denom = N - 1 || 1;
@@ -115,8 +106,6 @@
       var rRate = rBase * (0.55 + 0.9 * t);
       var v = buf[i] / 255;
       if (v > 1) v = 1;
-      // 原始值留存：节拍检测必须在平滑/AGC 链路之前取样
-      raw[i] = v;
       var prev = env[i];
       env[i] = v > prev ? prev + (v - prev) * aRate : prev + (v - prev) * rRate;
     }
@@ -252,11 +241,10 @@
   }
 
   // ============================================================
-  // 节拍检测：spectral flux + 三重自适应阈值
-  // 输入用 state.raw（平滑/AGC 之前），与主线程 BeatDetector.ts 1:1。
+  // 节拍检测：spectral flux + 自适应阈值（用归一化频谱）
   // ============================================================
   function detectBeat(nowMs) {
-    var src = state.raw || state.normalized;
+    var src = state.normalized;
     var N = src.length;
     var top = Math.max(4, (N * 0.25) | 0);
     var flux = 0;
@@ -272,41 +260,26 @@
     }
     state.prev.set(src);
 
-    // 按真实时间推帧间隔：掉帧/切后台后包络与 refractory 不失真
-    var dt =
-      state.lastFrameAt >= 0 ? Math.min(200, nowMs - state.lastFrameAt) : 16;
-    state.lastFrameAt = nowMs;
-    // 先衰减再判定：onset 那一帧的 kick 必须是干净的
-    state.kick *= Math.exp(-dt / state.kickReleaseMs);
-    if (state.kick < 1e-3) state.kick = 0;
-
-    // 时间基滑动窗口：「最近 windowMs」只能按时间修剪，不能按帧数
     var hist = state.history;
-    hist.push({ t: nowMs, flux: flux });
-    var floor = nowMs - state.windowMs;
-    while (hist.length > 0 && hist[0].t <= floor) hist.shift();
+    hist.push(flux);
+    if (hist.length > state.windowSize) hist.shift();
 
     var mean = 0;
-    for (var j = 0; j < hist.length; j++) mean += hist[j].flux;
+    for (var j = 0; j < hist.length; j++) mean += hist[j];
     mean /= hist.length || 1;
     var varSum = 0;
     for (var jj = 0; jj < hist.length; jj++) {
-      var dv = hist[jj].flux - mean;
+      var dv = hist[jj] - mean;
       varSum += dv * dv;
     }
     var std = Math.sqrt(varSum / (hist.length || 1));
-    // 三重阈值取最大：绝对门限 / 统计阈值 / 相对跳变
-    var dyn = Math.max(
-      state.minFlux,
-      mean + state.threshold * std,
-      mean * state.jumpRatio
-    );
+    var dyn = mean + state.threshold * std;
     var beat = false;
     var intensity = 0;
     if (
       flux > dyn &&
       nowMs - state.lastBeatAt > state.minIntervalMs &&
-      hist.length >= state.minHistory
+      hist.length >= 8
     ) {
       beat = true;
       state.lastBeatAt = nowMs;
@@ -315,6 +288,9 @@
       if (intensity > 1) intensity = 1;
       state.kick += 0.4 + intensity * 0.6;
       if (state.kick > 1) state.kick = 1;
+    } else {
+      state.kick *= 1 - state.kickDecay;
+      if (state.kick < 1e-3) state.kick = 0;
     }
     return { beat: beat, intensity: intensity, kick: state.kick };
   }
@@ -341,12 +317,10 @@
       state.envelope = null;
       state.normalized = null;
       state.runPeak = null;
-      state.raw = null;
       state.aWeight = null;
       state.prev = null;
       state.history.length = 0;
       state.lastBeatAt = 0;
-      state.lastFrameAt = -1;
       state.kick = 0;
       state.runLoudPeak = state.runLoudFloor;
       return;

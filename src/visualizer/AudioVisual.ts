@@ -472,12 +472,7 @@ export class AudioVisual {
         mainAnalyzer.update();
         const spectrum = mainAnalyzer.spectrum;
         const bands = mainAnalyzer.getBands(bandCount);
-        // 节拍改吃**原始频谱**（平滑/AGC 之前）：那条链路是两级低通，
-        // 鼓点上升沿会被摊成缓坡，检出位置感差（见 BeatDetector 注释）。
-        const { beat, intensity, kick } = this.beat.update(
-          mainAnalyzer.rawSpectrum,
-          now
-        );
+        const { beat, intensity, kick } = this.beat.update(spectrum, now);
         const waveform = needWave ? mainAnalyzer.getWaveform() : null;
         // 复用帧对象逐字段覆写（见 _mainFrame 注释），替代每帧对象字面量
         const f = this._mainFrame;
